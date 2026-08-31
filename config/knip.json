@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/index.ts",
+    "src/stages/*/index.ts",
+    "src/protocols/*/index.ts",
+    "src/containers/*/index.ts",
+    "presets/*.ts",
+    "playground/src/main.ts"
+  ],
+  "project": ["src/**/*.ts", "presets/**/*.ts"],
+  "ignoreDependencies": [],
+  "ignoreExportsUsedInFile": true
+}

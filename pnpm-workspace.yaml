@@ -1,0 +1,4 @@
+# Single package, not a monorepo. This file exists only to approve dependency
+# build scripts under pnpm's allowlist.
+allowBuilds:
+  esbuild: true

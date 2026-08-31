@@ -1,0 +1,12 @@
+{
+  "presets": [
+    [
+      "@babel/preset-env",
+      {
+        "browserslistEnv": "legacy",
+        "modules": false,
+        "bugfixes": true
+      }
+    ]
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "presets",
+    "outDir": "dist/presets",
+    "noEmit": false,
+    "types": []
+  },
+  "include": ["presets"]
+}

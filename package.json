@@ -1,0 +1,81 @@
+{
+  "name": "mattebox",
+  "version": "0.1.0",
+  "description": "Modular adaptive-streaming engine for HLS and DASH.",
+  "author": "Josep Boix Requesens",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jboix/mattebox.git"
+  },
+  "homepage": "https://github.com/jboix/mattebox#readme",
+  "bugs": {
+    "url": "https://github.com/jboix/mattebox/issues"
+  },
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "legacy": "./dist/legacy/index.js",
+      "default": "./dist/index.js"
+    },
+    "./stages/*": {
+      "types": "./dist/stages/*.d.ts",
+      "legacy": "./dist/legacy/stages/*.js",
+      "default": "./dist/stages/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "verify": "pnpm run lint && pnpm run typecheck && pnpm run depcruise && pnpm run knip && pnpm run test && pnpm run build && pnpm run check:emit && pnpm run check:side-effects && pnpm exec size-limit && pnpm run check:package",
+    "build": "pnpm run clean && pnpm run build:modern && pnpm run build:types && pnpm run build:legacy && pnpm run build:cdn",
+    "build:modern": "tsc -p tsconfig.build.json && tsc -p tsconfig.presets.json",
+    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "build:legacy": "babel dist --out-dir dist/legacy --ignore \"dist/legacy/**,dist/cdn/**\"",
+    "build:cdn": "rolldown -c config/rolldown.config.mjs",
+    "lint": "biome ci .",
+    "typecheck": "tsc --noEmit",
+    "depcruise": "depcruise src --config config/dependency-cruiser.cjs",
+    "knip": "knip --config config/knip.json",
+    "test": "vitest run",
+    "test:node": "vitest run --project=node",
+    "test:browser": "vitest run --project=browser",
+    "test:e2e": "playwright test",
+    "check:emit": "./scripts/check-emit.sh",
+    "check:side-effects": "./scripts/side-effect-audit.sh",
+    "check:package": "publint && attw --pack ."
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@babel/cli": "^7.27.0",
+    "@babel/core": "^7.27.0",
+    "@babel/preset-env": "^7.27.0",
+    "@biomejs/biome": "^2.5.11",
+    "@playwright/test": "^1.62.1",
+    "@size-limit/esbuild": "^13.0.3",
+    "@size-limit/file": "^13.0.3",
+    "@types/node": "^24.13.3",
+    "@vitest/browser-playwright": "^4.1.11",
+    "@vitest/coverage-v8": "^4.1.11",
+    "dependency-cruiser": "^18.2.0",
+    "knip": "^6.33.0",
+    "playwright": "^1.62.1",
+    "publint": "^0.3.24",
+    "rolldown": "^1.2.6",
+    "size-limit": "^13.0.3",
+    "typescript": "~5.9.0",
+    "vitest": "^4.1.11"
+  }
+}

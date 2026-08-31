@@ -1,0 +1,18 @@
+# Two named targets: [modern] for the primary ESM build, [legacy] for the
+# Babel TV build.
+
+[modern]
+> 0.5%
+not dead
+supports es6-module
+
+[legacy]
+last 3 major versions
+Firefox ESR
+Chrome >= 53
+not dead
+not ie 11
+not baidu 7
+not and_qq 11
+not and_uc 12
+not op_mini all
