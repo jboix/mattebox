@@ -1,0 +1,132 @@
+{
+  "name": "mattebox",
+  "version": "0.1.0",
+  "description": "Modular adaptive-streaming engine for HLS and DASH.",
+  "author": "Josep Boix Requesens",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jboix/mattebox.git"
+  },
+  "homepage": "https://github.com/jboix/mattebox#readme",
+  "bugs": {
+    "url": "https://github.com/jboix/mattebox/issues"
+  },
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "packageManager": "pnpm@11.25.0+sha512.5cde925b4f075f725eb71fbae18a42ffe784524789f19b61c731cb8721ec28aaee160e01a8d5af4fedb2a42cdbf300efe23db356b0d4a17b4d63e11f8ab7c956",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=24",
+      "onFail": "error"
+    }
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "main": "./dist/es2015/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "modern": "./dist/index.js",
+      "default": "./dist/es2015/index.js"
+    },
+    "./stages/*": {
+      "types": "./dist/stages/*/index.d.ts",
+      "modern": "./dist/stages/*/index.js",
+      "default": "./dist/es2015/stages/*/index.js"
+    },
+    "./protocols/*": {
+      "types": "./dist/protocols/*/index.d.ts",
+      "modern": "./dist/protocols/*/index.js",
+      "default": "./dist/es2015/protocols/*/index.js"
+    },
+    "./containers/*": {
+      "types": "./dist/containers/*/index.d.ts",
+      "modern": "./dist/containers/*/index.js",
+      "default": "./dist/es2015/containers/*/index.js"
+    },
+    "./presets/*": {
+      "types": "./dist/presets/*/index.d.ts",
+      "modern": "./dist/presets/*/index.js",
+      "default": "./dist/es2015/presets/*/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "stages/*": [
+        "./dist/stages/*/index.d.ts"
+      ],
+      "protocols/*": [
+        "./dist/protocols/*/index.d.ts"
+      ],
+      "containers/*": [
+        "./dist/containers/*/index.d.ts"
+      ],
+      "presets/*": [
+        "./dist/presets/*/index.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prepare": "husky",
+    "clean": "rm -rf dist",
+    "verify": "pnpm run lint && pnpm run docs:check && pnpm run typecheck && pnpm run depcruise && pnpm run knip && pnpm run check:purity && pnpm run test && pnpm run build && pnpm run check:emit && pnpm run check:side-effects && pnpm exec size-limit && pnpm run check:package",
+    "build": "pnpm run clean && pnpm run build:modern && pnpm run build:types && pnpm run build:es2015 && pnpm run build:cdn",
+    "build:modern": "tsc -p tsconfig.build.json",
+    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "build:es2015": "rolldown -c rolldown.dist.config.mjs",
+    "build:cdn": "rolldown -c rolldown.config.mjs",
+    "lint": "biome ci .",
+    "typecheck": "tsc --noEmit",
+    "depcruise": "depcruise src",
+    "knip": "knip",
+    "test": "vitest run",
+    "test:node": "vitest run --project=node",
+    "test:browser": "vitest run --project=browser",
+    "test:e2e": "playwright test",
+    "check:emit": "node scripts/check-emit.mjs",
+    "check:purity": "node scripts/check-kernel-purity.mjs",
+    "check:side-effects": "node scripts/side-effect-audit.mjs",
+    "check:package": "node scripts/check-package.mjs",
+    "playground": "vite playground",
+    "playground:build": "vite build playground --mode pages",
+    "size-chart": "node scripts/size-chart.mjs",
+    "docs:check": "remark . --quiet --frail --use ./scripts/remark-check-formatted.mjs",
+    "docs:format": "remark . --quiet --output"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@biomejs/biome": "^2.5.11",
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "@playwright/test": "^1.62.1",
+    "@semantic-release/git": "11.0.1",
+    "@size-limit/esbuild": "^13.0.3",
+    "@size-limit/file": "^13.0.3",
+    "@types/node": "^24.13.3",
+    "@vitest/browser-playwright": "^4.1.11",
+    "@vitest/coverage-v8": "^4.1.11",
+    "dependency-cruiser": "^18.2.0",
+    "husky": "^9.1.7",
+    "jsdom": "^30.0.1",
+    "knip": "^6.33.0",
+    "playwright": "^1.62.1",
+    "publint": "^0.3.24",
+    "remark-cli": "^12.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-validate-links": "^13.1.0",
+    "rolldown": "^1.2.6",
+    "semantic-release": "25.0.9",
+    "size-limit": "^13.0.3",
+    "typescript": "~5.9.0",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}

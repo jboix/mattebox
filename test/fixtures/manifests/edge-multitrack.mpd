@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT30S" profiles="urn:mpeg:dash:profile:isoff-live:2011">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet id="1" contentType="video" mimeType="video/mp4" frameRate="30000/1001">
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="main"/>
+      <SegmentTemplate timescale="1000" duration="4000" startNumber="1"
+        initialization="v/$RepresentationID$/init.mp4" media="v/$RepresentationID$/$Number$.m4s"/>
+      <Representation id="v-hi" codecs="avc1.64001f" bandwidth="3000000" width="1920" height="1080"/>
+      <Representation id="v-lo" codecs="avc1.42c01e" bandwidth="700000" width="640" height="360"/>
+    </AdaptationSet>
+    <AdaptationSet id="2" contentType="audio" mimeType="audio/mp4" lang="fr">
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="main"/>
+      <SegmentTemplate timescale="48000" duration="192000" startNumber="1"
+        initialization="a/init.mp4" media="a/$Number$.m4s"/>
+      <Representation id="a-fr" codecs="mp4a.40.2" bandwidth="128000"/>
+    </AdaptationSet>
+    <AdaptationSet id="3" contentType="text" mimeType="application/mp4" lang="de">
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>
+      <SegmentTemplate timescale="1000" duration="4000" startNumber="1" media="t/$Number$.m4s"/>
+      <Representation id="t-de" codecs="stpp" bandwidth="2000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>

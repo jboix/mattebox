@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="700" viewBox="0 0 960 700" role="img" aria-label="Mattebox layers: your app on top, then the facade, stages, containers, protocol adapters, the kernel, and the browser platform at the bottom. Imports point downward only.">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b8b93"/>
+    </marker>
+  </defs>
+  <style>
+    .label { font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    .title { font-size: 17px; font-weight: 700; fill: #111114; }
+    .sub { font-size: 13px; fill: #3f3f46; }
+    .mods { font-size: 13px; fill: #1f1f24; }
+    .side { font-size: 13px; fill: #8b8b93; }
+    .sidebold { font-size: 13px; font-weight: 700; fill: #8b8b93; }
+  </style>
+
+  <!-- Your app -->
+  <rect x="40" y="20" width="780" height="58" rx="10" fill="#e4e4e7" stroke="#a1a1aa" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="60" y="45" class="label title">Your application</text>
+  <text x="60" y="66" class="mono sub">mattebox({ stages: [hlsCmaf(), abr(), textWebvtt()] })</text>
+
+  <!-- Facade -->
+  <rect x="40" y="98" width="780" height="72" rx="10" fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
+  <text x="60" y="123" class="label title">Facade</text>
+  <text x="60" y="144" class="mono mods">engine.attach · load · quality · tracks · stats · error · media · on</text>
+  <text x="60" y="161" class="mono sub">engine.live · engine.drm · engine.thumbnails · engine.pdt   (only when the stage is loaded)</text>
+
+  <!-- Layer 3 -->
+  <rect x="40" y="190" width="780" height="112" rx="10" fill="#bfdbfe" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="60" y="215" class="label title">Layer 3 · Stages</text>
+  <text x="250" y="215" class="label sub">optional, additive, never import each other</text>
+  <text x="60" y="240" class="mono mods">abr · abr-cap-size · abr-persist · alt-audio · codec-switch · codec-probe · mp4-box</text>
+  <text x="60" y="259" class="mono mods">text-webvtt · text-webvtt-segmented · text-cea608 · nal-scan · meta-id3 · pdt · cmaf-timing</text>
+  <text x="60" y="278" class="mono mods">eme-core · eme-cenc · eme-fairplay · recovery · content-steering · cmcd · thumbnails</text>
+
+  <!-- Layer 2 -->
+  <rect x="40" y="322" width="780" height="72" rx="10" fill="#c7d2fe" stroke="#4f46e5" stroke-width="1.5"/>
+  <text x="60" y="347" class="label title">Layer 2 · Containers</text>
+  <text x="270" y="347" class="label sub">byte-level work, optional</text>
+  <text x="60" y="372" class="mono mods">mp4-box · codec-probe · fmp4 writer · ts-transmux · packed-audio</text>
+
+  <!-- Layer 1 -->
+  <rect x="40" y="414" width="780" height="72" rx="10" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="60" y="439" class="label title">Layer 1 · Protocol adapters</text>
+  <text x="310" y="439" class="label sub">at least one, all emit the same IR</text>
+  <text x="60" y="464" class="mono mods">hls-cmaf · hls-live · dash-cmaf · dash-live</text>
+
+  <!-- Layer 0 -->
+  <rect x="40" y="506" width="780" height="112" rx="10" fill="#fecaca" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="60" y="531" class="label title">Layer 0 · Kernel</text>
+  <text x="220" y="531" class="label sub">always present, imports nothing above it</text>
+  <text x="60" y="556" class="mono mods">bus · reducer · effects · trace · loader · lifecycle · context</text>
+  <text x="60" y="575" class="mono mods">mse · append-queue · evictor · scheduler · transport · timeline · watchdog</text>
+  <text x="60" y="594" class="mono mods">track-registry · rendition-select · sinks (mse · text-track · metadata)</text>
+
+  <!-- Platform -->
+  <rect x="40" y="638" width="780" height="44" rx="10" fill="#e4e4e7" stroke="#a1a1aa" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="60" y="665" class="label title">Browser</text>
+  <text x="160" y="665" class="mono sub">MediaSource · SourceBuffer · EME · fetch · TextTrack · ResizeObserver</text>
+
+  <!-- Dependency arrow -->
+  <line x1="852" y1="190" x2="852" y2="610" stroke="#8b8b93" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="870" y="380" class="label sidebold">imports</text>
+  <text x="870" y="398" class="label side">point down</text>
+  <text x="870" y="416" class="label side">only</text>
+
+  <!-- Requires note -->
+    <text x="870" y="230" class="label sidebold">requires</text>
+  <text x="870" y="248" class="label side">resolved by</text>
+  <text x="870" y="266" class="label side">the loader</text>
+
+  <!-- IR note -->
+  <text x="870" y="450" class="label sidebold">IR</text>
+  <text x="870" y="468" class="label side">one timeline</text>
+  <text x="870" y="486" class="label side">model</text>
+</svg>

@@ -1,0 +1,49 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# build output
+dist/
+.vite/
+
+# generated E2E stream corpus (`test/e2e/gen-streams.sh`, needs ffmpeg)
+test/fixtures/streams/
+test/e2e/.build/
+
+# testing
+coverage/
+test-results/
+playwright-report/
+blob-report/
+__screenshots__/
+.vitest-attachments/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# typescript
+*.tsbuildinfo
+
+# Intellij
+.idea
+
+# VisualStudioCode
+.vscode-test
+.vscode
+.history

@@ -1,0 +1,44 @@
+name: GitHub Page
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: github-page
+  cancel-in-progress: false
+
+jobs:
+  github-page:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Generate stream corpus
+        run: test/e2e/gen-streams.sh
+      - name: Build playground
+        run: pnpm run playground:build --base=/${{ github.event.repository.name }}/
+      - name: Add stream corpus to the site
+        run: cp -R test/fixtures/streams playground/dist/streams
+      - name: Deploy GitHub Page 🚀
+        uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445 # releases/v4
+        with:
+          branch: gh-pages
+          folder: playground/dist
+          force: false
+          clean-exclude: pr-preview/
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

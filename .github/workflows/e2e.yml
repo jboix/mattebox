@@ -1,0 +1,41 @@
+name: E2E
+
+# Real-time playback in three browsers: decode-bound, slow, and sensitive to
+# runner load, so it runs nightly, on demand from the Actions tab, and on a
+# pull request when it gets the `e2e` label. `pnpm run test:e2e` runs it
+# locally.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * *'
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'e2e'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install browsers
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Playback E2E (tier 4)
+        run: pnpm exec playwright test

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1238" viewBox="0 0 1100 1238" role="img" aria-label="Bundle size of every Mattebox preset, min+gzip">
+  <rect width="1100" height="1238" rx="18" fill="#ffffff"/>
+  <text x="44" y="60" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#111114">Mattebox presets</text>
+  <text x="44" y="98" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="22" fill="#6b6b74">min+gzip · KB · a protocol line, the MPEG-TS tier (with its worker), the DRM tier</text>
+  <text x="44" y="176" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">kernel</text>
+  <text x="44" y="200" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · the engine alone</text>
+  <rect x="290" y="150" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="150" width="180.4" height="54" fill="#a1a1aa"/>
+  <text x="1056" y="186" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">17.7 KB</text>
+  <text x="44" y="260" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">hls</text>
+  <text x="44" y="284" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · HLS line + base</text>
+  <rect x="290" y="234" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="234" width="302.3" height="54" fill="#a1a1aa"/>
+  <text x="1056" y="270" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">29.7 KB</text>
+  <text x="44" y="344" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">hls-drm</text>
+  <text x="44" y="368" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · + EME</text>
+  <rect x="290" y="318" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="318" width="325.0" height="54" fill="#a1a1aa"/>
+  <text x="1056" y="354" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">32.0 KB</text>
+  <text x="44" y="428" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">hls-ts</text>
+  <text x="44" y="452" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · + MPEG-TS</text>
+  <rect x="290" y="402" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="402" width="435.4" height="54" fill="#a1a1aa"/>
+  <text x="1056" y="438" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">42.8 KB</text>
+  <text x="44" y="512" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">hls-ts-drm</text>
+  <text x="44" y="536" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · + MPEG-TS + EME</text>
+  <rect x="290" y="486" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="486" width="458.1" height="54" fill="#a1a1aa"/>
+  <text x="1056" y="522" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">45.1 KB</text>
+  <text x="44" y="596" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">dash</text>
+  <text x="44" y="620" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · DASH line + base</text>
+  <rect x="290" y="570" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="570" width="298.0" height="54" fill="#a1a1aa"/>
+  <text x="1056" y="606" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">29.3 KB</text>
+  <text x="44" y="680" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">dash-drm</text>
+  <text x="44" y="704" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · + EME</text>
+  <rect x="290" y="654" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="654" width="320.9" height="54" fill="#a1a1aa"/>
+  <text x="1056" y="690" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">31.6 KB</text>
+  <text x="44" y="764" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">dual</text>
+  <text x="44" y="788" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · both lines + base</text>
+  <rect x="290" y="738" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="738" width="347.0" height="54" fill="#a1a1aa"/>
+  <text x="1056" y="774" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">34.1 KB</text>
+  <text x="44" y="848" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">dual-drm</text>
+  <text x="44" y="872" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · + EME</text>
+  <rect x="290" y="822" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="822" width="369.9" height="54" fill="#a1a1aa"/>
+  <text x="1056" y="858" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">36.4 KB</text>
+  <text x="44" y="932" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">dual-ts</text>
+  <text x="44" y="956" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · + MPEG-TS</text>
+  <rect x="290" y="906" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="906" width="478.4" height="54" fill="#a1a1aa"/>
+  <text x="1056" y="942" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">47.1 KB</text>
+  <text x="44" y="1016" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">dual-ts-drm</text>
+  <text x="44" y="1040" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · + MPEG-TS + EME</text>
+  <rect x="290" y="990" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="990" width="500.8" height="54" fill="#a1a1aa"/>
+  <text x="1056" y="1026" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">49.3 KB</text>
+  <text x="44" y="1100" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#111114">full</text>
+  <text x="44" y="1124" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0 · + accessories</text>
+  <rect x="290" y="1074" width="610" height="54" fill="#f0f0f3"/>
+  <rect x="290" y="1074" width="526.6" height="54" fill="#e8930c"/>
+  <text x="1056" y="1110" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="30" font-weight="700" fill="#111114">51.8 KB</text>
+  <line x1="290" y1="1176" x2="900" y2="1176" stroke="#d4d4d9" stroke-width="2"/>
+  <line x1="290.0" y1="1176" x2="290.0" y2="1184" stroke="#d4d4d9" stroke-width="2"/>
+  <text x="290.0" y="1208" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">0</text>
+  <line x1="391.7" y1="1176" x2="391.7" y2="1184" stroke="#d4d4d9" stroke-width="2"/>
+  <text x="391.7" y="1208" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">10</text>
+  <line x1="493.3" y1="1176" x2="493.3" y2="1184" stroke="#d4d4d9" stroke-width="2"/>
+  <text x="493.3" y="1208" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">20</text>
+  <line x1="595.0" y1="1176" x2="595.0" y2="1184" stroke="#d4d4d9" stroke-width="2"/>
+  <text x="595.0" y="1208" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">30</text>
+  <line x1="696.7" y1="1176" x2="696.7" y2="1184" stroke="#d4d4d9" stroke-width="2"/>
+  <text x="696.7" y="1208" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">40</text>
+  <line x1="798.3" y1="1176" x2="798.3" y2="1184" stroke="#d4d4d9" stroke-width="2"/>
+  <text x="798.3" y="1208" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">50</text>
+  <line x1="900.0" y1="1176" x2="900.0" y2="1184" stroke="#d4d4d9" stroke-width="2"/>
+  <text x="900.0" y="1208" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">60</text>
+</svg>

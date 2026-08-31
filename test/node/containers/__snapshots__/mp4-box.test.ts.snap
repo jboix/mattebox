@@ -1,0 +1,251 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`box walking over the init corpus > init-a.mp4 walks to a stable box tree 1`] = `
+[
+  "ftyp @0 +28",
+  "moov @28 +736",
+  "moov/mvhd @36 +108",
+  "moov/trak @144 +483",
+  "moov/trak/tkhd @152 +92",
+  "moov/trak/edts @244 +36",
+  "moov/trak/mdia @280 +347",
+  "moov/trak/mdia/mdhd @288 +32",
+  "moov/trak/mdia/hdlr @320 +45",
+  "moov/trak/mdia/minf @365 +262",
+  "moov/trak/mdia/minf/smhd @373 +16",
+  "moov/trak/mdia/minf/dinf @389 +36",
+  "moov/trak/mdia/minf/stbl @425 +202",
+  "moov/trak/mdia/minf/stbl/stsd @433 +126",
+  "moov/trak/mdia/minf/stbl/stts @559 +16",
+  "moov/trak/mdia/minf/stbl/stsc @575 +16",
+  "moov/trak/mdia/minf/stbl/stsz @591 +20",
+  "moov/trak/mdia/minf/stbl/stco @611 +16",
+  "moov/mvex @627 +40",
+  "moov/udta @667 +97",
+]
+`;
+
+exports[`box walking over the init corpus > init-a-ac3.mp4 walks to a stable box tree 1`] = `
+[
+  "ftyp @0 +32",
+  "moov @32 +693",
+  "moov/mvhd @40 +108",
+  "moov/trak @148 +440",
+  "moov/trak/tkhd @156 +92",
+  "moov/trak/edts @248 +36",
+  "moov/trak/mdia @284 +304",
+  "moov/trak/mdia/mdhd @292 +32",
+  "moov/trak/mdia/hdlr @324 +45",
+  "moov/trak/mdia/minf @369 +219",
+  "moov/trak/mdia/minf/smhd @377 +16",
+  "moov/trak/mdia/minf/dinf @393 +36",
+  "moov/trak/mdia/minf/stbl @429 +159",
+  "moov/trak/mdia/minf/stbl/stsd @437 +83",
+  "moov/trak/mdia/minf/stbl/stts @520 +16",
+  "moov/trak/mdia/minf/stbl/stsc @536 +16",
+  "moov/trak/mdia/minf/stbl/stsz @552 +20",
+  "moov/trak/mdia/minf/stbl/stco @572 +16",
+  "moov/mvex @588 +40",
+  "moov/udta @628 +97",
+]
+`;
+
+exports[`box walking over the init corpus > init-a-ec3.mp4 walks to a stable box tree 1`] = `
+[
+  "ftyp @0 +32",
+  "moov @32 +695",
+  "moov/mvhd @40 +108",
+  "moov/trak @148 +442",
+  "moov/trak/tkhd @156 +92",
+  "moov/trak/edts @248 +36",
+  "moov/trak/mdia @284 +306",
+  "moov/trak/mdia/mdhd @292 +32",
+  "moov/trak/mdia/hdlr @324 +45",
+  "moov/trak/mdia/minf @369 +221",
+  "moov/trak/mdia/minf/smhd @377 +16",
+  "moov/trak/mdia/minf/dinf @393 +36",
+  "moov/trak/mdia/minf/stbl @429 +161",
+  "moov/trak/mdia/minf/stbl/stsd @437 +85",
+  "moov/trak/mdia/minf/stbl/stts @522 +16",
+  "moov/trak/mdia/minf/stbl/stsc @538 +16",
+  "moov/trak/mdia/minf/stbl/stsz @554 +20",
+  "moov/trak/mdia/minf/stbl/stco @574 +16",
+  "moov/mvex @590 +40",
+  "moov/udta @630 +97",
+]
+`;
+
+exports[`box walking over the init corpus > init-a-opus.mp4 walks to a stable box tree 1`] = `
+[
+  "ftyp @0 +28",
+  "moov @28 +701",
+  "moov/mvhd @36 +108",
+  "moov/trak @144 +448",
+  "moov/trak/tkhd @152 +92",
+  "moov/trak/edts @244 +36",
+  "moov/trak/mdia @280 +312",
+  "moov/trak/mdia/mdhd @288 +32",
+  "moov/trak/mdia/hdlr @320 +45",
+  "moov/trak/mdia/minf @365 +227",
+  "moov/trak/mdia/minf/smhd @373 +16",
+  "moov/trak/mdia/minf/dinf @389 +36",
+  "moov/trak/mdia/minf/stbl @425 +167",
+  "moov/trak/mdia/minf/stbl/stsd @433 +91",
+  "moov/trak/mdia/minf/stbl/stts @524 +16",
+  "moov/trak/mdia/minf/stbl/stsc @540 +16",
+  "moov/trak/mdia/minf/stbl/stsz @556 +20",
+  "moov/trak/mdia/minf/stbl/stco @576 +16",
+  "moov/mvex @592 +40",
+  "moov/udta @632 +97",
+]
+`;
+
+exports[`box walking over the init corpus > init-v-av1.mp4 walks to a stable box tree 1`] = `
+[
+  "ftyp @0 +32",
+  "moov @32 +787",
+  "moov/mvhd @40 +108",
+  "moov/trak @148 +534",
+  "moov/trak/tkhd @156 +92",
+  "moov/trak/edts @248 +36",
+  "moov/trak/mdia @284 +398",
+  "moov/trak/mdia/mdhd @292 +32",
+  "moov/trak/mdia/hdlr @324 +45",
+  "moov/trak/mdia/minf @369 +313",
+  "moov/trak/mdia/minf/vmhd @377 +20",
+  "moov/trak/mdia/minf/dinf @397 +36",
+  "moov/trak/mdia/minf/stbl @433 +249",
+  "moov/trak/mdia/minf/stbl/stsd @441 +173",
+  "moov/trak/mdia/minf/stbl/stts @614 +16",
+  "moov/trak/mdia/minf/stbl/stsc @630 +16",
+  "moov/trak/mdia/minf/stbl/stsz @646 +20",
+  "moov/trak/mdia/minf/stbl/stco @666 +16",
+  "moov/mvex @682 +40",
+  "moov/udta @722 +97",
+]
+`;
+
+exports[`box walking over the init corpus > init-v-base.mp4 walks to a stable box tree 1`] = `
+[
+  "ftyp @0 +28",
+  "moov @28 +810",
+  "moov/mvhd @36 +108",
+  "moov/trak @144 +557",
+  "moov/trak/tkhd @152 +92",
+  "moov/trak/edts @244 +36",
+  "moov/trak/mdia @280 +421",
+  "moov/trak/mdia/mdhd @288 +32",
+  "moov/trak/mdia/hdlr @320 +45",
+  "moov/trak/mdia/minf @365 +336",
+  "moov/trak/mdia/minf/vmhd @373 +20",
+  "moov/trak/mdia/minf/dinf @393 +36",
+  "moov/trak/mdia/minf/stbl @429 +272",
+  "moov/trak/mdia/minf/stbl/stsd @437 +196",
+  "moov/trak/mdia/minf/stbl/stts @633 +16",
+  "moov/trak/mdia/minf/stbl/stsc @649 +16",
+  "moov/trak/mdia/minf/stbl/stsz @665 +20",
+  "moov/trak/mdia/minf/stbl/stco @685 +16",
+  "moov/mvex @701 +40",
+  "moov/udta @741 +97",
+]
+`;
+
+exports[`box walking over the init corpus > init-v-hevc.mp4 walks to a stable box tree 1`] = `
+[
+  "ftyp @0 +28",
+  "moov @28 +3212",
+  "moov/mvhd @36 +108",
+  "moov/trak @144 +2959",
+  "moov/trak/tkhd @152 +92",
+  "moov/trak/edts @244 +36",
+  "moov/trak/mdia @280 +2823",
+  "moov/trak/mdia/mdhd @288 +32",
+  "moov/trak/mdia/hdlr @320 +45",
+  "moov/trak/mdia/minf @365 +2738",
+  "moov/trak/mdia/minf/vmhd @373 +20",
+  "moov/trak/mdia/minf/dinf @393 +36",
+  "moov/trak/mdia/minf/stbl @429 +2674",
+  "moov/trak/mdia/minf/stbl/stsd @437 +2598",
+  "moov/trak/mdia/minf/stbl/stts @3035 +16",
+  "moov/trak/mdia/minf/stbl/stsc @3051 +16",
+  "moov/trak/mdia/minf/stbl/stsz @3067 +20",
+  "moov/trak/mdia/minf/stbl/stco @3087 +16",
+  "moov/mvex @3103 +40",
+  "moov/udta @3143 +97",
+]
+`;
+
+exports[`box walking over the init corpus > init-v-high.mp4 walks to a stable box tree 1`] = `
+[
+  "ftyp @0 +28",
+  "moov @28 +805",
+  "moov/mvhd @36 +108",
+  "moov/trak @144 +552",
+  "moov/trak/tkhd @152 +92",
+  "moov/trak/edts @244 +36",
+  "moov/trak/mdia @280 +416",
+  "moov/trak/mdia/mdhd @288 +32",
+  "moov/trak/mdia/hdlr @320 +45",
+  "moov/trak/mdia/minf @365 +331",
+  "moov/trak/mdia/minf/vmhd @373 +20",
+  "moov/trak/mdia/minf/dinf @393 +36",
+  "moov/trak/mdia/minf/stbl @429 +267",
+  "moov/trak/mdia/minf/stbl/stsd @437 +191",
+  "moov/trak/mdia/minf/stbl/stts @628 +16",
+  "moov/trak/mdia/minf/stbl/stsc @644 +16",
+  "moov/trak/mdia/minf/stbl/stsz @660 +20",
+  "moov/trak/mdia/minf/stbl/stco @680 +16",
+  "moov/mvex @696 +40",
+  "moov/udta @736 +97",
+]
+`;
+
+exports[`box walking over the init corpus > init-v-main.mp4 walks to a stable box tree 1`] = `
+[
+  "ftyp @0 +28",
+  "moov @28 +798",
+  "moov/mvhd @36 +108",
+  "moov/trak @144 +545",
+  "moov/trak/tkhd @152 +92",
+  "moov/trak/edts @244 +36",
+  "moov/trak/mdia @280 +409",
+  "moov/trak/mdia/mdhd @288 +32",
+  "moov/trak/mdia/hdlr @320 +45",
+  "moov/trak/mdia/minf @365 +324",
+  "moov/trak/mdia/minf/vmhd @373 +20",
+  "moov/trak/mdia/minf/dinf @393 +36",
+  "moov/trak/mdia/minf/stbl @429 +260",
+  "moov/trak/mdia/minf/stbl/stsd @437 +184",
+  "moov/trak/mdia/minf/stbl/stts @621 +16",
+  "moov/trak/mdia/minf/stbl/stsc @637 +16",
+  "moov/trak/mdia/minf/stbl/stsz @653 +20",
+  "moov/trak/mdia/minf/stbl/stco @673 +16",
+  "moov/mvex @689 +40",
+  "moov/udta @729 +97",
+]
+`;
+
+exports[`box walking over the init corpus > init-v-vp9.mp4 walks to a stable box tree 1`] = `
+[
+  "ftyp @0 +28",
+  "moov @28 +782",
+  "moov/mvhd @36 +108",
+  "moov/trak @144 +529",
+  "moov/trak/tkhd @152 +92",
+  "moov/trak/edts @244 +36",
+  "moov/trak/mdia @280 +393",
+  "moov/trak/mdia/mdhd @288 +32",
+  "moov/trak/mdia/hdlr @320 +45",
+  "moov/trak/mdia/minf @365 +308",
+  "moov/trak/mdia/minf/vmhd @373 +20",
+  "moov/trak/mdia/minf/dinf @393 +36",
+  "moov/trak/mdia/minf/stbl @429 +244",
+  "moov/trak/mdia/minf/stbl/stsd @437 +168",
+  "moov/trak/mdia/minf/stbl/stts @605 +16",
+  "moov/trak/mdia/minf/stbl/stsc @621 +16",
+  "moov/trak/mdia/minf/stbl/stsz @637 +20",
+  "moov/trak/mdia/minf/stbl/stco @657 +16",
+  "moov/mvex @673 +40",
+  "moov/udta @713 +97",
+]
+`;
