@@ -1,0 +1,15 @@
+# Two named targets: [modern] for the primary ESM build, [legacy] for the
+# Babel TV build.
+#
+# TODO(human): [legacy] below is a placeholder. It must be replaced with the
+# real target TV support matrix once decided.
+
+[modern]
+> 0.5%
+not dead
+supports es6-module
+
+[legacy]
+chrome >= 38
+firefox >= 45
+safari >= 10

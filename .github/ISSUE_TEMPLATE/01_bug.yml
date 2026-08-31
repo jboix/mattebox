@@ -1,0 +1,61 @@
+name: 🐛 Bug Report
+description: Report a possible bug or regression
+title: "🐛 <TITLE>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Please provide a clear and concise
+        description of what the bug is; reports that cannot be reproduced
+        take much longer to fix.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment information
+      description: >
+        Paste the Mattebox version, `node --version`, and the browser or TV
+        device (with OS/firmware version) where the bug occurs. If the bug
+        involves a stream, state the protocol (HLS or DASH), whether it is
+        VOD or live, and the stages loaded. Review the output for anything
+        sensitive before posting.
+      value: |
+        <details>
+
+        ```
+        Paste output here
+        ```
+
+        </details>
+    validations:
+      required: true
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: What happened?
+      description: >
+        Provide the steps that reproduce the issue, including the engine
+        configuration and, if possible, a manifest or minimal snippet that
+        triggers it. The more complete the steps, the quicker the report can
+        be triaged and addressed.
+      placeholder: |
+        1.
+        2.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-result
+    attributes:
+      label: Expected result
+      description: Describe what you expected to happen.
+      placeholder: Playback should resume after the seek.
+    validations:
+      required: true
+  - type: checkboxes
+    id: coc
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/jboix/mattebox/blob/main/CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow Mattebox's Code of Conduct
+          required: true
