@@ -26,7 +26,7 @@ jobs:
           persist-credentials: true
           token: ${{ steps.bot-token.outputs.token }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
