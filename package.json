@@ -1,6 +1,6 @@
 {
   "name": "mattebox",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Modular adaptive-streaming engine for HLS and DASH.",
   "author": "Josep Boix Requesens",
   "repository": {
