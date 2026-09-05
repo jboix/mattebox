@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mattebox Playground</title>
+  <link rel="icon" type="image/svg+xml" href="/mattebox/assets/logo-DmL7KmWg.svg" />
+  <script>
+    // Apply the saved theme before the first paint so a light-mode user never
+    // sees a dark flash. theme.ts owns the toggle; this only mirrors the flag.
+    (() => {
+      let saved = null;
+      try {
+        saved = localStorage.getItem('mattebox.playground.theme');
+      } catch {
+        saved = null;
+      }
+      const prefersLight = window.matchMedia?.('(prefers-color-scheme: light)').matches;
+      const theme = saved === 'light' || saved === 'dark' ? saved : prefersLight ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+  <script type="module" crossorigin src="/mattebox/assets/index-CKZUa7zJ.js"></script>
+  <link rel="stylesheet" crossorigin href="/mattebox/assets/index-ChSX6JNh.css">
+</head>
+<body>
+  <main id="app"></main>
+</body>
+</html>
