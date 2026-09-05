@@ -1,38 +1,33 @@
 /**
- * The ts-transmux factory for a script-tag bundle. An IIFE has no
- * `import.meta.url`, so the Worker cannot be found the way a bundler
- * resolves it. This records the script's own URL while it executes and
- * points `tsTransmux` at the sibling `transmux.worker.js` the CDN build
- * emits next to every bundle that carries the transmuxer. A page that loads
- * both from the same directory gets the Worker path with no configuration;
- * one that hosts the Worker elsewhere passes `workerUrl` as usual.
- *
- * `located` prepends a located instance to a preset's overrides, so the
- * merge replaces the preset's default and a caller's own `tsTransmux(...)`
- * still wins by coming later.
+ * ts-transmux for a script-tag bundle: the Worker's source is embedded by
+ * rolldown.config.mjs and started from a blob URL. A caller's own
+ * `workerUrl` still wins.
  */
 
+import workerSource from 'virtual:transmux-worker';
 import tsTransmuxStage from '../src/containers/ts-transmux/index.js';
 import type { TransmuxRunnerOptions } from '../src/containers/ts-transmux/runner.js';
 import type { Preset, PresetOptions, PresetStageOptions } from '../src/presets/define.js';
 
-const scriptUrl =
-  typeof document === 'undefined'
-    ? null
-    : (document.currentScript as HTMLScriptElement | null)?.src;
-const workerUrl = scriptUrl ? new URL('./transmux.worker.js', scriptUrl).href : null;
+let workerUrl: string | null = null;
+
+/** The embedded Worker's blob URL, created on first use. */
+function embeddedWorkerUrl(): string {
+  workerUrl ??= URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }));
+  return workerUrl;
+}
 
 export function tsTransmux(options: TransmuxRunnerOptions = {}) {
-  return workerUrl === null || options.workerUrl !== undefined
+  return options.workerUrl !== undefined
     ? tsTransmuxStage(options)
-    : tsTransmuxStage({ ...options, workerUrl });
+    : tsTransmuxStage({ ...options, workerUrl: embeddedWorkerUrl() });
 }
 
 function located(options: PresetStageOptions = {}): PresetStageOptions {
   return { ...options, stages: [tsTransmux(), ...(options.stages ?? [])] };
 }
 
-/** The preset with its ts-transmux default pointed at the sibling Worker. */
+/** The preset with ts-transmux pointed at the embedded Worker. */
 export function withWorker(preset: Preset): Preset {
   return Object.assign((options: PresetOptions = {}) => preset(located(options)), {
     presetName: preset.presetName,

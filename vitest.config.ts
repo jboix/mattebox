@@ -1,14 +1,20 @@
 import { playwright } from '@vitest/browser-playwright';
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type Plugin } from 'vitest/config';
+
+// The Worker source the CDN build embeds; the unit tests need only the shape.
+const WORKER_MODULE = 'virtual:transmux-worker';
+const transmuxWorkerStub: Plugin = {
+  name: 'transmux-worker-stub',
+  resolveId: (id) => (id === WORKER_MODULE ? `\0${WORKER_MODULE}` : null),
+  load: (id) => (id === `\0${WORKER_MODULE}` ? 'export default "";' : null),
+};
 
 export default defineConfig({
   test: {
     coverage: {
       provider: 'v8',
       include: ['src/**'],
-      // The DOM-boundary modules are tier-3 tested in real browsers, where
-      // v8 coverage cannot instrument non-chromium engines. Coverage here
-      // measures what tier 1 can reach: the pure kernel.
+      // v8 cannot instrument Firefox or WebKit; coverage measures the node tier.
       exclude: [
         'src/kernel/mse.ts',
         'src/kernel/append-queue.ts',
@@ -19,13 +25,12 @@ export default defineConfig({
         'src/index.ts',
         'src/types/**',
       ],
-      // json-summary and json feed the PR coverage report action.
-      // No thresholds: coverage is reported, not gated. The per-area
-      // targets in docs/11 are aims, not build failures, by owner decision.
+      // json-summary and json feed the PR coverage comment. No thresholds.
       reporter: ['text', 'json-summary', 'json'],
     },
     projects: [
       {
+        plugins: [transmuxWorkerStub],
         test: {
           name: 'node',
           environment: 'node',
@@ -37,6 +42,7 @@ export default defineConfig({
         },
       },
       {
+        plugins: [transmuxWorkerStub],
         test: {
           name: 'browser',
           include: ['test/browser/**/*.test.ts'],

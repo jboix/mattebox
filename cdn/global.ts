@@ -1,16 +1,7 @@
 /**
- * The shape every CDN bundle exposes on its one global, `mattebox`:
- *
- *   mattebox({ stages: [...] })   the engine factory, hand composition
- *   mattebox.preset({ ... })      the bundle's preset, defaults plus overrides
- *   mattebox.preset.stages()      the preset's stage list
- *   mattebox.hlsCmaf(), ...       the stage factories the bundle carries
- *   mattebox.from(video)          the element-to-engine lookup
- *
- * Rolldown builds each entry with `output.exports: 'default'`, which makes
- * the default export the global. This helper lives outside `src/` because
- * the entries read `document.currentScript` at load, a top-level side
- * effect the package modules must not have.
+ * The shape every CDN bundle exposes on its `mattebox` global: the engine
+ * factory, `preset`, `preset.stages()`, the stage factories it carries, and
+ * `from(video)`.
  */
 import type { Mattebox, MatteboxOptions } from '../src/index.js';
 import { mattebox } from '../src/index.js';

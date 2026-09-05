@@ -47,9 +47,9 @@ Two options cover the other cases.
 tsTransmux({ workerUrl: new URL('/static/mattebox-transmux.js', location.href) });
 ```
 
-The CDN bundle ships the Worker as `transmux.worker.js` next to
-`mattebox.min.js` and resolves it from the script's own URL, so a script tag
-needs neither option. See [chapter 13](13-builds-and-targets.md).
+The CDN bundles carry the Worker inside the file and start it from a blob
+URL, so a script tag needs neither option. See
+[chapter 13](13-builds-and-targets.md).
 
 ## Stages that need a container stage
 

@@ -35,7 +35,7 @@ unpinned URL follows the latest release and can change under a live page.
 <video id="player" controls></video>
 
 <script src="https://cdn.jsdelivr.net/npm/mattebox@0.1.0/dist/cdn/mattebox.hls.min.js" defer></script>
-<script defer>
+<script type="module">
   const video = document.getElementById('player');
   const engine = mattebox.preset();
   engine.on('error', (error) => console.error(error));
@@ -45,8 +45,10 @@ unpinned URL follows the latest release and can change under a live page.
 </script>
 ```
 
-`defer` keeps the bundle from blocking the parser and still runs the two
-scripts in order. Anywhere else on the page, `mattebox.from(video)`
+`defer` keeps the bundle from blocking the parser. The inline script is a
+module because `defer` does nothing on an inline script: a module is
+deferred too, and deferred scripts run in document order, so it sees the
+`mattebox` global. Anywhere else on the page, `mattebox.from(video)`
 returns the engine attached to an element.
 
 ## The mattebox global
@@ -116,13 +118,16 @@ matches.
 
 ## MPEG-TS and the Worker
 
-The `-ts` bundles and `mattebox.min.js` transmux MPEG-TS in a Worker,
-shipped as `transmux.worker.js` next to them. A bundle finds the Worker from
-its own script URL, so loading from jsDelivr needs no configuration.
+The `-ts` bundles and `mattebox.min.js` transmux MPEG-TS in a Worker. The
+Worker's code is inside the bundle and starts from a blob URL, so one script
+tag is all a page loads, from jsDelivr or from your own host, with nothing
+to copy beside it. A content security policy must allow `worker-src blob:`
+for it to start; where it cannot, transmuxing runs on the main thread and
+playback continues.
 
-Two cases need `workerUrl`: a page that self-hosts the bundle without the
-Worker next to it, and a page whose content security policy blocks Workers
-from the CDN origin.
+`workerUrl` points the transmuxer at a file you host instead, for a policy
+that forbids blob Workers. The file is the package's
+`dist/es2015/containers/ts-transmux/transmux.worker.js`.
 
 ```html
 <script>
@@ -155,7 +160,7 @@ A live channel with subtitles from one script tag, pinned and verified.
   integrity="sha384-<the hash>"
   crossorigin="anonymous"
   defer></script>
-<script defer>
+<script type="module">
   const video = document.getElementById('player');
   const engine = mattebox.preset({ config: { bufferGoalSeconds: 30 } });
 

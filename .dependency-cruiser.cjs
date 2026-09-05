@@ -1,4 +1,4 @@
-// The architecture compiler. This ruleset is what keeps the layering true — do not weaken.
+// The layering rules. See docs/architecture.md.
 module.exports = {
   forbidden: [
     {
@@ -63,9 +63,7 @@ module.exports = {
   options: {
     tsConfig: { fileName: 'tsconfig.json' },
     doNotFollow: { path: 'node_modules' },
-    // Track `import type` edges. Without this the cruise sees zero
-    // dependencies on type-only modules and every rule silently checks
-    // nothing. Layering applies to type dependencies too.
+    // Type-only imports count.
     tsPreCompilationDeps: true,
   },
 };

@@ -15,7 +15,7 @@ MSE, EME, and standard web platform APIs.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/size-chart-dark.svg">
-  <img alt="Bundle size of adaptive streaming engines, min+gzip, each engine's compatibility build. Mattebox with every stage, transmux worker included, is 51.8 KB, hls.js 184.1 KB, video.js with VHS built in 197.3 KB, Shaka Player 267.0 KB, dash.js 297.3 KB." src="docs/size-chart-light.svg">
+  <img alt="Bundle size of adaptive streaming engines, min+gzip, each engine's compatibility build. Mattebox with every stage, transmux worker inside, is 51.6 KB, hls.js 184.1 KB, video.js with VHS built in 197.3 KB, Shaka Player 267.0 KB, dash.js 297.3 KB." src="docs/size-chart-light.svg">
 </picture>
 
 ## Quick start

@@ -396,6 +396,9 @@ export function mattebox(options: MatteboxOptions): Mattebox {
         // No document base (tests, workers): the caller's URL stands.
       }
       lastError = null;
+      // A load replaces whatever is loaded, the way setting `src` does.
+      const { phase } = bus.getState().lifecycle;
+      if (phase !== 'idle' && phase !== 'attaching') bus.dispatch({ type: 'UNLOAD' });
       bus.dispatch({
         type: 'LOAD',
         url: absolute,

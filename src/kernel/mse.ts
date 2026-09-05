@@ -104,6 +104,12 @@ export function createMseController(options: MseControllerOptions): MseControlle
   });
 
   let element: HTMLMediaElement | null = null;
+  /** sourceopen has fired for the current MediaSource. */
+  let opened = false;
+  /** createSourceBuffer requests that arrived before sourceopen. */
+  const pendingCreates: Array<{ sbId: SbId; codecs: string }> = [];
+  /** The createSourceBuffer effect handler, hoisted so sourceopen can flush the pending requests. */
+  let createSourceBuffer: (effect: { sbId: SbId; codecs: string }) => void = () => {};
   let mediaSource: MediaSource | null = null;
   let managed = false;
   const buffers = new Map<SbId, TrackedBuffer>();
@@ -278,6 +284,7 @@ export function createMseController(options: MseControllerOptions): MseControlle
     const ms: MediaSource = Managed !== undefined ? new Managed() : new MediaSource();
     element = el;
     mediaSource = ms;
+    opened = false;
 
     listen(ms, 'sourceopen', () => {
       if (objectUrl !== null) {
@@ -287,7 +294,11 @@ export function createMseController(options: MseControllerOptions): MseControlle
         objectUrl = null;
         liveObjectUrls -= 1;
       }
+      opened = true;
       absorb({ type: 'MEDIASOURCE_OPEN' });
+      // Create requests that arrived while the source was still opening: a
+      // load right after a reset can parse its manifest before sourceopen.
+      for (const effect of pendingCreates.splice(0)) createSourceBuffer(effect);
     });
     listen(ms, 'sourceclose', () => {
       absorb({ type: 'MEDIASOURCE_CLOSED' });
@@ -338,6 +349,7 @@ export function createMseController(options: MseControllerOptions): MseControlle
     buffers.clear();
     appendChains.clear();
     deferred.clear();
+    pendingCreates.length = 0;
 
     if (ms !== null && ms.readyState === 'open') {
       try {
@@ -417,8 +429,13 @@ export function createMseController(options: MseControllerOptions): MseControlle
   }
 
   function registerHandlers(runner: EffectRunner): void {
-    runner.register('createSourceBuffer', (effect) => {
+    createSourceBuffer = (effect) => {
       const ms = mediaSource;
+      if (ms !== null && !opened && ms.readyState === 'closed') {
+        // Attached, sourceopen still pending: the request waits for it.
+        pendingCreates.push(effect);
+        return;
+      }
       if (ms === null || ms.readyState !== 'open') {
         absorb({
           type: 'SOURCEBUFFER_ERROR',
@@ -431,20 +448,35 @@ export function createMseController(options: MseControllerOptions): MseControlle
             context: { readyState: readyState() },
           },
         });
-        return undefined;
+        return;
       }
       if (buffers.has(effect.sbId) || deferred.has(effect.sbId)) {
         // Already created or awaiting its first bytes; a duplicate request
         // is absorbed, not doubled.
-        return undefined;
+        return;
       }
       if (options.inferType !== undefined && !declaresCodecs(effect.codecs)) {
         // Chrome refuses a bare `video/mp4`; the first segment says what
         // it holds. The buffer opens on that append, typed from the bytes.
         deferred.set(effect.sbId, effect.codecs);
-        return undefined;
+        return;
       }
       open(effect.sbId, effect.codecs);
+      return;
+    };
+    runner.register('createSourceBuffer', (effect) => {
+      createSourceBuffer(effect);
+      return undefined;
+    });
+
+    runner.register('resetSource', () => {
+      // UNLOAD: the source and its buffers go, and the element gets a fresh
+      // MediaSource so the next load starts from nothing, on a reset
+      // element (currentTime 0, no ranges).
+      const el = element;
+      if (el === null) return undefined;
+      detach();
+      attach(el);
       return undefined;
     });
 

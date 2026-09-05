@@ -1,12 +1,8 @@
-import { defineConfig } from 'rolldown';
+import { defineConfig, rolldown } from 'rolldown';
 
-// CDN convenience bundles only; the primary artifact is the unbundled ESM in
-// dist/. One bundle per preset, each a single callable global (see
-// cdn/global.ts). `mattebox.min.js` is the full preset and keeps its path;
-// the lighter presets sit beside it as `mattebox.<preset>.min.js`. The
-// ts-transmux Worker is built once as a sibling file with the name
-// cdn/worker.ts resolves relative to the script URL, so a page that loads a
-// -ts bundle and the Worker from the same directory needs no configuration.
+// CDN bundles: one minified IIFE per preset behind the `mattebox` global.
+// The transmux Worker is compiled first and embedded as a string; cdn/worker.ts
+// starts it from a blob URL, so a page loads one file.
 const PRESETS = [
   'kernel',
   'hls',
@@ -21,21 +17,46 @@ const PRESETS = [
   'dual-ts-drm',
 ];
 
-// One target, the package default: ES2015 syntax, the same floor and the
-// same lowering as dist/es2015 (see rolldown.dist.config.mjs).
+// The package's default target, the same as dist/es2015.
 const TARGET = 'es2015';
+
+const WORKER_MODULE = 'virtual:transmux-worker';
+
+let workerSource;
+/** The Worker's minified source, compiled once per build. */
+function transmuxWorkerSource() {
+  workerSource ??= (async () => {
+    const build = await rolldown({
+      input: 'src/containers/ts-transmux/transmux.worker.ts',
+      transform: { target: TARGET },
+    });
+    const { output } = await build.generate({ format: 'iife', minify: true });
+    await build.close();
+    return output[0].code;
+  })();
+  return workerSource;
+}
+
+/** `virtual:transmux-worker`: the Worker's source as a default export. */
+const embedTransmuxWorker = {
+  name: 'embed-transmux-worker',
+  resolveId(id) {
+    return id === WORKER_MODULE ? `\0${WORKER_MODULE}` : null;
+  },
+  async load(id) {
+    if (id !== `\0${WORKER_MODULE}`) return null;
+    return `export default ${JSON.stringify(await transmuxWorkerSource())};`;
+  },
+};
 
 function bundle(input, file) {
   return {
     input,
+    plugins: [embedTransmuxWorker],
     output: { file, format: 'iife', name: 'mattebox', exports: 'default', minify: true },
     transform: {
       target: TARGET,
-      // The runner's `new URL('./transmux.worker.js', import.meta.url)`
-      // branch is unreachable in a bundle: cdn/worker.ts always supplies
-      // workerUrl when the script URL is known, the CMAF-only presets never
-      // carry the runner, and the runner falls back to the main thread
-      // otherwise. Replace `import.meta` with `{}` to keep the IIFE valid.
+      // An IIFE has no `import.meta`; cdn/worker.ts supplies the Worker URL.
       define: { 'import.meta': '{}' },
     },
   };
@@ -44,9 +65,4 @@ function bundle(input, file) {
 export default defineConfig([
   bundle('cdn/full.ts', 'dist/cdn/mattebox.min.js'),
   ...PRESETS.map((name) => bundle(`cdn/${name}.ts`, `dist/cdn/mattebox.${name}.min.js`)),
-  {
-    input: 'src/containers/ts-transmux/transmux.worker.ts',
-    output: { file: 'dist/cdn/transmux.worker.js', format: 'iife', minify: true },
-    transform: { target: TARGET },
-  },
 ]);

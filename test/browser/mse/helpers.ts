@@ -134,3 +134,46 @@ export async function createBufferAndWait(stack: Stack, sbId: string, type: stri
     `source buffer for ${type}`,
   );
 }
+
+/**
+ * A one-segment fMP4 HLS presentation served from memory over the committed
+ * fixture segments. `fetchImpl` answers the two playlists at `origin` and
+ * passes everything else to the network, so an engine can load and play
+ * without the generated E2E corpus.
+ */
+export function inMemoryHls(profile: VideoProfile, origin: string) {
+  const segment = (name: string) =>
+    new URL(`../../fixtures/segments/${name}`, import.meta.url).href;
+  const codecs = /codecs="([^"]+)"/.exec(profile.type)?.[1] ?? 'avc1.42E01E';
+  const master = `#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-STREAM-INF:BANDWIDTH=500000,CODECS="${codecs}",RESOLUTION=320x180
+media.m3u8
+`;
+  const media = `#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-TARGETDURATION:4
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-PLAYLIST-TYPE:VOD
+#EXT-X-MAP:URI="${segment(profile.init)}"
+#EXTINF:4.0,
+${segment(profile.seg)}
+#EXT-X-ENDLIST
+`;
+  const playlist = (body: string) =>
+    Promise.resolve(
+      new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': 'application/vnd.apple.mpegurl' },
+      }),
+    );
+  return {
+    url: `${origin}/master.m3u8`,
+    fetchImpl(url: string, init: RequestInit): Promise<Response> {
+      if (url === `${origin}/master.m3u8`) return playlist(master);
+      if (url === `${origin}/media.m3u8`) return playlist(media);
+      return fetch(url, init);
+    },
+  };
+}

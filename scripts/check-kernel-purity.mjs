@@ -1,6 +1,4 @@
-// The kernel core must be free of browser APIs. If a DOM reference sneaks
-// in, the ability to test every interleaving without a browser is lost for
-// good. And layer 0 must stay protocol-agnostic: two parsers, one engine.
+// No browser APIs in the pure kernel core, no protocol names anywhere in the kernel.
 import { globSync, readFileSync } from 'node:fs';
 import { fail } from './lib/fail.mjs';
 

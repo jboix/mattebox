@@ -329,13 +329,19 @@ function reduceCommand(
         start: 0,
         end: Number.POSITIVE_INFINITY,
       }));
+      // The buffers and the media sink go with the source: the next load
+      // starts on a fresh sink, as the reset state assumes. Without this
+      // the controller keeps the old buffers and absorbs the next load's
+      // create requests as duplicates, so the reducer never learns of them
+      // and refetches the init segment without end.
+      const reset: Effect[] = phase === 'attaching' ? [{ kind: 'resetSource' }] : [];
       return [
         {
           ...fresh,
           lifecycle: { phase },
           scheduling: { ...fresh.scheduling, tokenSeq: state.scheduling.tokenSeq },
         },
-        [...aborts, ...clears],
+        [...aborts, ...clears, ...reset],
       ];
     }
 

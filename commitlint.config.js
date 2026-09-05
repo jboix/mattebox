@@ -1,7 +1,5 @@
-// Conventional Commits, enforced locally by the commit-msg hook and in CI on
-// every pull request. semantic-release reads the same history, so the type
-// is the version bump. A body is required: the subject is for the changelog,
-// the body is where the reasoning lives.
+// Conventional Commits: the type drives the semantic-release version bump.
+// A body is required.
 export default {
   extends: ['@commitlint/config-conventional'],
   rules: {

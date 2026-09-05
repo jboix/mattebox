@@ -40,10 +40,9 @@ The bundles are the same ES2015 build as the default ESM, minified.
 </script>
 ```
 
-The package ships `dist/cdn/transmux.worker.js` beside the bundles. Every
-bundle that carries the transmuxer (`-ts` and `full`) points both
-`mattebox.tsTransmux()` and the preset's own instance at that file, so the
-Worker works from a CDN with no configuration.
+Every bundle that carries the transmuxer (`-ts` and `full`) has the Worker's
+code inside and starts it from a blob URL, for `mattebox.tsTransmux()` and
+the preset's own instance alike, so one file is all a page loads.
 [Chapter 14](14-cdn.md) covers the script tag in detail: versions, integrity
 hashes, the ESM form, and hosting the Worker elsewhere.
 

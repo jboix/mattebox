@@ -45,7 +45,7 @@ export const baseFactories = {
   textWebvttSegmented,
   cmafTiming,
 };
-/** The TS tier without the transmuxer itself: cdn/full.ts and the -ts entries wire that one to the Worker. */
+/** The TS tier minus ts-transmux, which cdn/worker.ts adds with the embedded Worker. */
 export const tsFactories = { packedAudio, nalScan, textCea608, metaId3 };
 export const drmFactories = { emeCore, emeCenc, emeFairplay };
 export const accessoryFactories = { mp4Box, codecProbe, cmcd, thumbnails };

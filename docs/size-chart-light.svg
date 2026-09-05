@@ -3,10 +3,10 @@
   <text x="44" y="60" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#111114">Adaptive streaming engine size</text>
   <text x="44" y="98" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="22" fill="#6b6b74">min+gzip · KB · each engine's compatibility build (lower is better)</text>
   <text x="44" y="176" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#111114">mattebox</text>
-  <text x="44" y="200" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v0.1.0</text>
+  <text x="44" y="200" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">main</text>
   <rect x="290" y="150" width="610" height="54" fill="#f0f0f3"/>
-  <rect x="290" y="150" width="105.3" height="54" fill="#e8930c"/>
-  <text x="1056" y="186" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="30" font-weight="700" fill="#111114">51.8 KB</text>
+  <rect x="290" y="150" width="104.9" height="54" fill="#e8930c"/>
+  <text x="1056" y="186" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="30" font-weight="700" fill="#111114">51.6 KB</text>
   <text x="44" y="260" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">hls.js</text>
   <text x="44" y="284" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">v1.7.2</text>
   <rect x="290" y="234" width="610" height="54" fill="#f0f0f3"/>

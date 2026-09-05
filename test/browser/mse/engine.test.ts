@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Stage } from '../../../src/index.js';
 import { mattebox } from '../../../src/index.js';
-import { waitFor } from './helpers.js';
+import hlsCmaf from '../../../src/protocols/hls-cmaf/index.js';
+import { inMemoryHls, pickVideoProfile, waitFor } from './helpers.js';
 
 function video(): HTMLVideoElement {
   const el = document.createElement('video');
@@ -284,4 +285,63 @@ describe('13. modularity regression', () => {
       expect(engine.media).toBeNull();
     });
   }
+});
+
+describe('reload', () => {
+  const profile = pickVideoProfile();
+
+  it.runIf(profile !== null)(
+    'a second load replaces the source and plays it',
+    async () => {
+      // UNLOAD must take the MediaSource with it. Left in place, the next
+      // load's buffer requests are absorbed as duplicates, the reducer never
+      // learns of the buffer, and it refetches the init segment forever.
+      if (profile === null) throw new Error('unreachable');
+      const first = inMemoryHls(profile, 'https://first.test');
+      const second = inMemoryHls(profile, 'https://second.test');
+      const el = video();
+      document.body.appendChild(el);
+      const engine = mattebox({
+        stages: [hlsCmaf()],
+        transport: {
+          fetchImpl: (url, init) =>
+            url.startsWith('https://second.test')
+              ? second.fetchImpl(url, init)
+              : first.fetchImpl(url, init),
+        },
+      });
+      const errors: unknown[] = [];
+      engine.on('error', (error) => errors.push(error));
+      const bufferedEnd = () => {
+        const { buffered } = el;
+        return buffered.length > 0 ? buffered.end(buffered.length - 1) : 0;
+      };
+      try {
+        await engine.attach(el);
+        engine.load(first.url);
+        await waitFor(() => bufferedEnd() > 1, 'first source buffered', 20_000);
+
+        engine.load(second.url);
+        // The element restarts from nothing on a fresh MediaSource.
+        await waitFor(() => bufferedEnd() === 0 && el.currentTime === 0, 'element reset', 5_000);
+        await waitFor(() => bufferedEnd() > 1, 'second source buffered', 20_000);
+
+        expect(engine.error).toBeNull();
+        expect(errors).toEqual([]);
+        const initFetches = engine.stats
+          .trace()
+          .filter(
+            (e) =>
+              e.msg.type === 'SEGMENT_LOADED' && e.msg.trackId === 'video-main' && e.msg.seq < 0,
+          ).length;
+        // One init per load, not a loop. The media playlist also loads at
+        // sequence -1, hence the track filter.
+        expect(initFetches).toBe(2);
+      } finally {
+        await engine.detach();
+        el.remove();
+      }
+    },
+    60_000,
+  );
 });

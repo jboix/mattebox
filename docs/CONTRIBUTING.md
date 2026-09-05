@@ -15,20 +15,20 @@ pnpm run verify    # everything CI checks
 
 `verify` runs:
 
-| Step                          | Tool                            | Checks                                                             |
-| ----------------------------- | ------------------------------- | ------------------------------------------------------------------ |
-| `pnpm run lint`               | Biome                           | Formatting and lint rules                                          |
-| `pnpm run docs:check`         | remark                          | Markdown formatting, broken links and anchors                      |
-| `pnpm run typecheck`          | tsc                             | Type errors                                                        |
-| `pnpm run depcruise`          | dependency-cruiser              | Layer boundaries, cycles, zero runtime deps                        |
-| `pnpm run knip`               | knip                            | Dead code, unused exports and dependencies                         |
-| `pnpm run check:purity`       | scripts/check-kernel-purity.mjs | Nothing impure in the reducer                                      |
-| `pnpm run test`               | Vitest                          | Node tests, and browser tests in real browsers                     |
-| `pnpm run build`              | tsc + Rolldown                  | Modern ESM, types, ES2015 ESM, CDN bundles                         |
-| `pnpm run check:emit`         | scripts/check-emit.mjs          | Banned TS constructs, bare import specifiers                       |
-| `pnpm run check:side-effects` | scripts/side-effect-audit.mjs   | Import-time registrations                                          |
-| `pnpm exec size-limit`        | size-limit                      | One budget: `mattebox.min.js` plus its Worker under 60 kB min+gzip |
-| `pnpm run check:package`      | scripts/check-package.mjs       | publint and attw on every entry point                              |
+| Step                          | Tool                            | Checks                                             |
+| ----------------------------- | ------------------------------- | -------------------------------------------------- |
+| `pnpm run lint`               | Biome                           | Formatting and lint rules                          |
+| `pnpm run docs:check`         | remark                          | Markdown formatting, broken links and anchors      |
+| `pnpm run typecheck`          | tsc                             | Type errors                                        |
+| `pnpm run depcruise`          | dependency-cruiser              | Layer boundaries, cycles, zero runtime deps        |
+| `pnpm run knip`               | knip                            | Dead code, unused exports and dependencies         |
+| `pnpm run check:purity`       | scripts/check-kernel-purity.mjs | Nothing impure in the reducer                      |
+| `pnpm run test`               | Vitest                          | Node tests, and browser tests in real browsers     |
+| `pnpm run build`              | tsc + Rolldown                  | Modern ESM, types, ES2015 ESM, CDN bundles         |
+| `pnpm run check:emit`         | scripts/check-emit.mjs          | Banned TS constructs, bare import specifiers       |
+| `pnpm run check:side-effects` | scripts/side-effect-audit.mjs   | Import-time registrations                          |
+| `pnpm exec size-limit`        | size-limit                      | One budget: `mattebox.min.js` under 60 kB min+gzip |
+| `pnpm run check:package`      | scripts/check-package.mjs       | publint and attw on every entry point              |
 
 `pnpm run test:e2e` runs the Playwright end-to-end tests. CI runs them too,
 `verify` does not.

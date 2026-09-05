@@ -1,6 +1,4 @@
-// Fails the build on any banned TypeScript construct's footprint in the
-// modern output. Checks emitted output rather than an AST rule per feature,
-// so it catches the actual harm. Run after `pnpm build`.
+// Banned TypeScript helpers and bare imports in the built output. Needs `pnpm build`.
 import { globSync, readFileSync } from 'node:fs';
 import { fail } from './lib/fail.mjs';
 

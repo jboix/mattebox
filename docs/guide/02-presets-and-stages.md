@@ -148,12 +148,12 @@ presets load `eme-core` with no license server. Set one with
 
 ## Size per preset
 
-Every preset, min+gzip. The `-ts` presets and `full` include the transmux
-Worker.
+Every preset, min+gzip, one file each. The `-ts` presets and `full` carry
+the transmux Worker inside.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../preset-chart-dark.svg">
-  <img alt="Bundle size of every Mattebox preset, min+gzip. kernel 17.7 KB, hls 29.7 KB, dash 29.3 KB, dual 34.1 KB, dual-ts-drm with its worker 49.3 KB, full with its worker 51.8 KB." src="../preset-chart-light.svg">
+  <img alt="Bundle size of every Mattebox preset, min+gzip, one file each. kernel 17.9 KB, hls 29.9 KB, dash 29.5 KB, dual 34.3 KB, dual-ts-drm 49.1 KB, full 51.6 KB." src="../preset-chart-light.svg">
 </picture>
 
 ## Kernel config

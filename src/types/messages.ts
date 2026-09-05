@@ -185,6 +185,8 @@ export type Effect =
       readonly timeout?: number;
     }
   | { readonly kind: 'abort'; readonly token: string }
+  /** Drops every SourceBuffer and the MediaSource, and attaches a fresh MediaSource to the element. */
+  | { readonly kind: 'resetSource' }
   | { readonly kind: 'createSourceBuffer'; readonly sbId: string; readonly codecs: string }
   | {
       readonly kind: 'append';

@@ -84,7 +84,14 @@ describe('lifecycle', () => {
     expect(next.lifecycle.phase).toBe('attaching');
     expect(next.presentation).toBeNull();
     expect(next.scheduling.tokenSeq).toBe(state.scheduling.tokenSeq);
-    expect(fx).toEqual([{ kind: 'abort', token: 't1' }]);
+    // The MediaSource goes with the source, so the next load starts fresh.
+    expect(fx).toEqual([{ kind: 'abort', token: 't1' }, { kind: 'resetSource' }]);
+  });
+
+  it('UNLOAD while idle resets nothing on the element', () => {
+    const [next, fx] = reduce(frozen(initialState()), { type: 'UNLOAD' });
+    expect(next.lifecycle.phase).toBe('idle');
+    expect(fx).toEqual([]);
   });
 });
 

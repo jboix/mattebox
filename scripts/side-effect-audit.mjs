@@ -1,6 +1,4 @@
-// `sideEffects: false` is a promise. Import every built entry module in
-// isolation and assert that doing so registers nothing: no registry global,
-// no new globals at all. Run after `pnpm build`.
+// Importing every built entry module must register nothing. Needs `pnpm build`.
 import { globSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { fail } from './lib/fail.mjs';

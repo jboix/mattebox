@@ -1,18 +1,8 @@
 #!/usr/bin/env node
-// Renders two charts. docs/size-chart-{dark,light}.svg: the full preset next
-// to the other adaptive-streaming players, min+gzip. docs/preset-chart-
-// {dark,light}.svg: every preset of the matrix against each other, so the
-// cost of a line or a tier is visible.
-//
-// Mattebox rows are the built script-tag bundles in dist/cdn, measured here
-// min+gzip like everything else on the chart, and the MPEG-TS tier and the
-// full stack include the transmux Worker file that ships beside them, since
-// a page loads both. Like for like: every row is the engine's compatibility
-// build, the one that reaches old TVs. Mattebox's default is ES2015; hls.js's
-// and Shaka's are ES5; video.js publishes one build; dash.js has a legacy
-// build beside its modern default. Every other player is measured from its
-// latest npm tarball, downloaded at run time; nothing here is typed in by
-// hand.
+// Renders docs/size-chart-{dark,light}.svg (the full preset against the other
+// players) and docs/preset-chart-{dark,light}.svg (every preset). Mattebox rows
+// are the built dist/cdn bundles; the other players are their latest npm
+// tarballs, fetched at run time. Everything is min+gzip, compatibility builds.
 //
 //   pnpm run build && pnpm run size-chart
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -23,51 +13,42 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'docs');
 
-/** The Mattebox rows: the cdn bundle (with the Worker when it carries the transmuxer) and the label the chart shows. */
-// One row: the full preset. The claim is that the engine with every stage
-// loaded is still a fraction of the others; the lighter presets are a
-// convenience, not the argument.
-const MATTEBOX = [{ bundle: 'mattebox.min.js', worker: true, label: 'mattebox', detail: '' }];
+/** The Mattebox rows: the cdn bundle and the label the chart shows. */
+const MATTEBOX = [{ bundle: 'mattebox.min.js', label: 'mattebox', detail: '' }];
 
 /** The preset chart rows: cdn bundle, the preset's name, and what the row adds. */
 const PRESETS = [
-  { bundle: 'mattebox.kernel.min.js', worker: false, label: 'kernel', detail: 'the engine alone' },
-  { bundle: 'mattebox.hls.min.js', worker: false, label: 'hls', detail: 'HLS line + base' },
-  { bundle: 'mattebox.hls-drm.min.js', worker: false, label: 'hls-drm', detail: '+ EME' },
-  { bundle: 'mattebox.hls-ts.min.js', worker: true, label: 'hls-ts', detail: '+ MPEG-TS' },
+  { bundle: 'mattebox.kernel.min.js', label: 'kernel', detail: 'the engine alone' },
+  { bundle: 'mattebox.hls.min.js', label: 'hls', detail: 'HLS line + base' },
+  { bundle: 'mattebox.hls-drm.min.js', label: 'hls-drm', detail: '+ EME' },
+  { bundle: 'mattebox.hls-ts.min.js', label: 'hls-ts', detail: '+ MPEG-TS' },
   {
     bundle: 'mattebox.hls-ts-drm.min.js',
-    worker: true,
     label: 'hls-ts-drm',
     detail: '+ MPEG-TS + EME',
   },
-  { bundle: 'mattebox.dash.min.js', worker: false, label: 'dash', detail: 'DASH line + base' },
-  { bundle: 'mattebox.dash-drm.min.js', worker: false, label: 'dash-drm', detail: '+ EME' },
-  { bundle: 'mattebox.dual.min.js', worker: false, label: 'dual', detail: 'both lines + base' },
-  { bundle: 'mattebox.dual-drm.min.js', worker: false, label: 'dual-drm', detail: '+ EME' },
-  { bundle: 'mattebox.dual-ts.min.js', worker: true, label: 'dual-ts', detail: '+ MPEG-TS' },
+  { bundle: 'mattebox.dash.min.js', label: 'dash', detail: 'DASH line + base' },
+  { bundle: 'mattebox.dash-drm.min.js', label: 'dash-drm', detail: '+ EME' },
+  { bundle: 'mattebox.dual.min.js', label: 'dual', detail: 'both lines + base' },
+  { bundle: 'mattebox.dual-drm.min.js', label: 'dual-drm', detail: '+ EME' },
+  { bundle: 'mattebox.dual-ts.min.js', label: 'dual-ts', detail: '+ MPEG-TS' },
   {
     bundle: 'mattebox.dual-ts-drm.min.js',
-    worker: true,
     label: 'dual-ts-drm',
     detail: '+ MPEG-TS + EME',
   },
   {
     bundle: 'mattebox.min.js',
-    worker: true,
     label: 'full',
     detail: '+ accessories',
     highlight: true,
   },
 ];
 
-/** The other players: npm package and the browser bundle inside its tarball. The engine chart shows name and version only. */
+/** The other players: npm package and the browser bundle inside its tarball. */
 const OTHERS = [
   {
-    // VHS is a video.js plugin: its own bundle requires video.js and cannot
-    // run alone, and since video.js 7 the default video.js build ships with
-    // VHS inside. What a VHS user actually loads is video.js, so that is the
-    // bar, and it says so.
+    // VHS ships inside video.js and cannot run alone, so video.js is the bar.
     pkg: 'video.js',
     label: 'video.js + vhs',
     file: 'package/dist/video.min.js',
@@ -92,28 +73,23 @@ const OTHERS = [
 
 const CDN = join(ROOT, 'dist', 'cdn');
 
-/** min+gzip bytes of one built bundle, plus the Worker beside it when the row carries the transmuxer. */
-function bundleBytes(bundle, worker) {
-  const files = [bundle, ...(worker ? ['transmux.worker.js'] : [])];
-  return files.reduce((sum, file) => {
-    let bytes;
-    try {
-      bytes = readFileSync(join(CDN, file));
-    } catch {
-      throw new Error(`${file} is not built; run \`pnpm build\` first`);
-    }
-    return sum + gzipSync(bytes, { level: 9 }).length;
-  }, 0);
+/** min+gzip bytes of one built bundle. */
+function bundleBytes(bundle) {
+  let bytes;
+  try {
+    bytes = readFileSync(join(CDN, bundle));
+  } catch {
+    throw new Error(`${bundle} is not built; run \`pnpm build\` first`);
+  }
+  return gzipSync(bytes, { level: 9 }).length;
 }
 
-const VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
-
 function matteboxRows(specs, highlightAll) {
-  return specs.map(({ bundle, worker, label, detail, highlight }) => ({
+  return specs.map(({ bundle, label, detail, highlight }) => ({
     label,
-    version: VERSION,
+    version: 'main',
     detail,
-    bytes: bundleBytes(bundle, worker),
+    bytes: bundleBytes(bundle),
     highlight: highlightAll || highlight === true,
   }));
 }
@@ -151,7 +127,7 @@ async function otherSizes() {
     const meta = await (await fetch(`https://registry.npmjs.org/${pkg}/latest`)).json();
     const tgz = Buffer.from(await (await fetch(meta.dist.tarball)).arrayBuffer());
     const bytes = gzipSync(tarEntry(gunzipSync(tgz), file), { level: 9 }).length;
-    rows.push({ label, version: meta.version, detail, bytes, highlight: false });
+    rows.push({ label, version: `v${meta.version}`, detail, bytes, highlight: false });
   }
   return rows;
 }
@@ -204,7 +180,7 @@ function render(rows, theme, { title, subtitle, ariaLabel, tick }) {
       const valueSize = row.highlight ? 30 : 26;
       return `
   <text x="44" y="${y + 26}" font-family="${font}" font-size="26" font-weight="${nameWeight}" fill="${t.text}">${row.label}</text>
-  <text x="44" y="${y + 50}" font-family="${mono}" font-size="15" fill="${t.muted}">v${row.version}${row.detail === '' ? '' : ` · ${row.detail}`}</text>
+  <text x="44" y="${y + 50}" font-family="${mono}" font-size="15" fill="${t.muted}">${row.version}${row.detail === '' ? '' : ` · ${row.detail}`}</text>
   <rect x="${left}" y="${y}" width="${right - left}" height="${barH}" fill="${t.track}"/>
   <rect x="${left}" y="${y}" width="${w.toFixed(1)}" height="${barH}" fill="${fill}"/>
   <text x="${width - 44}" y="${y + 36}" text-anchor="end" font-family="${mono}" font-size="${valueSize}" font-weight="${valueWeight}" fill="${row.highlight ? t.text : t.muted}">${fmt(row.bytes)}</text>`;
@@ -244,7 +220,7 @@ const charts = [
     file: 'preset-chart',
     rows: matteboxRows(PRESETS, false),
     title: 'Mattebox presets',
-    subtitle: 'min+gzip · KB · a protocol line, the MPEG-TS tier (with its worker), the DRM tier',
+    subtitle: 'min+gzip · KB · a protocol line, the MPEG-TS tier (worker inside), the DRM tier',
     ariaLabel: 'Bundle size of every Mattebox preset, min+gzip',
     tick: 10,
   },
@@ -258,7 +234,7 @@ for (const chart of charts) {
   }
   for (const row of chart.rows) {
     console.log(
-      `${row.label.padEnd(14)} v${row.version.padEnd(8)} ${fmt(row.bytes).padStart(10)}  (${row.detail})`,
+      `${row.label.padEnd(14)} ${row.version.padEnd(9)} ${fmt(row.bytes).padStart(10)}  (${row.detail})`,
     );
   }
 }

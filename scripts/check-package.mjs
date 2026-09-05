@@ -1,11 +1,6 @@
-// publint, then attw against the packed tarball. attw cannot expand the
-// wildcard exports (`mattebox/stages/*` and friends), so every entry point
-// is passed by name. The list comes from src: a directory with an index.ts
-// under a family is an entry point, and its build output must exist, so a
-// stage that lost its index fails here instead of dropping out of the check.
-//
-// Both tools run through `pnpm exec` below, which knip cannot see, so they
-// are listed in knip.json's `ignoreDependencies`.
+// publint and attw on the packed tarball. attw cannot expand wildcard exports,
+// so every entry point (a directory with an index.ts under a family) is passed
+// by name, and its build output must exist.
 import { spawnSync } from 'node:child_process';
 import { existsSync, globSync } from 'node:fs';
 import { fail } from './lib/fail.mjs';

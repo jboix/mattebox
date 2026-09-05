@@ -1,6 +1,4 @@
-// A remark plugin for `pnpm run docs:check`: warns when a file's formatted
-// output differs from its source, so `--frail` fails the run until
-// `pnpm run docs:format` has been run.
+// Warns when a file differs from its formatted output; `--frail` makes that a failure.
 export default function remarkCheckFormatted() {
   return (tree, file) => {
     if (this.stringify(tree, file) !== String(file)) {

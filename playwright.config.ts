@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// Tier-4 playback E2E only — tiers 1–3 run under Vitest (see vitest.config.ts).
+// Playback E2E. The unit and browser tiers run under Vitest.
 export default defineConfig({
   testDir: 'test/e2e',
   webServer: {
@@ -12,9 +12,7 @@ export default defineConfig({
   },
   use: { baseURL: 'http://localhost:4173' },
   fullyParallel: true,
-  // Real-time playback tests are decode-bound: parallel browsers miss
-  // startup and ended deadlines instead of saving wall clock. One worker
-  // keeps the 5-second startup assertion honest.
+  // One worker: parallel browsers miss real-time deadlines.
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

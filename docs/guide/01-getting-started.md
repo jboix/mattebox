@@ -77,6 +77,8 @@ preset and stage factories. [Chapter 14](14-cdn.md) has the script tag.
 
 Unload stops fetching and clears the buffers. Detach removes the engine from
 the element and runs every stage's teardown. Both are safe to call twice.
+Loading another URL replaces the current source, so a player that switches
+streams only ever calls `load`.
 
 ```ts
 engine.unload();
