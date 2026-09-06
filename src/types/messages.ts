@@ -141,7 +141,17 @@ export type Fact =
     }
   | { readonly type: 'SEEKING'; readonly to: number }
   | { readonly type: 'SEEKED'; readonly at: number }
-  | { readonly type: 'STALLED'; readonly at: number }
+  | {
+      readonly type: 'STALLED';
+      readonly at: number;
+      /**
+       * What the element holds when it stalls. Before the first
+       * timeupdate the kernel's buffered view is empty, and a stall at the
+       * start position with a hole before the first keyframe needs this to
+       * be jumped.
+       */
+      readonly buffered?: TimeRangesSnapshot;
+    }
   | {
       readonly type: 'ENCRYPTED';
       readonly initDataType: string;

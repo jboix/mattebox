@@ -1050,7 +1050,17 @@ function reduceFact(
     }
 
     case 'STALLED': {
-      return [state, [{ kind: 'emit', event: 'playback:stalled', payload: { at: msg.at } }]];
+      // A stall before the first timeupdate (play pressed at a position
+      // with no data, say) is the first the kernel hears of what the
+      // element holds. Refresh the buffered view so recovery can act on it.
+      const stalled: KernelState =
+        msg.buffered !== undefined
+          ? {
+              ...state,
+              playback: { ...state.playback, currentTime: msg.at, buffered: msg.buffered },
+            }
+          : state;
+      return [stalled, [{ kind: 'emit', event: 'playback:stalled', payload: { at: msg.at } }]];
     }
 
     case 'ENCRYPTED': {

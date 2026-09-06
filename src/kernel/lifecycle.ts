@@ -134,7 +134,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       absorb({ type: 'SEEKED', at: el.currentTime });
     });
     listen(el, 'waiting', () => {
-      absorb({ type: 'STALLED', at: el.currentTime });
+      absorb({ type: 'STALLED', at: el.currentTime, buffered: snapshot(el.buffered) });
     });
     listen(el, 'error', () => {
       deps.onMediaError?.(el);

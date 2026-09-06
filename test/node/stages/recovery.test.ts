@@ -212,6 +212,43 @@ describe('recovery: stalls', () => {
     expect(settled.effects.filter((e) => e.kind === 'seekElement')).toEqual([]);
   });
 
+  it('a seek elsewhere allows the same hole to be jumped again', () => {
+    const state: KernelState = {
+      ...ready(),
+      playback: {
+        currentTime: 3.9,
+        buffered: [
+          { start: 0, end: 4 },
+          { start: 4.6, end: 12 },
+        ],
+        seeking: false,
+      },
+    };
+    let settled = settle(reduce, ...reduce(state, { type: 'STALLED', at: 4 }));
+    expect(settled.effects.some((e) => e.kind === 'seekElement')).toBe(true);
+    // The jump lands: the guard stays. A seek back to 0, then the same
+    // hole again: it is jumped once more.
+    settled = settle(reduce, ...reduce(settled.state, { type: 'SEEKING', to: 4.7 }));
+    settled = settle(reduce, ...reduce(settled.state, { type: 'STALLED', at: 4 }));
+    expect(settled.effects.filter((e) => e.kind === 'seekElement')).toEqual([]);
+    settled = settle(reduce, ...reduce(settled.state, { type: 'SEEKING', to: 0 }));
+    settled = settle(reduce, ...reduce(settled.state, { type: 'STALLED', at: 4 }));
+    const again = settled.effects.find((e) => e.kind === 'seekElement');
+    expect((again as { to: number } | undefined)?.to ?? 0).toBeCloseTo(4.7);
+  });
+
+  it('a hole at the start position, before any timeupdate, is jumped from the stall fact', () => {
+    // The first keyframe of segment 1 sits at 1.44 s, so video buffers as
+    // 1.44-32 while the playhead waits at 0. Playback never began, so the
+    // kernel's buffered view is still empty; the watchdog's fact carries it.
+    const settled = settle(
+      reduce,
+      ...reduce(ready(), { type: 'STALLED', at: 0, buffered: [{ start: 1.44, end: 32 }] }),
+    );
+    const jump = settled.effects.find((e) => e.kind === 'seekElement');
+    expect((jump as { to: number } | undefined)?.to ?? 0).toBeCloseTo(1.54);
+  });
+
   it('a stall with data ahead nudges on the second occurrence only', () => {
     const state: KernelState = {
       ...ready(),

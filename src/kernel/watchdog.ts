@@ -7,6 +7,7 @@
  * playback watcher in videojs-http-streaming; the difference is that the
  * only output here is a fact.
  */
+import type { TimeRangesSnapshot } from '../types/ir.js';
 import type { Fact } from '../types/messages.js';
 
 /** The element members the watchdog reads. A structural subset of HTMLMediaElement, for tests. */
@@ -24,6 +25,23 @@ export interface WatchdogOptions {
   readonly intervalMs?: number;
   /** Consecutive checks without progress before a STALLED fact. */
   readonly stuckChecks?: number;
+}
+
+function snapshot(el: WatchedElement): TimeRangesSnapshot {
+  const out: Array<{ start: number; end: number }> = [];
+  for (let i = 0; i < el.buffered.length; i += 1) {
+    out.push({ start: el.buffered.start(i), end: el.buffered.end(i) });
+  }
+  return out;
+}
+
+/** Whether the playhead sits inside a buffered range. */
+function inBuffered(el: WatchedElement): boolean {
+  const t = el.currentTime;
+  for (let i = 0; i < el.buffered.length; i += 1) {
+    if (el.buffered.start(i) <= t && el.buffered.end(i) > t) return true;
+  }
+  return false;
 }
 
 /** Data the decoder could be consuming: a range at, or just ahead of, the playhead. */
@@ -54,10 +72,27 @@ export function createPlaybackWatchdog(
   const stuckChecks = options.stuckChecks ?? 4;
   let lastTime = -1;
   let stuck = 0;
+  let seekingChecks = 0;
   const timer = timers.setInterval(() => {
-    // Only a playing element that should be moving counts; paused, seeking,
-    // ended, and metadata-less elements reset the streak.
-    if (el.paused || el.seeking || el.ended || el.readyState < 1) {
+    // A seek into a hole never completes: the element waits for data at a
+    // position no append will cover, because the segment's first keyframe
+    // lies past it and MSE dropped the frames before it. Once data sits
+    // just ahead, that pending seek is a stall to report, paused or not.
+    // The bad-seek fix in videojs-http-streaming's playback watcher does
+    // the same from segment appends.
+    if (el.seeking) {
+      seekingChecks += 1;
+      if (seekingChecks % stuckChecks === 0 && !inBuffered(el) && hasDataAhead(el)) {
+        absorb({ type: 'STALLED', at: el.currentTime, buffered: snapshot(el) });
+      }
+      stuck = 0;
+      lastTime = el.currentTime;
+      return;
+    }
+    seekingChecks = 0;
+    // Only a playing element that should be moving counts; paused, ended,
+    // and metadata-less elements reset the streak.
+    if (el.paused || el.ended || el.readyState < 1) {
       stuck = 0;
       lastTime = el.currentTime;
       return;
@@ -71,7 +106,7 @@ export function createPlaybackWatchdog(
     // Underflow with nothing buffered is the scheduler's problem and needs
     // no fact; only a stop with data in reach is a stall worth reporting.
     if (stuck % stuckChecks === 0 && hasDataAhead(el)) {
-      absorb({ type: 'STALLED', at: el.currentTime });
+      absorb({ type: 'STALLED', at: el.currentTime, buffered: snapshot(el) });
     }
   }, intervalMs);
   return () => timers.clearInterval(timer);

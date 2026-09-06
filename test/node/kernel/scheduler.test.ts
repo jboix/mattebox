@@ -116,6 +116,27 @@ describe('a segment whose media ran short of its playlist duration', () => {
   });
 });
 
+describe('a segment whose first keyframe sits past its midpoint', () => {
+  // The packager cut segments off the GOP grid: segment 0 (0-4 s) carries
+  // its first sync sample at 2.88 s, so MSE drops the frames before it and
+  // the append shows up as 2.88-4. Real case: an RTS VOD asset with
+  // keyframes at 1.44 s + 2k on a 2 s segmentation.
+  it('counts as appended once its tail is buffered; the next one is fetched', () => {
+    const result = schedule(input({ tracks: [track({ ranges: [{ start: 2.88, end: 4 }] })] }));
+    expect(result.requests.map((r) => r.seq)).toEqual([1]);
+  });
+
+  it('walks past the following segments that appended continuously', () => {
+    const result = schedule(input({ tracks: [track({ ranges: [{ start: 2.88, end: 12 }] })] }));
+    expect(result.requests.map((r) => r.seq)).toEqual([3]);
+  });
+
+  it('a sliver shorter than the tolerance at the tail still reads as not appended', () => {
+    const result = schedule(input({ tracks: [track({ ranges: [{ start: 3.9, end: 4 }] })] }));
+    expect(result.requests.map((r) => r.seq)).toEqual([0]);
+  });
+});
+
 describe('buffer goal', () => {
   it('emits nothing when the goal is reached', () => {
     const result = schedule(input({ tracks: [track({ ranges: [{ start: 0, end: 32 }] })] }));

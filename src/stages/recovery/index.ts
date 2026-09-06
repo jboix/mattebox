@@ -236,6 +236,15 @@ function createRecoveryReducer(options: RecoveryOptions): SliceReducer<RecoveryS
       return [{ ...state, excluded: rest, renditionFails, readmitPending }, effects];
     }
 
+    if (msg.type === 'SEEKING') {
+      // A seek elsewhere starts over: the hole it may land in is allowed a
+      // jump even if it is the one jumped before. A seek within half a
+      // second of the last jump is that jump landing, and keeps the guard.
+      // The stall ladder is left alone: its own rungs seek too.
+      const own = state.lastJump !== null && Math.abs(msg.to - state.lastJump) <= 0.5;
+      return [own ? state : { ...state, lastJump: null }, []];
+    }
+
     if (msg.type === 'STALLED') {
       const buffered = kernel.playback.buffered;
       const inRange = buffered.find(

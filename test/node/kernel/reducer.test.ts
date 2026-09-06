@@ -513,6 +513,18 @@ describe('remaining facts', () => {
     expect(reduce(state, { type: 'STALLED', at: 4 })[1]).toEqual([
       { kind: 'emit', event: 'playback:stalled', payload: { at: 4 } },
     ]);
+    // A stall carrying the element's ranges refreshes the buffered view,
+    // which otherwise only timeupdate writes.
+    const [stalled] = reduce(state, {
+      type: 'STALLED',
+      at: 0,
+      buffered: [{ start: 1.44, end: 32 }],
+    });
+    expect(stalled.playback).toEqual({
+      currentTime: 0,
+      buffered: [{ start: 1.44, end: 32 }],
+      seeking: false,
+    });
     const initData = new ArrayBuffer(4);
     expect(reduce(state, { type: 'ENCRYPTED', initDataType: 'cenc', initData })[1]).toEqual([
       { kind: 'emit', event: 'drm:encrypted', payload: { initDataType: 'cenc', initData } },

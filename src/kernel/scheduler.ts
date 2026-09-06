@@ -78,13 +78,27 @@ export function bufferedEndFrom(
   return end;
 }
 
-/** The buffered range holding the segment's midpoint, the sign it was appended, or null. */
-function coveringMidpoint(
+/**
+ * The buffered range that shows the segment was appended, or null. Either
+ * its midpoint is buffered, or its tail is: a segment whose first keyframe
+ * sits past its midpoint (a packager that cut segments off the GOP grid)
+ * appends as a range starting at that keyframe, because MSE drops the
+ * leading frames it cannot decode (ISO 23009-1 and the MSE coded frame
+ * processing algorithm, "need random access point flag").
+ */
+function coveringSegment(
   ranges: TimeRangesSnapshot,
   segment: { start: number; duration: number },
+  tolerance: number,
 ): { start: number; end: number } | null {
   const mid = segment.start + segment.duration / 2;
-  return ranges.find((range) => range.start <= mid && range.end > mid) ?? null;
+  const tail = Math.max(mid, segment.start + segment.duration - tolerance);
+  return (
+    ranges.find(
+      (range) =>
+        (range.start <= mid && range.end > mid) || (range.start <= tail && range.end >= tail),
+    ) ?? null
+  );
 }
 
 export function schedule(input: ScheduleInput): ScheduleResult {
@@ -112,12 +126,12 @@ export function schedule(input: ScheduleInput): ScheduleResult {
     // audio was cut early, say) leaves a hole the run cannot cross, inside
     // or right after a segment already appended. Fetching that segment again
     // cannot close the hole and would trip the repeat breaker. A segment
-    // whose midpoint is buffered counts as consumed: the walk moves past it
-    // and past anything buffered beyond the hole, up to the goal, and the
-    // hole itself is recovery's to jump.
+    // whose midpoint or tail is buffered counts as consumed: the walk moves
+    // past it and past anything buffered beyond the hole, up to the goal,
+    // and the hole itself is recovery's to jump.
     let frontier = bufferedEnd;
     while (segment !== null) {
-      const covering = coveringMidpoint(track.ranges, segment);
+      const covering = coveringSegment(track.ranges, segment, tolerance);
       if (covering === null) break;
       frontier = Math.max(frontier, covering.end);
       if (frontier - input.currentTime >= input.bufferGoal) {
