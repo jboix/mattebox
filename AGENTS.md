@@ -70,6 +70,7 @@ pnpm vitest run --project=node
 pnpm vitest run --project=browser     # from Stage 03 onward
 pnpm build && ./scripts/check-emit.sh && ./scripts/side-effect-audit.sh
 pnpm size-limit
+pnpm run check:size-chart              # after pnpm run size-chart, when bundle sizes changed
 ```
 
 ## Handoff report format

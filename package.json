@@ -77,7 +77,7 @@
   "scripts": {
     "prepare": "husky",
     "clean": "rm -rf dist",
-    "verify": "pnpm run lint && pnpm run docs:check && pnpm run typecheck && pnpm run depcruise && pnpm run knip && pnpm run check:purity && pnpm run test && pnpm run build && pnpm run check:emit && pnpm run check:side-effects && pnpm exec size-limit && pnpm run check:package",
+    "verify": "pnpm run lint && pnpm run docs:check && pnpm run typecheck && pnpm run depcruise && pnpm run knip && pnpm run check:purity && pnpm run build && pnpm run check:emit && pnpm run check:side-effects && pnpm exec size-limit && pnpm run check:size-chart && pnpm run check:package && pnpm run test",
     "build": "pnpm run clean && pnpm run build:modern && pnpm run build:types && pnpm run build:es2015 && pnpm run build:cdn",
     "build:modern": "tsc -p tsconfig.build.json",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly",
@@ -95,6 +95,7 @@
     "check:purity": "node scripts/check-kernel-purity.mjs",
     "check:side-effects": "node scripts/side-effect-audit.mjs",
     "check:package": "node scripts/check-package.mjs",
+    "check:size-chart": "pnpm run size-chart && git diff --exit-code --stat -- docs/size-chart-*.svg docs/preset-chart-*.svg",
     "playground": "vite playground",
     "playground:build": "vite build playground --mode pages",
     "size-chart": "node scripts/size-chart.mjs",

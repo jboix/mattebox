@@ -44,6 +44,18 @@ jobs:
         run: pnpm run knip
       - name: Kernel purity
         run: pnpm run check:purity
+      - name: Build
+        run: pnpm run build
+      - name: Emit check
+        run: pnpm run check:emit
+      - name: Side-effect audit
+        run: pnpm run check:side-effects
+      - name: Size budgets
+        run: pnpm exec size-limit
+      - name: Size charts current
+        run: pnpm run check:size-chart
+      - name: Package validation
+        run: pnpm run check:package
       - name: Unit tests (tiers 1 & 2, with coverage)
         run: pnpm run test:node --coverage
       - name: Report Coverage
@@ -53,16 +65,6 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium firefox webkit
       - name: Browser tests (tier 3)
         run: pnpm run test:browser
-      - name: Build
-        run: pnpm run build
-      - name: Emit check
-        run: pnpm run check:emit
-      - name: Side-effect audit
-        run: pnpm run check:side-effects
-      - name: Size budgets
-        run: pnpm exec size-limit
-      - name: Package validation
-        run: pnpm run check:package
 
   commitlint:
     if: github.event_name == 'pull_request'

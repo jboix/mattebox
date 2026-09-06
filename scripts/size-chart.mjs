@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Renders docs/size-chart-{dark,light}.svg (the full preset against the other
 // players) and docs/preset-chart-{dark,light}.svg (every preset). Mattebox rows
-// are the built dist/cdn bundles; the other players are their latest npm
-// tarballs, fetched at run time. Everything is min+gzip, compatibility builds.
+// are the built dist/cdn bundles; the other players are pinned npm versions,
+// fetched at run time. Bump a version here to move its bar. Everything is min+gzip, compatibility builds.
 //
 //   pnpm run build && pnpm run size-chart
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -45,18 +45,20 @@ const PRESETS = [
   },
 ];
 
-/** The other players: npm package and the browser bundle inside its tarball. */
+/** The other players: npm package, pinned version, and the browser bundle inside its tarball. */
 const OTHERS = [
   {
     // VHS ships inside video.js and cannot run alone, so video.js is the bar.
     pkg: 'video.js',
+    version: '8.24.0',
     label: 'video.js + vhs',
     file: 'package/dist/video.min.js',
     detail: '',
   },
-  { pkg: 'hls.js', label: 'hls.js', file: 'package/dist/hls.min.js', detail: '' },
+  { pkg: 'hls.js', version: '1.7.2', label: 'hls.js', file: 'package/dist/hls.min.js', detail: '' },
   {
     pkg: 'shaka-player',
+    version: '5.2.9',
     label: 'shaka player',
     // Shaka's default and most compatible build, ES5; the es2021 file is the opt-in.
     file: 'package/dist/shaka-player.compiled.js',
@@ -64,6 +66,7 @@ const OTHERS = [
   },
   {
     pkg: 'dashjs',
+    version: '5.2.1',
     label: 'dash.js',
     // dash.js's compatibility build; its default export is the modern one.
     file: 'package/dist/legacy/umd/dash.all.min.js',
@@ -123,8 +126,8 @@ function tarEntry(tar, wanted) {
 
 async function otherSizes() {
   const rows = [];
-  for (const { pkg, label, file, detail } of OTHERS) {
-    const meta = await (await fetch(`https://registry.npmjs.org/${pkg}/latest`)).json();
+  for (const { pkg, version, label, file, detail } of OTHERS) {
+    const meta = await (await fetch(`https://registry.npmjs.org/${pkg}/${version}`)).json();
     const tgz = Buffer.from(await (await fetch(meta.dist.tarball)).arrayBuffer());
     const bytes = gzipSync(tarEntry(gunzipSync(tgz), file), { level: 9 }).length;
     rows.push({ label, version: `v${meta.version}`, detail, bytes, highlight: false });
