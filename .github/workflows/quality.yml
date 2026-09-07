@@ -60,7 +60,7 @@ jobs:
         run: pnpm run test:node --coverage
       - name: Report Coverage
         if: github.event_name == 'pull_request'
-        uses: davelosert/vitest-coverage-report-action@8b157684c6a6b259b97d45e72b44242865c0f6a5 # v2
+        uses: davelosert/vitest-coverage-report-action@c4bbc33a89b7ace0e63d35f1f7d4bcee31155a73 # v2
       - name: Install browsers
         uses: ./.github/actions/playwright-browsers
       - name: Browser tests (tier 3)
@@ -110,7 +110,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: pnpm
       - name: Post size-limit deltas as PR comment
-        uses: andresz1/size-limit-action@e7493a72a44b113341c0cf6186ab49c17c4b65c1 # v1
+        uses: andresz1/size-limit-action@94bc357df29c36c8f8d50ea497c3e225c3c95d1d # v1.8.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           package_manager: pnpm
