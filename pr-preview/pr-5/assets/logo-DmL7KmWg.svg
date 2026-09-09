@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400" role="img" aria-labelledby="mattebox-logo-title">
+  <title id="mattebox-logo-title">Mattebox</title>
+  <rect width="400" height="400" rx="48" fill="#f3ede4"/>
+  <!-- light-facing panels -->
+  <polygon points="60,72 340,72 254,144 146,144" fill="#2b2b30"/>
+  <polygon points="48,84 134,156 134,244 48,316" fill="#2b2b30"/>
+  <!-- shadow-facing panels -->
+  <polygon points="60,328 340,328 254,256 146,256" fill="#e0543c"/>
+  <polygon points="352,84 266,156 266,244 352,316" fill="#e0543c"/>
+</svg>
