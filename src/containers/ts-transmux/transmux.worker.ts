@@ -5,13 +5,14 @@
  * output buffer is transferred back, not copied.
  */
 import type { CcPacket } from '../captions.js';
-import { transmux } from './transmux.js';
+import { type TransmuxTracks, transmux } from './transmux.js';
 
 interface Request {
   readonly id: number;
   readonly bytes: ArrayBuffer;
   readonly presentationStart: number;
   readonly wantCaptions: boolean;
+  readonly tracks?: TransmuxTracks;
 }
 
 interface Response {
@@ -19,6 +20,7 @@ interface Response {
   readonly bytes: ArrayBuffer | null;
   readonly notTransportStream: boolean;
   readonly captions: readonly CcPacket[];
+  readonly droppedAudio: boolean;
 }
 
 // `self` is the DedicatedWorkerGlobalScope; typed minimally to avoid pulling
@@ -29,19 +31,32 @@ const scope = self as unknown as {
 };
 
 scope.onmessage = (event) => {
-  const { id, bytes, presentationStart, wantCaptions } = event.data;
-  const result = transmux(new Uint8Array(bytes), presentationStart, wantCaptions);
+  const { id, bytes, presentationStart, wantCaptions, tracks = 'all' } = event.data;
+  const result = transmux(new Uint8Array(bytes), presentationStart, wantCaptions, tracks);
   const out = result.bytes;
   if (out === null) {
     scope.postMessage(
-      { id, bytes: null, notTransportStream: result.notTransportStream, captions: [] },
+      {
+        id,
+        bytes: null,
+        notTransportStream: result.notTransportStream,
+        captions: [],
+        droppedAudio: result.droppedAudio,
+      },
       [],
     );
     return;
   }
   const buffer = new ArrayBuffer(out.byteLength);
   new Uint8Array(buffer).set(out);
-  scope.postMessage({ id, bytes: buffer, notTransportStream: false, captions: result.captions }, [
-    buffer,
-  ]);
+  scope.postMessage(
+    {
+      id,
+      bytes: buffer,
+      notTransportStream: false,
+      captions: result.captions,
+      droppedAudio: result.droppedAudio,
+    },
+    [buffer],
+  );
 };

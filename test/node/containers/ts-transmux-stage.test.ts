@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { walkBoxes } from '../../../src/containers/mp4-box/index.js';
 import tsTransmux from '../../../src/containers/ts-transmux/index.js';
+import type { KernelState } from '../../../src/types/kernel.js';
 import type { SegmentMeta } from '../../../src/types/sink.js';
 import type { StageContext, TransformStep } from '../../../src/types/stage.js';
 
@@ -12,12 +14,30 @@ function fixture(name: string): Uint8Array {
 }
 
 /** A StageContext that records only what this stage touches. */
-function captureContext(): { ctx: StageContext; transforms: TransformStep[] } {
+function captureContext(activeAudio: string | null = null): {
+  ctx: StageContext;
+  transforms: TransformStep[];
+  events: Array<{ event: string; payload: unknown }>;
+} {
   const transforms: TransformStep[] = [];
+  const events: Array<{ event: string; payload: unknown }> = [];
+  const active = new Map<string, string>();
+  if (activeAudio !== null) active.set('audio', activeAudio);
   const ctx = {
     registerTransform: (step: TransformStep) => transforms.push(step),
+    getState: () => ({ tracks: { active, available: [] } }) as unknown as KernelState,
+    emit: (event: string, payload: unknown) => events.push({ event, payload }),
   } as unknown as StageContext;
-  return { ctx, transforms };
+  return { ctx, transforms, events };
+}
+
+function trakCount(data: Uint8Array): number {
+  let count = 0;
+  walkBoxes(data, (box) => {
+    if (box.type === 'trak') count += 1;
+    return true;
+  });
+  return count;
 }
 
 const videoMeta: SegmentMeta = {
@@ -67,6 +87,42 @@ describe('ts-transmux stage', () => {
     const fmp4 = fixture('muxed.fmp4');
     const passed = await step.transform(fmp4, videoMeta);
     expect(passed).toBe(fmp4);
+  });
+
+  it('keeps muxed audio on the video buffer when no audio track is active', async () => {
+    const { ctx, transforms, events } = captureContext();
+    tsTransmux({ disableWorker: true }).install(ctx);
+    const step = transforms[0] as TransformStep;
+    const out = await step.transform(fixture('muxed.m2ts'), videoMeta);
+    expect(trakCount(out)).toBe(2);
+    expect(events).toHaveLength(0);
+  });
+
+  it('drops muxed audio from video segments once a separate audio track is active', async () => {
+    // The SRF layout: every variant muxes AAC, and the master also names an
+    // audio group with its own playlist. The audio rendition owns sb:audio,
+    // so the video buffer, typed with the video codec alone, must not see
+    // the muxed track (Chrome refuses the append) nor play the audio twice.
+    const { ctx, transforms, events } = captureContext('audio0:Deutsch');
+    tsTransmux({ disableWorker: true }).install(ctx);
+    const step = transforms[0] as TransformStep;
+    const first = await step.transform(fixture('muxed.m2ts'), videoMeta);
+    expect(trakCount(first)).toBe(1);
+    // Announced once per composition, not once per segment.
+    await step.transform(fixture('muxed.m2ts'), { ...videoMeta, seq: 1, start: 6 });
+    expect(events).toEqual([
+      { event: 'transmux:dropped-audio', payload: { trackId: 'sb:video', renditionId: 'v' } },
+    ]);
+  });
+
+  it('keeps only the audio stream for an audio segment', async () => {
+    const { ctx, transforms, events } = captureContext('audio0:Deutsch');
+    tsTransmux({ disableWorker: true }).install(ctx);
+    const step = transforms[0] as TransformStep;
+    const audioMeta: SegmentMeta = { ...videoMeta, trackId: 'sb:audio', contentType: 'audio' };
+    const out = await step.transform(fixture('muxed.m2ts'), audioMeta);
+    expect(trakCount(out)).toBe(1);
+    expect(events).toHaveLength(0);
   });
 
   it('leaves text and metadata bytes untouched', async () => {

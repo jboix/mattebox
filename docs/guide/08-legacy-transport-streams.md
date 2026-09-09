@@ -29,6 +29,17 @@ const engine = mattebox({ stages: [hlsCmaf(), tsTransmux(), packedAudio()] });
 Both check each segment and pass CMAF through untouched, so they can stay
 loaded when you have a mix of both.
 
+## Muxed variants beside an audio group
+
+Some packagers mux audio into every variant's segments and still list a
+separate `EXT-X-MEDIA` audio rendition with its own playlist. The audio
+rendition wins: it plays on the audio buffer, and `ts-transmux` drops the
+audio stream from the variant segments so the video buffer only receives the
+codec its type declares. The first time that happens the stage emits
+`transmux:dropped-audio` with the track and rendition ids, so the fact shows
+up in a trace. A variant without a separate audio rendition keeps its muxed
+audio and the video buffer declares both codecs.
+
 ## The Worker
 
 `ts-transmux` runs in a Web Worker so it never blocks the main thread. The

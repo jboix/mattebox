@@ -58,6 +58,25 @@ describe('ts-transmux fMP4 output', () => {
     expect(paths).toContain('mdat');
   });
 
+  it('keeps only the requested elementary stream and reports the dropped audio', () => {
+    const videoOnly = transmux(fixture('muxed.m2ts'), 0, false, 'video');
+    expect(videoOnly.bytes).not.toBeNull();
+    expect(videoOnly.droppedAudio).toBe(true);
+    const videoPaths = boxPaths(videoOnly.bytes as Uint8Array);
+    expect(videoPaths.filter((p) => p === 'moov/trak')).toHaveLength(1);
+    expect(videoPaths.filter((p) => p === 'moof/traf')).toHaveLength(1);
+
+    const audioOnly = transmux(fixture('muxed.m2ts'), 0, false, 'audio');
+    expect(audioOnly.bytes).not.toBeNull();
+    expect(audioOnly.droppedAudio).toBe(false);
+    expect(boxPaths(audioOnly.bytes as Uint8Array).filter((p) => p === 'moov/trak')).toHaveLength(
+      1,
+    );
+
+    // The default keeps both and reports nothing dropped.
+    expect(transmux(fixture('muxed.m2ts'), 0).droppedAudio).toBe(false);
+  });
+
   it('anchors baseMediaDecodeTime to the presentation start, not the raw PTS', () => {
     // Two segments at different playlist offsets must land at those offsets.
     const atZero = transmux(fixture('muxed.m2ts'), 0);

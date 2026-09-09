@@ -40,6 +40,14 @@ const AUDIO_TRACK_ID = 2;
 /** Fallback duration for a lone trailing video sample: 30 fps in 90 kHz. */
 const DEFAULT_FRAME_DURATION = 3000;
 
+/**
+ * Which elementary streams to keep. A variant that muxes audio into its
+ * segments while the manifest also names a separate audio rendition would
+ * otherwise hand the video SourceBuffer an audio track its mime type never
+ * declared (Chrome refuses the append) and play that audio twice.
+ */
+export type TransmuxTracks = 'all' | 'video' | 'audio';
+
 export interface TransmuxResult {
   /** The fMP4 bytes, or null when the input was not a transport stream. */
   readonly bytes: Uint8Array | null;
@@ -48,6 +56,8 @@ export interface TransmuxResult {
   readonly empty: boolean;
   /** CEA-608/708 caption packets from the video SEI, when captions were requested. */
   readonly captions: readonly CcPacket[];
+  /** True when the input carried an audio stream the `tracks` selection left out. */
+  readonly droppedAudio: boolean;
 }
 
 function concat(parts: readonly Uint8Array[]): Uint8Array {
@@ -232,15 +242,24 @@ export function transmux(
   input: Uint8Array,
   presentationStart = 0,
   wantCaptions = false,
+  tracks: TransmuxTracks = 'all',
 ): TransmuxResult {
   const streams = demux(input);
   if (streams.notTransportStream) {
-    return { bytes: null, notTransportStream: true, empty: false, captions: [] };
+    return {
+      bytes: null,
+      notTransportStream: true,
+      empty: false,
+      captions: [],
+      droppedAudio: false,
+    };
   }
-  const video = buildVideo(streams.video, presentationStart, wantCaptions);
-  const audio = buildAudio(streams.audio, presentationStart);
+  const video =
+    tracks === 'audio' ? null : buildVideo(streams.video, presentationStart, wantCaptions);
+  const audio = tracks === 'video' ? null : buildAudio(streams.audio, presentationStart);
+  const droppedAudio = tracks === 'video' && streams.audio.length > 0;
   if (video === null && audio === null) {
-    return { bytes: null, notTransportStream: false, empty: true, captions: [] };
+    return { bytes: null, notTransportStream: false, empty: true, captions: [], droppedAudio };
   }
   const configs: TrackConfig[] = [];
   const fragments: TrackFragment[] = [];
@@ -262,5 +281,6 @@ export function transmux(
     notTransportStream: false,
     empty: false,
     captions: video?.captions ?? [],
+    droppedAudio,
   };
 }

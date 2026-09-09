@@ -6,7 +6,7 @@
  * thread. Both paths call the identical function, so the bytes match whatever
  * route a given browser takes; only the timing differs.
  */
-import { type TransmuxResult, transmux } from './transmux.js';
+import { type TransmuxResult, type TransmuxTracks, transmux } from './transmux.js';
 
 export interface TransmuxRunnerOptions {
   /** A custom Worker URL for strict-CSP hosts that serve the chunk themselves. */
@@ -20,6 +20,7 @@ export interface TransmuxRunner {
     bytes: Uint8Array,
     presentationStart: number,
     wantCaptions?: boolean,
+    tracks?: TransmuxTracks,
   ): Promise<TransmuxResult>;
   /** Which path the most recent run took, for diagnostics and the handoff. */
   path(): 'worker' | 'main';
@@ -31,6 +32,7 @@ interface Pending {
   readonly bytes: Uint8Array;
   readonly presentationStart: number;
   readonly wantCaptions: boolean;
+  readonly tracks: TransmuxTracks;
 }
 
 interface WorkerResponse {
@@ -38,14 +40,16 @@ interface WorkerResponse {
   readonly bytes: ArrayBuffer | null;
   readonly notTransportStream: boolean;
   readonly captions: TransmuxResult['captions'];
+  readonly droppedAudio: boolean;
 }
 
 function runOnMainThread(
   bytes: Uint8Array,
   presentationStart: number,
   wantCaptions: boolean,
+  tracks: TransmuxTracks,
 ): TransmuxResult {
-  return transmux(bytes, presentationStart, wantCaptions);
+  return transmux(bytes, presentationStart, wantCaptions, tracks);
 }
 
 export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): TransmuxRunner {
@@ -72,6 +76,7 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
           notTransportStream: event.data.notTransportStream,
           empty: event.data.bytes === null && !event.data.notTransportStream,
           captions: event.data.captions,
+          droppedAudio: event.data.droppedAudio,
         });
       };
       worker.onerror = () => {
@@ -83,7 +88,9 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
         worker = null;
         for (const [id, entry] of pending) {
           pending.delete(id);
-          entry.resolve(runOnMainThread(entry.bytes, entry.presentationStart, entry.wantCaptions));
+          entry.resolve(
+            runOnMainThread(entry.bytes, entry.presentationStart, entry.wantCaptions, entry.tracks),
+          );
         }
       };
     } catch {
@@ -94,11 +101,11 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
   }
 
   return {
-    run(bytes, presentationStart, wantCaptions = false) {
+    run(bytes, presentationStart, wantCaptions = false, tracks = 'all') {
       const active = ensureWorker();
       if (active === null) {
         lastPath = 'main';
-        return Promise.resolve(runOnMainThread(bytes, presentationStart, wantCaptions));
+        return Promise.resolve(runOnMainThread(bytes, presentationStart, wantCaptions, tracks));
       }
       lastPath = 'worker';
       const id = nextId;
@@ -107,9 +114,9 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
       return new Promise<TransmuxResult>((resolve) => {
         // Keep the inputs on the pending entry so an onerror after this point
         // can resolve it on the main thread rather than hang.
-        pending.set(id, { resolve, bytes, presentationStart, wantCaptions });
+        pending.set(id, { resolve, bytes, presentationStart, wantCaptions, tracks });
         try {
-          active.postMessage({ id, bytes: copy.buffer, presentationStart, wantCaptions }, [
+          active.postMessage({ id, bytes: copy.buffer, presentationStart, wantCaptions, tracks }, [
             copy.buffer,
           ]);
         } catch {
@@ -117,7 +124,7 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
           workerBroken = true;
           worker = null;
           lastPath = 'main';
-          resolve(runOnMainThread(bytes, presentationStart, wantCaptions));
+          resolve(runOnMainThread(bytes, presentationStart, wantCaptions, tracks));
         }
       });
     },
