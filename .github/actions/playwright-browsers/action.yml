@@ -1,0 +1,27 @@
+name: Playwright browsers
+description: >-
+  Restore the Playwright browsers from the Actions cache, or download them on a
+  miss. Keyed on the installed Playwright version so a bump refreshes them.
+runs:
+  using: composite
+  steps:
+    - name: Playwright version
+      id: playwright
+      shell: bash
+      run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+    - name: Cache browsers
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+    - name: Download browsers and system deps
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: pnpm exec playwright install --with-deps chromium firefox webkit
+    # The runner image is fresh each run, so the shared libraries still need
+    # installing even when the browser binaries came from the cache.
+    - name: Install system deps only
+      if: steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: pnpm exec playwright install-deps chromium firefox webkit

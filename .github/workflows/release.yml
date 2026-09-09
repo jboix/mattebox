@@ -41,7 +41,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install browsers
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
+        uses: ./.github/actions/playwright-browsers
 
       - name: Verify the gates one last time
         run: pnpm run verify

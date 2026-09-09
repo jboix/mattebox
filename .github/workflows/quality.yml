@@ -62,7 +62,7 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: davelosert/vitest-coverage-report-action@8b157684c6a6b259b97d45e72b44242865c0f6a5 # v2
       - name: Install browsers
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
+        uses: ./.github/actions/playwright-browsers
       - name: Browser tests (tier 3)
         run: pnpm run test:browser
 
@@ -115,3 +115,18 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           package_manager: pnpm
           build_script: build
+
+  # The ruleset on main requires a check named `quality`, and Actions reports
+  # per job, so this job is the one name that stands for the whole workflow.
+  # commitlint and size-report are skipped outside pull requests, so a skipped
+  # dependency counts as passing; only a failure or a cancellation fails it.
+  quality:
+    needs: [verify, commitlint, size-report]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Check every gate
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Install browsers
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
+        uses: ./.github/actions/playwright-browsers
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Playback E2E (tier 4)
