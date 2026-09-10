@@ -25,7 +25,11 @@ export interface TracksApi {
 export interface StatsApi {
   /** Exponentially weighted moving average of measured throughput, in bits per second. */
   readonly throughput: number;
-  /** The diagnostic ring buffer, oldest first. Include it in every error report. */
+  /**
+   * The entries kept, oldest first: none unless `traceCapacity` asks for a
+   * ring. `on('trace')` hands every entry over as it happens, bytes replaced
+   * by their length, for a page that keeps its own history.
+   */
   trace(): readonly TraceEntry[];
   /** The current kernel state, read-only. Diagnosability surface: the playground's panels draw from it. */
   snapshot(): Readonly<KernelState>;

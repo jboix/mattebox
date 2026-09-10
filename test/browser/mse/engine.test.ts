@@ -303,6 +303,7 @@ describe('reload', () => {
       document.body.appendChild(el);
       const engine = mattebox({
         stages: [hlsCmaf()],
+        config: { traceCapacity: 500 },
         transport: {
           fetchImpl: (url, init) =>
             url.startsWith('https://second.test')

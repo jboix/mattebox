@@ -7,7 +7,7 @@ This chapter covers stats, the trace, and replaying a trace.
 ```ts
 engine.stats.throughput; // measured throughput, bits per second
 engine.stats.snapshot();  // the full kernel state, read-only
-engine.stats.trace();     // the diagnostic ring buffer, oldest first
+engine.stats.trace();     // the entries kept, oldest first, none unless traceCapacity asks
 ```
 
 The snapshot holds the presentation, the buffers, the scheduling state, the
@@ -15,25 +15,34 @@ active tracks, the quality state, and the live window.
 
 ## The trace
 
-Every message the engine handles, and the effects it produced, goes into a
-ring buffer of 500 entries. Raise it with the `traceCapacity` config option.
-
-Each entry has a timestamp, the message, the effects, and a digest of the
-state after it. A stall on a viewer's TV comes with the exact sequence that
-led to it.
-
-Attach the trace to every error report.
+Every message the engine handles, and the effects it produced, is a trace
+entry: a timestamp, the message, the effects, and a digest of the state
+after it. A byte payload is recorded as its length, `{ $bytes: n }`, never
+the bytes. The engine keeps none of them. It hands each one to `trace`
+listeners as it happens, so whoever wants a history keeps their own.
 
 ```ts
-import { exportTrace } from 'mattebox';
+engine.on('trace', (entry) => {
+  history.push(entry);
+  if (history.length > 500) history.shift();
+});
+```
+
+A page that wants the engine to keep the ring sets `traceCapacity`. Then
+`engine.stats.trace()` answers with the entries, oldest first, and
+`engine.error` carries them for the last fatal error. A stall on a viewer's
+TV comes with the exact sequence that led to it.
+
+```ts
+import { exportTrace, mattebox } from 'mattebox';
+
+const engine = mattebox({ stages, config: { traceCapacity: 500 } });
 
 engine.on('error', (error) => {
   if (!error.fatal) return;
   send({ error, trace: exportTrace(engine.stats.trace()) });
 });
 ```
-
-`engine.error` already carries the trace for the last fatal error.
 
 ## Replay
 

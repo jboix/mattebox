@@ -56,7 +56,11 @@ describe('media errors', () => {
     'an element error is reported as a fatal engine error, not hidden by a reload',
     async () => {
       const el = video();
-      const engine = mattebox({ stages: [hlsCmaf()], transport: { fetchImpl } });
+      const engine = mattebox({
+        stages: [hlsCmaf()],
+        transport: { fetchImpl },
+        config: { traceCapacity: 500 },
+      });
       const errors: unknown[] = [];
       engine.on('error', (payload) => errors.push(payload));
       await engine.attach(el);

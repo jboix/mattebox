@@ -52,7 +52,11 @@ export interface KernelConfig {
   readonly bufferGoalSeconds: number;
   /** Timeout for the manifest fetch effect, in milliseconds. */
   readonly manifestTimeoutMs: number;
-  /** Capacity of the diagnostic ring buffer. */
+  /**
+   * Entries kept for `stats.trace()` and `error.trace`. Zero by default:
+   * the engine retains nothing, and `on('trace')` receives every entry as
+   * it happens for whoever wants a history.
+   */
   readonly traceCapacity: number;
   /** Backoff before a failed media fetch re-drives scheduling, in milliseconds. */
   readonly baseRetryDelayMs: number;
@@ -215,7 +219,11 @@ export interface Bus {
   absorb(fact: Fact): void;
 }
 
-/** One entry of the diagnostic ring buffer. Fixed capacity, overwriting, default 500. */
+/**
+ * One entry of the diagnostic ring buffer. Fixed capacity, overwriting,
+ * default 500. Byte payloads are recorded as `{ $bytes: length }`, never
+ * the bytes, so the ring stays small however long the session.
+ */
 export interface TraceEntry {
   /** performance.now() when the message entered the loop. */
   readonly t: number;

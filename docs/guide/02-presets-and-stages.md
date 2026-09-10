@@ -171,13 +171,13 @@ const engine = mattebox({
 });
 ```
 
-| Option              | Meaning                                                |
-| ------------------- | ------------------------------------------------------ |
-| `bufferGoalSeconds` | Forward buffer the scheduler aims for                  |
-| `backBufferSeconds` | Media kept behind the playhead under quota pressure    |
-| `manifestTimeoutMs` | Timeout for the manifest fetch                         |
-| `traceCapacity`     | Entries kept in the diagnostic ring buffer             |
-| `bufferErrorLimit`  | Consecutive SourceBuffer failures before a fatal error |
+| Option              | Meaning                                                 |
+| ------------------- | ------------------------------------------------------- |
+| `bufferGoalSeconds` | Forward buffer the scheduler aims for                   |
+| `backBufferSeconds` | Media kept behind the playhead under quota pressure     |
+| `manifestTimeoutMs` | Timeout for the manifest fetch                          |
+| `traceCapacity`     | Trace entries kept for `stats.trace()`, none by default |
+| `bufferErrorLimit`  | Consecutive SourceBuffer failures before a fatal error  |
 
 Transport options are covered in [chapter 11](11-network-and-cdn.md).
 

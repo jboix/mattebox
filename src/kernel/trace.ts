@@ -7,7 +7,40 @@
 import type { KernelState, Reducer, TraceEntry } from '../types/kernel.js';
 import type { Effect } from '../types/messages.js';
 
-export const DEFAULT_TRACE_CAPACITY = 500;
+/** Nothing kept unless asked: the bus hands every entry to `on('trace')` as it happens. */
+export const DEFAULT_TRACE_CAPACITY = 0;
+
+/** What a byte payload becomes in the ring: its length, the shape `exportTrace` writes. */
+export interface ByteMarker {
+  readonly $bytes: number;
+}
+
+function isBytes(value: unknown): value is ArrayBuffer | ArrayBufferView {
+  return value instanceof ArrayBuffer || ArrayBuffer.isView(value);
+}
+
+/**
+ * A message or an effect as the ring records it: every byte payload
+ * replaced by its length, one level down and through a scheduled
+ * message, everything else by reference. The ring would otherwise keep
+ * every segment's bytes alive for as long as the entry lasts, which at
+ * five hundred entries is the media of a whole session. The reducer never
+ * reads the bytes, only forwards them, so a lightened entry replays the
+ * same. Object identity is not kept: a recorded message is a copy.
+ */
+export function lighten<T extends object>(value: T): T {
+  let copy: Record<string, unknown> | null = null;
+  for (const [key, field] of Object.entries(value)) {
+    let next: unknown = field;
+    if (isBytes(field)) next = { $bytes: field.byteLength } satisfies ByteMarker;
+    else if (key === 'then' && typeof field === 'object' && field !== null) next = lighten(field);
+    if (next !== field) {
+      if (copy === null) copy = { ...(value as Record<string, unknown>) };
+      copy[key] = next;
+    }
+  }
+  return (copy ?? value) as T;
+}
 
 export interface TraceBuffer {
   push(entry: TraceEntry): void;
@@ -16,13 +49,14 @@ export interface TraceBuffer {
   readonly capacity: number;
 }
 
-/** Fixed capacity, overwriting. Roughly 200 bytes of code for the whole payoff. */
+/** Fixed capacity, overwriting, and nothing at all at zero. Roughly 200 bytes of code for the whole payoff. */
 export function createTraceBuffer(capacity: number = DEFAULT_TRACE_CAPACITY): TraceBuffer {
   const entries: TraceEntry[] = [];
   let head = 0;
   return {
     capacity,
     push(entry) {
+      if (capacity <= 0) return;
       if (entries.length < capacity) {
         entries.push(entry);
       } else {

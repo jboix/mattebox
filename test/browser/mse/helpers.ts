@@ -92,7 +92,7 @@ export interface Stack {
 
 /** A real bus + runner + mse controller wired the way the facade will wire them. */
 export function createStack(options: Partial<MseControllerOptions> = {}): Stack {
-  const bus = createBus({ reducer: createReducer(), initial: initialState() });
+  const bus = createBus({ reducer: createReducer(), initial: initialState(), traceCapacity: 500 });
   const runner = createEffectRunner();
   const controller = createMseController({ absorb: (fact) => bus.absorb(fact), ...options });
   controller.registerHandlers(runner);

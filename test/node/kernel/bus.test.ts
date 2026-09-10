@@ -13,7 +13,7 @@ const echoReducer: Reducer = (state, msg) => {
 };
 
 function wiredBus(reducer: Reducer) {
-  const bus = createBus({ reducer, initial: initialState(), now: () => 0 });
+  const bus = createBus({ reducer, initial: initialState(), now: () => 0, traceCapacity: 500 });
   const runner = createEffectRunner();
   runner.register('emit', (effect) => {
     bus.emitEvent(effect.event, effect.payload);
@@ -74,6 +74,21 @@ describe('reentrancy', () => {
 });
 
 describe('trace ring buffer', () => {
+  it('keeps nothing by default, and hands every entry to trace listeners in order', () => {
+    const bus = createBus({ reducer: createReducer(), initial: initialState(), now: () => 7 });
+    const seen: string[] = [];
+    const off = bus.on('trace', (entry) => {
+      seen.push((entry as { msg: { type: string } }).msg.type);
+    });
+    bus.dispatch({ type: 'SET_BUFFER_GOAL', seconds: 60 });
+    bus.absorb({ type: 'STALLED', at: 1 });
+    expect(bus.trace()).toEqual([]);
+    expect(seen).toEqual(['SET_BUFFER_GOAL', 'STALLED']);
+    off();
+    bus.absorb({ type: 'STALLED', at: 2 });
+    expect(seen.length).toBe(2);
+  });
+
   it('wraps at capacity, keeping the newest entries in order', () => {
     const bus = createBus({
       reducer: createReducer(),
@@ -89,7 +104,12 @@ describe('trace ring buffer', () => {
   });
 
   it('records message, effects, and a state digest per entry', () => {
-    const bus = createBus({ reducer: createReducer(), initial: initialState(), now: () => 42 });
+    const bus = createBus({
+      reducer: createReducer(),
+      initial: initialState(),
+      now: () => 42,
+      traceCapacity: 500,
+    });
     bus.dispatch({ type: 'SET_BUFFER_GOAL', seconds: 60 });
     const [entry] = bus.trace();
     expect(entry).toMatchObject({ t: 42, msg: { type: 'SET_BUFFER_GOAL', seconds: 60 } });

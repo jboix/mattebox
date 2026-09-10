@@ -16,7 +16,7 @@ import type {
   TransformStep,
   Unsubscribe,
 } from '../types/stage.js';
-import { createTraceBuffer, DEFAULT_TRACE_CAPACITY, digest } from './trace.js';
+import { createTraceBuffer, DEFAULT_TRACE_CAPACITY, digest, lighten } from './trace.js';
 
 export interface CreateBusOptions {
   readonly reducer: Reducer;
@@ -87,7 +87,16 @@ export function createBus(options: CreateBusOptions): KernelBus {
       while (msg !== undefined) {
         const [next, effects] = reducer(state, msg);
         state = next;
-        traceBuffer.push({ t: now(), msg, effects, digest: digest(state) });
+        // Without its bytes, so nothing here keeps the media alive; kept only
+        // when a ring was asked for, and handed to whoever listens either way.
+        const entry: TraceEntry = {
+          t: now(),
+          msg: lighten(msg),
+          effects: effects.map(lighten),
+          digest: digest(state),
+        };
+        traceBuffer.push(entry);
+        emitEvent('trace', entry);
         // The sink may re-enter dispatch or absorb; those enqueue and are
         // handled by this same loop, in order.
         effectSink(effects);

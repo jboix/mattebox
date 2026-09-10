@@ -162,7 +162,13 @@ async function rebuild(): Promise<void> {
     return response;
   };
   try {
-    engine = mattebox({ stages: selectedStages(), transport: { fetchImpl } });
+    // A ring for the log, the charts, the export and the replay: the engine
+    // keeps none unless asked, and asking is the playground's job.
+    engine = mattebox({
+      stages: selectedStages(),
+      transport: { fetchImpl },
+      config: { traceCapacity: 2000 },
+    });
   } catch (error) {
     engine = null;
     const banner = document.querySelector('#composeError') as HTMLElement | null;

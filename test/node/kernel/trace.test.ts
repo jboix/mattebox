@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { TraceEntry } from '../../../src/index.js';
 import { createBus } from '../../../src/kernel/bus.js';
 import { createReducer, initialState } from '../../../src/kernel/reducer.js';
-import { createTraceBuffer, digest, exportTrace, replay } from '../../../src/kernel/trace.js';
+import {
+  createTraceBuffer,
+  digest,
+  exportTrace,
+  lighten,
+  replay,
+} from '../../../src/kernel/trace.js';
 import { readyStateWithInflight } from './helpers.js';
 
 function entry(at: number): TraceEntry {
@@ -85,9 +91,54 @@ describe('exportTrace', () => {
   });
 });
 
+describe('lighten', () => {
+  it('records a byte payload as its length, one level down and through a scheduled message', () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]).buffer;
+    const msg = { type: 'SEGMENT_LOADED', trackId: 'v', seq: 0, bytes, rtt: 10, size: 4 } as const;
+    expect(lighten(msg)).toEqual({ ...msg, bytes: { $bytes: 4 } });
+    const append = { kind: 'append', sbId: 'sb-v', data: new Uint8Array(3) } as const;
+    expect(lighten(append)).toEqual({ ...append, data: { $bytes: 3 } });
+    // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
+    const scheduled = { kind: 'schedule', token: 't', delayMs: 0, then: msg } as const;
+    // biome-ignore lint/suspicious/noThenProperty: the same field, as recorded
+    expect(lighten(scheduled)).toEqual({ ...scheduled, then: { ...msg, bytes: { $bytes: 4 } } });
+  });
+
+  it('leaves an entry without bytes as it is, by identity', () => {
+    const stalled = { type: 'STALLED', at: 2 } as const;
+    expect(lighten(stalled)).toBe(stalled);
+  });
+
+  it('keeps the ring free of media bytes, and a lightened ring replays clean', () => {
+    const initial = readyStateWithInflight([
+      { token: 't1', trackId: 'v', seq: 0, url: 'u', sbId: 'sb-v' },
+    ]);
+    const bus = createBus({ reducer: createReducer(), initial, now: () => 0, traceCapacity: 500 });
+    bus.absorb({
+      type: 'SEGMENT_LOADED',
+      trackId: 'v',
+      seq: 0,
+      bytes: new Uint8Array([1, 2, 3, 4]).buffer,
+      rtt: 10,
+      size: 4,
+    });
+    const [entry] = bus.trace();
+    expect(entry?.msg).toMatchObject({ type: 'SEGMENT_LOADED', bytes: { $bytes: 4 } });
+    expect(entry?.effects[0]).toMatchObject({ kind: 'append', data: { $bytes: 4 } });
+    const text = JSON.stringify(bus.trace());
+    expect(text).not.toContain('ArrayBuffer');
+    expect(replay(bus.trace(), createReducer(), initial)).toEqual({ ok: true });
+  });
+});
+
 describe('replay', () => {
   function record(): readonly TraceEntry[] {
-    const bus = createBus({ reducer: createReducer(), initial: initialState(), now: () => 0 });
+    const bus = createBus({
+      reducer: createReducer(),
+      initial: initialState(),
+      now: () => 0,
+      traceCapacity: 500,
+    });
     bus.dispatch({ type: 'ATTACH', element: {} as HTMLMediaElement });
     bus.dispatch({ type: 'LOAD', url: 'https://cdn.example/master.m3u8' });
     bus.dispatch({ type: 'SET_BUFFER_GOAL', seconds: 45 });
