@@ -3,7 +3,8 @@ name: E2E
 # Real-time playback in three browsers: decode-bound, slow, and sensitive to
 # runner load, so it runs nightly, on demand from the Actions tab, and on a
 # pull request when it gets the `e2e` label. `pnpm run test:e2e` runs it
-# locally.
+# locally: it generates the corpus, builds the shipped modules, and runs the
+# suite in Vitest browser mode.
 on:
   workflow_dispatch:
   schedule:
@@ -38,4 +39,4 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Playback E2E (tier 4)
-        run: pnpm exec playwright test
+        run: pnpm run test:e2e

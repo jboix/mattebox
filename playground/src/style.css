@@ -42,6 +42,7 @@
   --series-3: #d9a83f;
   --series-4: #e05a6e;
   --series-5: #a98fe0;
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5l5 5 5-5' fill='none' stroke='%2398a3b1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -81,6 +82,7 @@
   --series-3: #c2861a;
   --series-4: #c8354c;
   --series-5: #7b5fc9;
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5l5 5 5-5' fill='none' stroke='%235f6b78' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
 :root {
@@ -394,12 +396,9 @@ select {
      native arrow, a small chevron inset from the right, room reserved. */
   appearance: none;
   padding-right: 32px;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5l5 5 5-5' fill='none' stroke='%2398a3b1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-image: var(--select-chevron);
   background-repeat: no-repeat;
   background-position: right 12px center;
-}
-:root[data-theme="light"] select {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5l5 5 5-5' fill='none' stroke='%235f6b78' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
 /* ---- transport bar: time you can read, under the video ------------------ */
@@ -980,19 +979,14 @@ input[type="checkbox"] {
   font-weight: 500;
   color: var(--ink);
 }
-.table tbody tr:last-child th,
-.table tbody tr:last-child td {
-  border-bottom: none;
-}
 .table td.wrap {
   white-space: normal;
   word-break: break-word;
   font-family: var(--mono);
   font-size: 12px;
 }
-.kv-table th {
+.kv-table tbody th {
   width: 190px;
-  color: var(--muted);
 }
 .sub-label {
   display: block;
@@ -1035,6 +1029,12 @@ input[type="checkbox"] {
 }
 .stages-table tr.unbuilt td {
   opacity: 0.45;
+}
+/* Last so it outranks nothing declared above: every th/td rule in this
+   file has lower specificity than the :last-child pair. */
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: none;
 }
 .req {
   display: inline-block;

@@ -9,7 +9,7 @@ Thanks for contributing. Agents working in this repository also follow
 ```sh
 corepack enable
 pnpm install
-pnpm exec playwright install chromium firefox webkit   # browser and e2e tests
+pnpm exec playwright install chromium firefox webkit   # browser and e2e tests (Vitest browser mode)
 pnpm run verify    # everything CI checks
 ```
 
@@ -31,8 +31,9 @@ pnpm run verify    # everything CI checks
 | `pnpm run check:package`      | scripts/check-package.mjs       | publint and attw on every entry point                  |
 | `pnpm run test`               | Vitest                          | Node tests, and browser tests in real browsers         |
 
-`pnpm run test:e2e` runs the Playwright end-to-end tests. CI runs them too,
-`verify` does not.
+`pnpm run test:e2e` runs the playback end-to-end tests in Vitest browser mode
+against the shipped ES2015 build. It needs ffmpeg for the stream corpus. CI
+runs them nightly and on labelled pull requests, `verify` does not.
 
 Requirements: Node 24 or later, pnpm via corepack (version pinned in
 `packageManager`).

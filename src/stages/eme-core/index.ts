@@ -291,7 +291,9 @@ export default function emeCore(options: EmeOptions = {}): Stage {
         element.removeEventListener('encrypted', onEncrypted);
         offManifest();
         for (const session of sessionsByKey.values()) void session.close().catch(() => {});
-        void element.setMediaKeys(null).catch(() => {});
+        // Only after negotiation set keys: a browser build without EME has
+        // no setMediaKeys, and a clear stream never called it.
+        if (mediaKeys !== null) void element.setMediaKeys(null).catch(() => {});
       };
     },
   };

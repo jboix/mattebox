@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Generates the CMAF VOD streams the E2E suite plays, HLS and DASH packaged
+# Generates the CMAF VOD streams the E2E suite (test/e2e, Vitest browser mode)
+# plays, HLS and DASH packaged
 # from the same encodes: two variants per codec flavor, video only. h264 for
 # firefox and webkit; vp9 because Playwright's chromium ships no H.264
 # decoder. Output is gitignored and regenerated on demand. Needs ffmpeg,

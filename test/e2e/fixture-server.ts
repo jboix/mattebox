@@ -1,15 +1,17 @@
-// The E2E fixture server: static files with streaming-correct MIME types.
-// No dependencies, no cleverness.
-import { createReadStream, existsSync, statSync } from 'node:fs';
-import { createServer } from 'node:http';
+// The E2E fixture server as a Vite plugin: the generated stream corpus with
+// streaming-correct MIME types, plus the live simulator, the steering
+// manifest, and the pathway routes, all served by the Vitest browser
+// server so the tests and the media share one origin.
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Plugin } from 'vitest/config';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
-// Overridable so a local run can sidestep another project's server on 4173.
-const PORT = Number(process.env.E2E_PORT ?? 4173);
+const STREAMS = join(ROOT, 'test/fixtures/streams');
 
-const MIME = {
+const MIME: Record<string, string> = {
   '.m3u8': 'application/vnd.apple.mpegurl',
   '.mpd': 'application/dash+xml',
   '.vtt': 'text/vtt',
@@ -17,53 +19,41 @@ const MIME = {
   '.mp4': 'video/mp4',
   '.ts': 'video/mp2t',
   '.aac': 'audio/aac',
-  '.js': 'text/javascript',
-  '.html': 'text/html',
 };
-
-const PAGE = `<!doctype html>
-<title>mattebox e2e</title>
-<body style="background:#111;margin:0">
-<script type="module" src="/app.js"></script>
-</body>`;
 
 // ---- live simulator -------------------------------------------------------
 // A sliding window over the generated VOD segments, anchored at the t0 the
-// test supplies, so every page load gets a fresh stream. HLS serves a bare
-// media playlist; DASH serves a dynamic MPD over the same chunk files.
-
-import { readFileSync } from 'node:fs';
+// test supplies, so every boot gets a fresh stream. HLS serves a bare media
+// playlist; DASH serves a dynamic MPD over the same chunk files.
 
 const LIVE = { window: 5, duration: 4, total: 18 };
-const dashMeta = new Map();
+const metaCache = new Map<string, { codecs: string; timescale: number }>();
 
-function dashInfo(flavor) {
-  let meta = dashMeta.get(flavor);
+function dashInfo(flavor: string): { codecs: string; timescale: number } {
+  let meta = metaCache.get(flavor);
   if (meta === undefined) {
-    const mpd = readFileSync(
-      join(ROOT, `test/fixtures/streams/${flavor}-dash/manifest.mpd`),
-      'utf8',
-    );
+    const mpd = readFileSync(join(STREAMS, `${flavor}-dash/manifest.mpd`), 'utf8');
     meta = {
       codecs: /codecs="([^"]+)"/.exec(mpd)?.[1] ?? '',
       timescale: Number(/timescale="(\d+)"/.exec(mpd)?.[1] ?? 15360),
     };
-    dashMeta.set(flavor, meta);
+    metaCache.set(flavor, meta);
   }
   return meta;
 }
 
-function hlsCodecs(flavor) {
-  let meta = dashMeta.get(`hls:${flavor}`);
+function hlsCodecs(flavor: string): string {
+  const key = `hls:${flavor}`;
+  let meta = metaCache.get(key);
   if (meta === undefined) {
-    const master = readFileSync(join(ROOT, `test/fixtures/streams/${flavor}/master.m3u8`), 'utf8');
-    meta = /CODECS="([^"]+)"/.exec(master)?.[1] ?? '';
-    dashMeta.set(`hls:${flavor}`, meta);
+    const master = readFileSync(join(STREAMS, `${flavor}/master.m3u8`), 'utf8');
+    meta = { codecs: /CODECS="([^"]+)"/.exec(master)?.[1] ?? '', timescale: 0 };
+    metaCache.set(key, meta);
   }
-  return meta;
+  return meta.codecs;
 }
 
-function liveHlsMaster(flavor, t0) {
+function liveHlsMaster(flavor: string, t0: number): string {
   return [
     '#EXTM3U',
     '#EXT-X-VERSION:7',
@@ -72,7 +62,7 @@ function liveHlsMaster(flavor, t0) {
   ].join('\n');
 }
 
-function steerMaster(flavor) {
+function steerMaster(flavor: string): string {
   return [
     '#EXTM3U',
     '#EXT-X-VERSION:7',
@@ -84,7 +74,7 @@ function steerMaster(flavor) {
   ].join('\n');
 }
 
-function liveHls(flavor, t0) {
+function liveHls(flavor: string, t0: number): string {
   const elapsed = (Date.now() - t0) / 1000;
   const newest = Math.min(LIVE.total - 1, Math.floor(elapsed / LIVE.duration));
   const oldest = Math.max(0, newest - LIVE.window + 1);
@@ -105,7 +95,7 @@ function liveHls(flavor, t0) {
   return lines.join('\n');
 }
 
-function liveDash(flavor, t0) {
+function liveDash(flavor: string, t0: number): string {
   const elapsed = (Date.now() - t0) / 1000;
   const ended = elapsed > LIVE.total * LIVE.duration + 8;
   const { codecs, timescale } = dashInfo(flavor);
@@ -126,76 +116,83 @@ function liveDash(flavor, t0) {
 </MPD>`;
 }
 
-createServer((req, res) => {
-  const url = new URL(req.url ?? '/', 'http://localhost');
-  if (url.pathname === '/player.html' || url.pathname === '/') {
-    res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(PAGE);
-    return;
-  }
-  if (url.pathname === '/steer/manifest.json') {
-    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-    res.end(JSON.stringify({ VERSION: 1, TTL: 300, 'PATHWAY-PRIORITY': ['a', 'b'] }));
-    return;
-  }
-  const steerMatch = /^\/steer\/(h264|vp9)\/master\.m3u8$/.exec(url.pathname);
-  if (steerMatch !== null) {
-    res.writeHead(200, {
-      'content-type': 'application/vnd.apple.mpegurl',
-      'cache-control': 'no-store',
-    });
-    res.end(steerMaster(steerMatch[1]));
-    return;
-  }
-  // Pathway routes proxy to the real files; pathway a dies at segment 3,
-  // which is what forces the failover the steering tests assert.
-  const pwMatch = /^\/pw-(a|b)(\/.*)$/.exec(url.pathname);
-  if (pwMatch !== null) {
-    const [, pathway, rest] = pwMatch;
-    if (pathway === 'a' && /seg-\w+-0(0[3-9]|[1-9]\d)\.m4s$/.test(rest)) {
-      res.writeHead(404);
-      res.end('pathway a is dead');
-      return;
-    }
-    url.pathname = rest;
-  }
-  const liveMatch = /^\/live\/(h264|vp9)\/(live|master)\.(m3u8|mpd)$/.exec(url.pathname);
-  if (liveMatch !== null) {
-    const t0 = Number(url.searchParams.get('t0')) || Date.now();
-    const [, flavor, name, kind] = liveMatch;
-    const body =
-      kind === 'mpd'
-        ? liveDash(flavor, t0)
-        : name === 'master'
-          ? liveHlsMaster(flavor, t0)
-          : liveHls(flavor, t0);
-    res.writeHead(200, {
-      'content-type': kind === 'm3u8' ? 'application/vnd.apple.mpegurl' : 'application/dash+xml',
-      'access-control-allow-origin': '*',
-      'cache-control': 'no-store',
-    });
-    res.end(body);
-    return;
-  }
-  // Any .js is a bundle chunk (app.js, the transmux Worker, its shared code):
-  // served from the build dir so the real Worker path resolves in the browser.
-  const mapped = url.pathname.endsWith('.js')
-    ? join(ROOT, 'test/e2e/.build', url.pathname.slice(1))
-    : url.pathname.startsWith('/streams/')
-      ? join(ROOT, 'test/fixtures/streams', url.pathname.slice('/streams/'.length))
-      : join(ROOT, url.pathname.slice(1));
-  const path = normalize(mapped);
-  if (!path.startsWith(normalize(ROOT)) || !existsSync(path) || !statSync(path).isFile()) {
+// ---- routing --------------------------------------------------------------
+
+function text(res: ServerResponse, contentType: string, body: string): void {
+  res.writeHead(200, { 'content-type': contentType, 'cache-control': 'no-store' });
+  res.end(body);
+}
+
+function serveStream(res: ServerResponse, pathname: string): void {
+  const path = normalize(join(STREAMS, pathname.slice('/streams/'.length)));
+  if (!path.startsWith(normalize(STREAMS)) || !existsSync(path) || !statSync(path).isFile()) {
     res.writeHead(404);
     res.end('not found');
     return;
   }
   res.writeHead(200, {
     'content-type': MIME[extname(path)] ?? 'application/octet-stream',
-    'access-control-allow-origin': '*',
     'cache-control': 'no-store',
   });
   createReadStream(path).pipe(res);
-}).listen(PORT, () => {
-  console.log(`e2e server on http://localhost:${PORT}`);
-});
+}
+
+/** True when the request was answered; false hands it back to Vite. */
+function handle(req: IncomingMessage, res: ServerResponse): boolean {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  if (url.pathname === '/steer/manifest.json') {
+    text(
+      res,
+      'application/json',
+      JSON.stringify({ VERSION: 1, TTL: 300, 'PATHWAY-PRIORITY': ['a', 'b'] }),
+    );
+    return true;
+  }
+  const steerMatch = /^\/steer\/(h264|vp9)\/master\.m3u8$/.exec(url.pathname);
+  if (steerMatch !== null) {
+    text(res, MIME['.m3u8'] as string, steerMaster(steerMatch[1] as string));
+    return true;
+  }
+  // Pathway routes proxy to the real files; pathway a dies at segment 3,
+  // which is what forces the failover the steering tests assert.
+  const pwMatch = /^\/pw-(a|b)(\/streams\/.*)$/.exec(url.pathname);
+  if (pwMatch !== null) {
+    const [, pathway, rest] = pwMatch as unknown as [string, string, string];
+    if (pathway === 'a' && /seg-\w+-0(0[3-9]|[1-9]\d)\.m4s$/.test(rest)) {
+      res.writeHead(404);
+      res.end('pathway a is dead');
+      return true;
+    }
+    serveStream(res, rest);
+    return true;
+  }
+  const liveMatch = /^\/live\/(h264|vp9)\/(live|master)\.(m3u8|mpd)$/.exec(url.pathname);
+  if (liveMatch !== null) {
+    const t0 = Number(url.searchParams.get('t0')) || Date.now();
+    const [, flavor, name, kind] = liveMatch as unknown as [string, string, string, string];
+    const body =
+      kind === 'mpd'
+        ? liveDash(flavor, t0)
+        : name === 'master'
+          ? liveHlsMaster(flavor, t0)
+          : liveHls(flavor, t0);
+    text(res, kind === 'm3u8' ? (MIME['.m3u8'] as string) : (MIME['.mpd'] as string), body);
+    return true;
+  }
+  if (url.pathname.startsWith('/streams/')) {
+    serveStream(res, url.pathname);
+    return true;
+  }
+  return false;
+}
+
+export function fixtureServer(): Plugin {
+  return {
+    name: 'e2e-fixture-server',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!handle(req, res)) next();
+      });
+    },
+  };
+}

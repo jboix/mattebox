@@ -16,13 +16,9 @@ dist/
 
 # generated E2E stream corpus (`test/e2e/gen-streams.sh`, needs ffmpeg)
 test/fixtures/streams/
-test/e2e/.build/
 
 # testing
 coverage/
-test-results/
-playwright-report/
-blob-report/
 __screenshots__/
 .vitest-attachments/
 

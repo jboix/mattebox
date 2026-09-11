@@ -16,6 +16,6 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["src", "cdn", "test", "playground", "vitest.config.ts", "playwright.config.ts"],
+  "include": ["src", "cdn", "test", "playground", "vitest.config.ts", "vitest.e2e.config.ts"],
   "exclude": ["playground/dist", "test/fixtures"]
 }
