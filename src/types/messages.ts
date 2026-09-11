@@ -69,7 +69,18 @@ export type Command =
   | { readonly type: 'UNLOAD' }
   | { readonly type: 'SEEK'; readonly to: number }
   | { readonly type: 'SEEK_TO_LIVE_EDGE' }
-  | { readonly type: 'SELECT_TRACK'; readonly trackId: TrackId }
+  | {
+      readonly type: 'SELECT_TRACK';
+      readonly trackId: TrackId;
+      /**
+       * How the switch reaches a media buffer already holding the previous
+       * track. `now` (the default, a viewer's choice) flushes from the
+       * playhead's segment; `soon` (a coupling following a video switch)
+       * flushes from a boundary ahead, so the buffer never runs dry under
+       * the playhead; `next` continues at the buffered end.
+       */
+      readonly apply?: ApplyStrategy;
+    }
   | { readonly type: 'DESELECT_TRACK'; readonly contentType: ContentType }
   | { readonly type: 'PIN_RENDITION'; readonly renditionId: string; readonly apply: ApplyStrategy }
   | { readonly type: 'RELEASE_PIN' }

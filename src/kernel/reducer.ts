@@ -24,6 +24,7 @@ import type { ScheduleTrackInput } from './scheduler.js';
 import { bufferedEndFrom, schedule } from './scheduler.js';
 import type { MediaContentType } from './sinks/mse-sink.js';
 import { sbIdFor } from './sinks/mse-sink.js';
+import { segmentAtTime } from './timeline.js';
 import { DEFAULT_TRACE_CAPACITY } from './trace.js';
 
 /**
@@ -220,6 +221,25 @@ interface RenditionSite {
   readonly period: Presentation['periods'][number];
 }
 
+/**
+ * The first candidate whose segment list places a boundary around `time`.
+ * A flush is planned on segment boundaries, and a rendition selected for
+ * the first time may have no segments yet, its media playlist still on its
+ * way: planned on it, the flush would start at the playhead itself and
+ * leave a segment head under the seek. The rendition playing always has
+ * its segments.
+ */
+function segmentedAt(
+  candidates: readonly (Rendition | undefined)[],
+  time: number,
+  periodStart: number,
+): Rendition | undefined {
+  return candidates.find(
+    (rendition) =>
+      rendition !== undefined && segmentAtTime(rendition.segments, time, periodStart) !== null,
+  );
+}
+
 function findRendition(
   presentation: Presentation | null,
   renditionId: string,
@@ -388,33 +408,56 @@ function reduceCommand(
       const effects: Effect[] = [];
       let buffers = state.buffers;
       let inflight = state.scheduling.inflight;
-      // A media track change mid-stream must clear the old track's buffer,
-      // or the new track's segment (which re-covers time the old track
-      // already buffered) overlaps stale content and strict decoders
-      // (WebKit) reject the append. The whole buffer goes; the new track
-      // refills from the playhead's segment with a brief gap.
+      // A media track change mid-stream flushes the old track's buffer
+      // ahead, the way a pin does: from the playhead's segment for a
+      // viewer's choice, from a boundary ahead for a coupling that follows
+      // a video switch, so the old track plays out and nothing runs dry
+      // under the playhead. Clearing the whole buffer instead stalls
+      // playback until the new track's first segment lands. The element is
+      // not nudged for audio: a video decoder holds stale frames, an audio
+      // one does not.
+      const site = state.presentation === null ? null : findTrackSite(state.presentation, track.id);
+      const previousTrack = previous === undefined ? null : findTrack(state.presentation, previous);
+      const flushRendition =
+        site === null
+          ? undefined
+          : (segmentedAt(
+              [...track.renditions, ...(previousTrack?.renditions ?? [])],
+              state.playback.currentTime,
+              site.period.start,
+            ) ?? track.renditions[0]);
       if (
         previous !== undefined &&
         previous !== track.id &&
-        (track.contentType === 'audio' || track.contentType === 'video')
+        (track.contentType === 'audio' || track.contentType === 'video') &&
+        site !== null &&
+        flushRendition !== undefined
       ) {
         const sbId = sbIdFor(track.contentType);
-        if (state.buffers.has(sbId)) {
-          effects.push({
-            kind: 'remove',
+        const buffer = state.buffers.get(sbId);
+        if (buffer !== undefined) {
+          const plan = planPinApply({
+            strategy: msg.apply ?? 'now',
+            currentTime: state.playback.currentTime,
+            ranges: buffer.ranges,
             sbId,
-            start: 0,
-            end: Number.POSITIVE_INFINITY,
+            trackId: track.id,
+            inflightTokens: [],
+            period: site.period,
+            rendition: flushRendition,
+            tokenSeq: state.scheduling.tokenSeq,
           });
-          const buffer = state.buffers.get(sbId);
-          if (buffer !== undefined) {
-            // Force an init re-fetch for the new track: its initFor no
-            // longer matches, so scheduling fetches init before media.
-            const next = new Map(state.buffers);
-            const { initFor: _initFor, ...rest } = buffer;
-            next.set(sbId, rest);
-            buffers = next;
+          for (const effect of plan.effects) {
+            if (effect.kind !== 'seekElement' || track.contentType === 'video') {
+              effects.push(effect);
+            }
           }
+          // Force an init re-fetch for the new track: its initFor no
+          // longer matches, so scheduling fetches init before media.
+          const next = new Map(state.buffers);
+          const { initFor: _initFor, ...rest } = buffer;
+          next.set(sbId, rest);
+          buffers = next;
           // Drop the old track's in-flight fetches.
           const pruned = new Map(state.scheduling.inflight);
           for (const [token, request] of state.scheduling.inflight) {
@@ -494,6 +537,10 @@ function reduceCommand(
       for (const request of state.scheduling.inflight.values()) {
         if (request.trackId === site.track.id) inflightTokens.push(request.token);
       }
+      const active =
+        state.quality.active === null
+          ? null
+          : findRendition(state.presentation, state.quality.active);
       const plan = planPinApply({
         strategy: msg.apply,
         currentTime: state.playback.currentTime,
@@ -502,7 +549,12 @@ function reduceCommand(
         trackId: site.track.id,
         inflightTokens,
         period: site.period,
-        rendition: site.rendition,
+        rendition:
+          segmentedAt(
+            [site.rendition, active?.rendition],
+            state.playback.currentTime,
+            site.period.start,
+          ) ?? site.rendition,
         tokenSeq: state.scheduling.tokenSeq,
       });
       const inflight = new Map(state.scheduling.inflight);

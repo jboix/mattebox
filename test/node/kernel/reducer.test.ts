@@ -357,6 +357,119 @@ describe('quota pressure', () => {
   });
 });
 
+describe('SELECT_TRACK flushes the previous media track like a pin', () => {
+  function audioTrack(id: string, lang: string) {
+    return {
+      id,
+      contentType: 'audio' as const,
+      mimeType: 'audio/mp4',
+      lang,
+      protection: null,
+      renditions: [
+        {
+          id: `${id}-r`,
+          bitrate: 128_000,
+          codecs: 'mp4a.40.2',
+          mimeType: 'audio/mp4',
+          segments: [0, 1, 2, 3].map((seq) => ({
+            seq,
+            start: seq * 4,
+            duration: 4,
+            url: `https://cdn.example/${id}/${seq}.m4s`,
+          })),
+        },
+      ],
+    };
+  }
+  function twoAudioTracks(): KernelState {
+    const base = readyStateWithInflight([]);
+    const period = base.presentation?.periods[0];
+    if (period === undefined || base.presentation === null) throw new Error('fixture');
+    return {
+      ...base,
+      presentation: {
+        ...base.presentation,
+        periods: [{ ...period, tracks: [audioTrack('a-en', 'en'), audioTrack('a-de', 'de')] }],
+      },
+      tracks: { active: new Map([['audio', 'a-en']]), available: ['a-en', 'a-de'] },
+      buffers: new Map([
+        [
+          'sb:audio',
+          {
+            codecs: 'mp4a.40.2',
+            ranges: [{ start: 0, end: 12 }],
+            pendingAppends: 0,
+            initFor: 'a-en-r',
+          },
+        ],
+      ]),
+      playback: { currentTime: 5.3, buffered: [{ start: 0, end: 12 }], seeking: false },
+    };
+  }
+
+  it("a viewer's choice flushes from the playhead's segment, without nudging the element", () => {
+    const [next, fx] = reduce(frozen(twoAudioTracks()), { type: 'SELECT_TRACK', trackId: 'a-de' });
+    expect(fx.filter((e) => e.kind === 'remove' || e.kind === 'seekElement')).toEqual([
+      { kind: 'remove', sbId: 'sb:audio', start: 4, end: Infinity },
+    ]);
+    expect(next.buffers.get('sb:audio')?.initFor).toBeUndefined();
+  });
+
+  it("a coupling's 'soon' flushes from a boundary ahead, so audio never runs dry", () => {
+    const [, fx] = reduce(frozen(twoAudioTracks()), {
+      type: 'SELECT_TRACK',
+      trackId: 'a-de',
+      apply: 'soon',
+    });
+    // 5.3 s plus the 1.5 s lead falls in segment 1 (4-8 s): the flush starts at 8.
+    expect(fx.filter((e) => e.kind === 'remove')).toEqual([
+      { kind: 'remove', sbId: 'sb:audio', start: 8, end: Infinity },
+    ]);
+  });
+
+  it('a track whose playlist is not loaded yet takes its boundaries from the previous track', () => {
+    const state = twoAudioTracks();
+    const period = state.presentation?.periods[0];
+    if (period === undefined || state.presentation === null) throw new Error('fixture');
+    const unloaded: KernelState = {
+      ...state,
+      presentation: {
+        ...state.presentation,
+        periods: [
+          {
+            ...period,
+            tracks: period.tracks.map((t) =>
+              t.id === 'a-de'
+                ? { ...t, renditions: t.renditions.map((r) => ({ ...r, segments: [] })) }
+                : t,
+            ),
+          },
+        ],
+      },
+    };
+    const [, fx] = reduce(frozen(unloaded), {
+      type: 'SELECT_TRACK',
+      trackId: 'a-de',
+      apply: 'soon',
+    });
+    expect(fx.filter((e) => e.kind === 'remove')).toEqual([
+      { kind: 'remove', sbId: 'sb:audio', start: 8, end: Infinity },
+    ]);
+  });
+
+  it("'soon' with a buffer shorter than the lead flushes nothing and continues at the end", () => {
+    const state = twoAudioTracks();
+    const short: KernelState = {
+      ...state,
+      buffers: new Map([
+        ['sb:audio', { codecs: 'mp4a.40.2', ranges: [{ start: 0, end: 6 }], pendingAppends: 0 }],
+      ]),
+    };
+    const [, fx] = reduce(frozen(short), { type: 'SELECT_TRACK', trackId: 'a-de', apply: 'soon' });
+    expect(fx.filter((e) => e.kind === 'remove')).toEqual([]);
+  });
+});
+
 describe('remaining commands', () => {
   it('SELECT_TRACK activates a known track and rejects an unknown one', () => {
     const state = readyStateWithInflight([]);

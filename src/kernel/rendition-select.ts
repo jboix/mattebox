@@ -332,18 +332,17 @@ export function codecFamily(codecs: string | null): string | null {
 }
 
 /**
- * The kernel's default answer to entanglement #2. codec-switch refines it
- * with real compatibility knowledge (Stage 15); until then: identical codec
- * strings are seamless, a profile or level change inside one family is a
- * changeType-class switch (every ladder rung carries its own profile
- * string, so abr could never move under an identity rule), and a family
- * change reloads.
+ * The kernel's default answer to entanglement #2. One codec family is
+ * seamless: every ladder rung carries its own profile or level string,
+ * browsers accept a new in-family init in the same SourceBuffer, and the
+ * reducer appends it bare. A family change reloads until codec-switch,
+ * which knows whether the browser has `changeType`, says otherwise.
  */
 export function canSwitchTo(current: Rendition | null, target: Rendition): SwitchVerdict {
   if (current === null) return 'seamless';
   if (current.codecs !== null && current.codecs === target.codecs) return 'seamless';
   const family = codecFamily(current.codecs);
-  if (family !== null && family === codecFamily(target.codecs)) return 'changeType';
+  if (family !== null && family === codecFamily(target.codecs)) return 'seamless';
   return 'reload';
 }
 
@@ -404,9 +403,17 @@ export function planPinApply(input: PinApplyInput): PinApplyPlan {
     return { effects, requests: [], tokenSeq: input.tokenSeq };
   }
 
-  // now: flush from the playhead and nudge the element so the decoder
-  // picks up the replacement instead of holding stale frames.
-  effects.push({ kind: 'remove', sbId: input.sbId, start: input.currentTime, end: Infinity });
+  // now: flush the playhead's segment and everything after it, and nudge
+  // the element so the decoder picks up the replacement instead of holding
+  // stale frames. The flush starts at the segment boundary, not at the
+  // playhead. The refill re-covers the whole segment either way, and a
+  // surviving head would read as appended to the scheduler, which would
+  // then leave a hole under the seek. WebKit's MSE also throws a decode
+  // error when a refill overlaps frames left at the seek point while audio
+  // plays on; with nothing left to overlap, it waits for the new frames.
+  const current = segmentAtTime(input.rendition.segments, input.currentTime, input.period.start);
+  const from = current === null ? input.currentTime : Math.min(current.start, input.currentTime);
+  effects.push({ kind: 'remove', sbId: input.sbId, start: from, end: Infinity });
   effects.push({ kind: 'seekElement', to: input.currentTime });
   return { effects, requests: [], tokenSeq: input.tokenSeq };
 }

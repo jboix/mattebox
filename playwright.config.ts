@@ -1,16 +1,18 @@
 import { defineConfig, devices } from '@playwright/test';
 
 // Playback E2E. The unit and browser tiers run under Vitest.
+const port = Number(process.env.E2E_PORT ?? 4173);
+
 export default defineConfig({
   testDir: 'test/e2e',
   webServer: {
     command:
       'bash test/e2e/gen-streams.sh && rolldown -c rolldown.dist.config.mjs && rolldown -c rolldown.e2e.config.mjs && node test/e2e/server.mjs',
-    url: 'http://localhost:4173/player.html',
+    url: `http://localhost:${port}/player.html`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
   },
-  use: { baseURL: 'http://localhost:4173' },
+  use: { baseURL: `http://localhost:${port}` },
   fullyParallel: true,
   // One worker: parallel browsers miss real-time deadlines.
   workers: 1,

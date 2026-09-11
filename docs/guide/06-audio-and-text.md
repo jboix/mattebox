@@ -20,6 +20,11 @@ t.deselect('text');   // stop the subtitle pipeline and clear its cues
 A track is listed but not selectable until a stage handles its content
 type. Text tracks need a text stage.
 
+A switch through `select` takes effect from the segment under the playhead:
+the previous track is flushed from there and the new one refills it. A group
+switch that follows a video rendition change lets the previous group play out
+to a segment boundary ahead instead, so the switch never rebuffers.
+
 ## The alt-audio stage
 
 The kernel already plays a separate audio track. The `alt-audio` stage adds

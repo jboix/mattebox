@@ -112,10 +112,11 @@ abrPersist({
 
 ## The codec-switch stage
 
-Switching between renditions with different codecs needs either a
-`changeType` call or a buffer reload. `codec-switch` checks what the browser
-supports and picks. Without it, the engine treats identical codec strings as
-seamless and reloads for anything else.
+Switching between renditions of one codec family is seamless: a new profile
+or level appends into the same SourceBuffer. Switching across families, H.264
+to HEVC say, needs either a `changeType` call or a buffer reload.
+`codec-switch` checks what the browser supports and picks. Without it, the
+engine reloads across families.
 
 Load it whenever a ladder mixes codecs, or when `alt-audio` is loaded.
 

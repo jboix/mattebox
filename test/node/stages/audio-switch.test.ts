@@ -215,14 +215,16 @@ describe('codec-switch: the switch policy', () => {
     expect(policy(null, v720hevc)).toBe('seamless');
   });
 
-  it('a cross-family switch reloads', () => {
+  it('a cross-family switch reloads when the browser cannot changeType', () => {
+    // No SourceBuffer.changeType in node: the policy asks the browser and
+    // downgrades the kernel's family change to a reload.
     expect(policy(v240, v720hevc)).toBe('reload');
   });
 
-  it('an in-family profile change downgrades to reload when the browser cannot changeType', () => {
-    // No SourceBuffer.changeType in node: the kernel default would say
-    // changeType, the policy confirms the browser and downgrades.
-    expect(canSwitchTo(v240, v360profile)).toBe('changeType');
-    expect(policy(v240, v360profile)).toBe('reload');
+  it('an in-family profile change stays seamless without touching the browser', () => {
+    // Every ladder carries its own profile and level strings; the reducer
+    // appends the new init bare and no browser needs changeType for it.
+    expect(canSwitchTo(v240, v360profile)).toBe('seamless');
+    expect(policy(v240, v360profile)).toBe('seamless');
   });
 });

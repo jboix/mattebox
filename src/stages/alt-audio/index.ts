@@ -79,8 +79,10 @@ function select(trackId: string): Effect {
     kind: 'schedule',
     token: 'alt-audio:select',
     delayMs: 0,
+    // The group follows a video switch the viewer may not even notice: the
+    // old group plays out to a boundary ahead, so audio never runs dry.
     // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-    then: { type: 'SELECT_TRACK', trackId },
+    then: { type: 'SELECT_TRACK', trackId, apply: 'soon' },
   };
 }
 

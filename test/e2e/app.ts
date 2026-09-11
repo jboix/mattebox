@@ -126,7 +126,9 @@ const engine = mattebox({
   stages,
   // A short goal keeps tier-4 tests reactive: fewer prefetched segments
   // between a change and the moment its consequences reach the playhead.
-  ...(reactive ? { config: { bufferGoalSeconds: 12 } } : {}),
+  // The suite reads the trace for recovery and steering events; the engine
+  // keeps none unless asked.
+  config: { traceCapacity: 500, ...(reactive ? { bufferGoalSeconds: 12 } : {}) },
   ...(profile !== null || failMatch !== null ? { transport: { fetchImpl: shapedFetch } } : {}),
 });
 

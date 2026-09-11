@@ -6,7 +6,8 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
-const PORT = 4173;
+// Overridable so a local run can sidestep another project's server on 4173.
+const PORT = Number(process.env.E2E_PORT ?? 4173);
 
 const MIME = {
   '.m3u8': 'application/vnd.apple.mpegurl',

@@ -321,7 +321,84 @@ describe('apply strategies through the reducer', () => {
     expect(next.quality.active).toBe('v-720');
   });
 
-  it("'now' flushes from the playhead and nudges the element, fetching nothing itself", () => {
+  it("12d. 'now' inside a segment flushes from that segment's start; the refill fetches it", () => {
+    // A flush from the playhead itself would leave segment 1's head, [4,
+    // 6.2), which reads as appended under the scheduler's midpoint rule:
+    // the refill would skip to segment 2 and the seek would sit in a hole.
+    let state: KernelState = {
+      ...structuredClone(pinnableState()),
+      tracks: { active: new Map([['video', 'v']]), available: ['v'] },
+      playback: { currentTime: 6.2, buffered: [{ start: 0, end: 20 }], seeking: false },
+    };
+    let fx: readonly Effect[];
+    [state, fx] = reduce(deepFreeze(state), {
+      type: 'PIN_RENDITION',
+      renditionId: 'v-720',
+      apply: 'now',
+    });
+    expect(fx.filter((e) => e.kind !== 'abort')).toEqual([
+      { kind: 'remove', sbId: 'sb:video', start: 4, end: Infinity },
+      { kind: 'seekElement', to: 6.2 },
+    ]);
+    [, fx] = reduce(deepFreeze(structuredClone(state)), {
+      type: 'SOURCEBUFFER_UPDATEEND',
+      sbId: 'sb:video',
+      ranges: [{ start: 0, end: 4 }],
+    });
+    expect(fx.find((e) => e.kind === 'fetch')).toMatchObject({
+      url: 'https://cdn.example/hi/1.m4s',
+    });
+  });
+
+  it('a pin to a rendition whose playlist is not merged yet flushes on the playing segments', () => {
+    // v-720 carries segments in this fixture and v-240 none; swap them so the
+    // target has no segment list, as an HLS rendition selected for the first
+    // time. The boundaries come from the rendition playing.
+    const state = pinnableState();
+    const period = state.presentation?.periods[0];
+    const track = period?.tracks[0];
+    if (period === undefined || track === undefined || state.presentation === null) {
+      throw new Error('fixture');
+    }
+    const [lo, hi] = track.renditions as [Rendition, Rendition];
+    const swapped: KernelState = {
+      ...state,
+      presentation: {
+        ...state.presentation,
+        periods: [
+          {
+            ...period,
+            tracks: [
+              {
+                ...track,
+                renditions: [
+                  { ...lo, segments: hi.segments },
+                  { ...hi, segments: [] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      quality: { ...state.quality, active: 'v-240' },
+      playback: { currentTime: 6.2, buffered: [{ start: 0, end: 20 }], seeking: false },
+    };
+    const [, now] = reduce(deepFreeze(structuredClone(swapped)), {
+      type: 'PIN_RENDITION',
+      renditionId: 'v-720',
+      apply: 'now',
+    });
+    expect(now.find((e) => e.kind === 'remove')).toMatchObject({ start: 4 });
+    const [, soon] = reduce(deepFreeze(structuredClone(swapped)), {
+      type: 'PIN_RENDITION',
+      renditionId: 'v-720',
+      apply: 'soon',
+    });
+    // 6.2 s plus the 1.5 s lead falls in [4, 8): the boundary is 8.
+    expect(soon.find((e) => e.kind === 'remove')).toMatchObject({ start: 8 });
+  });
+
+  it("'now' flushes from the playhead's segment and nudges the element, fetching nothing itself", () => {
     const [, fx] = reduce(deepFreeze(structuredClone(pinnableState())), {
       type: 'PIN_RENDITION',
       renditionId: 'v-720',
@@ -452,9 +529,9 @@ describe('memoization', () => {
 });
 
 describe('canSwitchTo default', () => {
-  it('identical strings are seamless, a profile change is changeType, a family change reloads', () => {
+  it('one family is seamless, profile and level included; a family change reloads', () => {
     expect(canSwitchTo(r240, r360)).toBe('seamless');
-    expect(canSwitchTo(r240, { ...r360, codecs: 'avc1.64001f' })).toBe('changeType');
+    expect(canSwitchTo(r240, { ...r360, codecs: 'avc1.64001f' })).toBe('seamless');
     expect(canSwitchTo(r240, r720)).toBe('reload');
     expect(canSwitchTo(null, r720)).toBe('seamless');
   });

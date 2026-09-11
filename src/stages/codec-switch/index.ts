@@ -1,12 +1,12 @@
 /**
  * codec-switch: the real answer to entanglement #2's query. It registers a
  * switch policy the kernel injects into abr's telemetry; abr consumes it
- * without importing this stage. The refinement over the kernel default: a
- * changeType verdict is only returned when the browser can actually bridge
- * the two codecs, which needs both a supported target type and
- * SourceBuffer.changeType itself. Where the browser cannot, an in-family
- * change downgrades to reload rather than proposing a switch that would
- * throw at append time.
+ * without importing this stage. The refinement over the kernel default,
+ * which reloads across codec families: a family change is a changeType
+ * when the browser can actually bridge the two codecs, which needs both a
+ * supported target type and SourceBuffer.changeType itself, and a reload
+ * where it cannot. Changes inside one family stay seamless, as the kernel
+ * says: the reducer appends the new init bare and browsers accept it.
  *
  * codec-probe (declared in `requires`, resolved by the loader, never
  * imported) is the future source of exact codec strings when a manifest
@@ -43,9 +43,8 @@ function changeTypeSupported(target: Rendition): boolean {
 
 export function createPolicy(): (current: Rendition | null, target: Rendition) => SwitchVerdict {
   return (current, target) => {
-    const base = canSwitchTo(current, target);
-    if (base !== 'changeType') return base;
-    // The kernel says a changeType would do; confirm the browser agrees.
+    if (canSwitchTo(current, target) === 'seamless') return 'seamless';
+    // A family change: changeType where the browser bridges it, else reload.
     return changeTypeSupported(target) ? 'changeType' : 'reload';
   };
 }
