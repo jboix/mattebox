@@ -42,12 +42,18 @@ function dashInfo(flavor: string): { codecs: string; timescale: number } {
   return meta;
 }
 
+// The video codec alone: the live and steering variants below carry no
+// audio group and their segments hold no audio track, so a CODECS that
+// still names the master's audio codec promises Chromium a track the init
+// segment never delivers, and it rejects the append. Firefox and WebKit
+// let it pass, which is how the lie survived.
 function hlsCodecs(flavor: string): string {
   const key = `hls:${flavor}`;
   let meta = metaCache.get(key);
   if (meta === undefined) {
     const master = readFileSync(join(STREAMS, `${flavor}/master.m3u8`), 'utf8');
-    meta = { codecs: /CODECS="([^"]+)"/.exec(master)?.[1] ?? '', timescale: 0 };
+    const codecs = /CODECS="([^"]+)"/.exec(master)?.[1] ?? '';
+    meta = { codecs: codecs.split(',')[0]?.trim() ?? '', timescale: 0 };
     metaCache.set(key, meta);
   }
   return meta.codecs;
