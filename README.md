@@ -56,6 +56,19 @@ global with the same API.
 The [guide](docs/guide/README.md) covers the rest, starting with
 [Getting started](docs/guide/01-getting-started.md).
 
+## Player
+
+Mattebox is the engine. Try it in the
+[playground](https://jboix.github.io/mattebox/), which lets you load streams
+and pick stages in the browser. If you want a finished player on top of it,
+with controls, a theme, and a UI you can customize, use the sibling projects:
+
+- [mattebox-player](https://github.com/jboix/mattebox-player): a ready-made
+  player built on Mattebox. Try the [demo](https://jboix.github.io/mattebox-player/).
+- [mattebox-player-editor](https://github.com/jboix/mattebox-player-editor):
+  a visual theme editor for the player. Open the
+  [editor](https://jboix.github.io/mattebox-player-editor/) to customize it.
+
 ## Presets
 
 A preset is an engine with a fixed set of stages, exported from

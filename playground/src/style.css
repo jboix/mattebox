@@ -166,6 +166,29 @@ body {
   flex-wrap: wrap;
 }
 
+/* The repository, as the mark alone, sized like the buttons beside it. */
+.github {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  color: var(--muted);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.github:hover {
+  color: var(--ink);
+  border-color: var(--faint);
+}
+
+.github svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
 /* ---- page: one column, one width for the player and everything below --- */
 .page {
   max-width: 1080px;
