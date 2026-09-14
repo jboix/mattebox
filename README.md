@@ -15,7 +15,7 @@ MSE, EME, and standard web platform APIs.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/size-chart-dark.svg">
-  <img alt="Bundle size of adaptive streaming engines, min+gzip, each engine's compatibility build. Mattebox with every stage, transmux worker inside, is 51.6 KB, hls.js 184.1 KB, video.js with VHS built in 197.3 KB, Shaka Player 267.0 KB, dash.js 297.3 KB." src="docs/size-chart-light.svg">
+  <img alt="Bundle size of adaptive streaming engines, min+gzip, each engine's compatibility build. Mattebox with every stage, transmux worker inside, is 52.9 KB, hls.js 184.1 KB, video.js with VHS built in 197.3 KB, Shaka Player 267.0 KB, dash.js 297.3 KB." src="docs/size-chart-light.svg">
 </picture>
 
 ## Quick start
@@ -81,7 +81,7 @@ const engine = hls({ config: { bufferGoalSeconds: 40 } });
 ```
 
 Every preset plays on demand and live, adapts quality, recovers, switches
-audio, and renders WebVTT. The name says what it adds: `-ts` for MPEG-TS
+audio, and renders WebVTT and CEA-608 captions. The name says what it adds: `-ts` for MPEG-TS
 segments, `-drm` for protected content.
 
 | Preset        | Line       | MPEG-TS | DRM |

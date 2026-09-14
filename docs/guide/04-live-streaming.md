@@ -52,6 +52,7 @@ A seek before the window start is clamped to the window start.
 
 Program date time in HLS and `availabilityStartTime` in DASH anchor the
 timeline to a wall clock. The `pdt` stage converts in both directions.
+Every preset includes it.
 
 ```ts
 import pdt from 'mattebox/stages/pdt';

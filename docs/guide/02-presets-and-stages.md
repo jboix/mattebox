@@ -97,21 +97,22 @@ protected.
 Every preset except `kernel` includes the same base: on
 demand and live playback, adaptive quality with a size cap and bandwidth
 memory, recovery, content steering, alternate audio with codec switching,
-WebVTT subtitles, and CMAF live timing. The HLS lines add program date time
-and AES-128 segment decryption.
-`-ts` adds the transmuxer, packed audio, CEA-608 captions, and ID3
-metadata. `-drm` adds the three EME stages. `full` is `dual-ts-drm` plus the
-four stages below, and `kernel` is nothing, for a stack you build
-by hand.
+WebVTT subtitles, CEA-608 captions, CMAF live timing, program date time,
+and the codec probe. The HLS lines add AES-128 segment decryption.
+`-ts` adds the transmuxer, packed audio, and ID3 metadata. `-drm` adds the
+three EME stages. `full` is `dual-ts-drm` plus the two stages below, and
+`kernel` is nothing, for a stack you build by hand.
 
-Four stages are only in `full`. Add them with `stages` when you need them.
+Two stages are only in `full`. Add them with `stages` when you need them.
 
-| Stage                                    | Why                                                                                            |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `thumbnails`                             | Needs a sprite track URL from your app                                                         |
-| `cmcd`                                   | Changes every request to the CDN, so it is opt-in                                              |
-| `mp4-box`, `codec-probe`                 | Reads codecs from the init segment when the playlist declares none                             |
-| `nal-scan`, `text-cea608` on a CMAF line | Scans the video bitstream for captions. The `-ts` presets get them from the transmuxer instead |
+| Stage        | Why                                               |
+| ------------ | ------------------------------------------------- |
+| `thumbnails` | Needs a sprite track URL from your app            |
+| `cmcd`       | Changes every request to the CDN, so it is opt-in |
+
+The caption stages read the NAL unit headers of every H.264 and HEVC video
+segment, a fraction of a millisecond per segment. If your content has no
+in-band captions, remove them with `without: ['nal-scan', 'text-cea608']`.
 
 A preset takes the same `config` and `transport` options as `mattebox()`,
 plus two more. `stages` merges by name: a stage the preset already has is
@@ -153,7 +154,7 @@ the transmux Worker inside.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../preset-chart-dark.svg">
-  <img alt="Bundle size of every Mattebox preset, min+gzip, one file each. kernel 17.9 KB, hls 29.9 KB, dash 29.5 KB, dual 34.3 KB, dual-ts-drm 49.1 KB, full 51.6 KB." src="../preset-chart-light.svg">
+  <img alt="Bundle size of every Mattebox preset, min+gzip, one file each. kernel 18.3 KB, hls 35.1 KB, dash 34.5 KB, dual 39.3 KB, dual-ts-drm 52.0 KB, full 52.9 KB." src="../preset-chart-light.svg">
 </picture>
 
 ## Kernel config

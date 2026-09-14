@@ -20,7 +20,7 @@ function stub(name: string, requires: string[] = []): Stage {
   return { name, requires, install: () => undefined };
 }
 
-const HLS = ['hls-cmaf', 'hls-live', 'pdt', 'aes-128'];
+const HLS = ['hls-cmaf', 'hls-live', 'aes-128'];
 const DASH = ['dash-cmaf', 'dash-live'];
 const BASE = [
   'abr',
@@ -33,10 +33,15 @@ const BASE = [
   'text-webvtt',
   'text-webvtt-segmented',
   'cmaf-timing',
+  'pdt',
+  'mp4-box',
+  'codec-probe',
+  'nal-scan',
+  'text-cea608',
 ];
-const TS = ['ts-transmux', 'packed-audio', 'nal-scan', 'text-cea608', 'meta-id3'];
+const TS = ['ts-transmux', 'packed-audio', 'meta-id3'];
 const DRM = ['eme-core', 'eme-cenc', 'eme-fairplay'];
-const ACCESSORIES = ['mp4-box', 'codec-probe', 'cmcd', 'thumbnails'];
+const ACCESSORIES = ['cmcd', 'thumbnails'];
 
 const MATRIX: ReadonlyArray<[typeof kernel, readonly string[]]> = [
   [kernel, []],

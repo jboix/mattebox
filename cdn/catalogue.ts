@@ -31,7 +31,7 @@ import textWebvtt from '../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../src/stages/text-webvtt-segmented/index.js';
 import thumbnails from '../src/stages/thumbnails/index.js';
 
-export const hlsFactories = { hlsCmaf, hlsLive, pdt, aes128 };
+export const hlsFactories = { hlsCmaf, hlsLive, aes128 };
 export const dashFactories = { dashCmaf, dashLive };
 export const baseFactories = {
   abr,
@@ -44,8 +44,13 @@ export const baseFactories = {
   textWebvtt,
   textWebvttSegmented,
   cmafTiming,
+  pdt,
+  mp4Box,
+  codecProbe,
+  nalScan,
+  textCea608,
 };
 /** The TS tier minus ts-transmux, which cdn/worker.ts adds with the embedded Worker. */
-export const tsFactories = { packedAudio, nalScan, textCea608, metaId3 };
+export const tsFactories = { packedAudio, metaId3 };
 export const drmFactories = { emeCore, emeCenc, emeFairplay };
-export const accessoryFactories = { mp4Box, codecProbe, cmcd, thumbnails };
+export const accessoryFactories = { cmcd, thumbnails };

@@ -1,83 +1,263 @@
 /**
- * nal-scan exists only to reach captions in fMP4. On native CMAF content
- * there is no transmux walking the NALs, so this stage does: it walks the
- * moof and mdat, finds the SEI NAL units in each coded sample, times them
- * from the fragment's tfdt and trun, and delivers the caption bytes to the
- * same seam ts-transmux uses. It imports mp4-box for the box reads and the
- * shared SEI decoder; it never imports text-cea608.
+ * nal-scan reaches in-band captions in fMP4. On native CMAF content there is
+ * no transmux walking the NALs, so this stage does: it learns the H.264 and
+ * HEVC video tracks from the init segment, walks every moof, traf, and trun
+ * of a media segment, finds the SEI NAL units in each sample, and delivers
+ * their caption bytes to the same seam ts-transmux uses. It imports mp4-box
+ * for the box reads and the shared SEI decoder; it never imports text-cea608.
  *
- * It is not cheap and does not pretend to be: per entanglement #1 it loads
- * only when a caption stage needs an fMP4 SEI source, and it does zero work
- * when no caption consumer is registered.
+ * Samples hold length-prefixed NAL units (ISO/IEC 14496-15 §5.3.2), so the
+ * walk jumps from one NAL header to the next and costs per NAL, not per byte.
+ * Only SEI units are copied and decoded. It does no work when no caption
+ * consumer is registered.
  */
+import type { CcPacket } from '../../containers/captions.js';
 import { captionsWanted, deliverCaptions } from '../../containers/captions.js';
-import { findBox, parseTfdt } from '../../containers/mp4-box/index.js';
-import { ccTriplesFromSei } from '../../containers/sei.js';
+import { findBox, findBoxes, fullBox, parseTfdt } from '../../containers/mp4-box/index.js';
+import { type CcTriple, ccTriplesFromSei } from '../../containers/sei.js';
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage } from '../../types/stage.js';
 
-/** After transmux (100) so it can walk transmuxed TS output as well as native fMP4. */
-const SCAN_ORDER = 150;
-const DEFAULT_TIMESCALE = 90000;
-const SEI_NAL_TYPE = 6;
+/**
+ * After aes-128 decryption (1), before ts-transmux (100). An MPEG-TS segment
+ * has no moof at this point and is skipped, because the transmuxer delivers
+ * its own captions.
+ */
+const SCAN_ORDER = 50;
 
-interface TrunSample {
-  readonly duration: number;
-  readonly size: number;
+/** SampleEntry (8 bytes) plus VisualSampleEntry (70 bytes). ISO/IEC 14496-12 §12.1.3. */
+const VISUAL_ENTRY_HEADER = 78;
+
+/** H.264 SEI. ITU-T H.264 Table 7-1. */
+const AVC_SEI = 6;
+/** HEVC prefix and suffix SEI. ITU-T H.265 Table 7-1. */
+const HEVC_PREFIX_SEI = 39;
+const HEVC_SUFFIX_SEI = 40;
+
+// tfhd and trun flags. ISO/IEC 14496-12 §8.8.7 and §8.8.8.
+const TFHD_BASE_DATA_OFFSET = 0x000001;
+const TFHD_SAMPLE_DESCRIPTION = 0x000002;
+const TFHD_DEFAULT_DURATION = 0x000008;
+const TFHD_DEFAULT_SIZE = 0x000010;
+const TFHD_DEFAULT_BASE_IS_MOOF = 0x020000;
+const TRUN_DATA_OFFSET = 0x000001;
+const TRUN_FIRST_SAMPLE_FLAGS = 0x000004;
+const TRUN_DURATION = 0x000100;
+const TRUN_SIZE = 0x000200;
+const TRUN_FLAGS = 0x000400;
+const TRUN_CTS = 0x000800;
+
+interface VideoTrack {
+  readonly timescale: number;
+  readonly hevc: boolean;
+  /** NAL unit length prefix in bytes, from avcC or hvcC. */
+  readonly lengthSize: number;
+  /** trex defaults, for a tfhd and trun that leave them out. */
+  readonly defaultDuration: number;
+  readonly defaultSize: number;
 }
 
-/** Reads sample durations and sizes from a trun, honouring its flag layout. */
-function parseTrun(payload: Uint8Array): { samples: TrunSample[]; defaultDuration: number } {
-  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
-  const flags = view.getUint32(0) & 0x00ffffff;
-  const sampleCount = view.getUint32(4);
-  let offset = 8;
-  if (flags & 0x0001) offset += 4; // data_offset
-  if (flags & 0x0004) offset += 4; // first_sample_flags
-  const hasDuration = (flags & 0x0100) !== 0;
-  const hasSize = (flags & 0x0200) !== 0;
-  const hasFlags = (flags & 0x0400) !== 0;
-  const hasCts = (flags & 0x0800) !== 0;
-  const samples: TrunSample[] = [];
-  for (let i = 0; i < sampleCount; i += 1) {
-    let duration = 0;
-    let size = 0;
-    if (hasDuration) {
-      duration = view.getUint32(offset);
-      offset += 4;
-    }
-    if (hasSize) {
-      size = view.getUint32(offset);
-      offset += 4;
-    }
-    if (hasFlags) offset += 4;
-    if (hasCts) offset += 4;
-    if (offset > payload.byteLength) break;
-    samples.push({ duration, size });
+function view(bytes: Uint8Array): DataView {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+}
+
+function fourcc(bytes: Uint8Array, at: number): string {
+  return String.fromCharCode(
+    bytes[at] ?? 0,
+    bytes[at + 1] ?? 0,
+    bytes[at + 2] ?? 0,
+    bytes[at + 3] ?? 0,
+  );
+}
+
+/** The format and body of the first stsd sample entry. */
+function sampleEntry(stsd: Uint8Array): { format: string; body: Uint8Array } | null {
+  const body = fullBox(stsd)?.body;
+  if (body === undefined || body.byteLength < 12) return null;
+  const size = view(body).getUint32(4);
+  if (size < 8 || 4 + size > body.byteLength) return null;
+  return { format: fourcc(body, 8), body: body.subarray(12, 4 + size) };
+}
+
+/** The H.264 and HEVC tracks of an init segment, by track ID. Other codecs carry no SEI. */
+function videoTracks(init: Uint8Array): Map<number, VideoTrack> {
+  const defaults = new Map<number, { duration: number; size: number }>();
+  const mvex = findBox(init, 'moov/mvex');
+  for (const trex of mvex === null ? [] : findBoxes(mvex.payload, 'trex')) {
+    const body = fullBox(trex.payload)?.body;
+    if (body === undefined || body.byteLength < 16) continue;
+    const v = view(body);
+    defaults.set(v.getUint32(0), { duration: v.getUint32(8), size: v.getUint32(12) });
   }
-  return { samples, defaultDuration: DEFAULT_TIMESCALE / 30 };
+
+  const tracks = new Map<number, VideoTrack>();
+  for (const trak of findBoxes(init, 'moov/trak')) {
+    const tkhd = findBox(trak.payload, 'tkhd');
+    const mdhd = findBox(trak.payload, 'mdia/mdhd');
+    const stsd = findBox(trak.payload, 'mdia/minf/stbl/stsd');
+    const entry = stsd === null ? null : sampleEntry(stsd.payload);
+    if (tkhd === null || mdhd === null || entry === null) continue;
+    if (entry.body.byteLength < VISUAL_ENTRY_HEADER) continue;
+    const children = entry.body.subarray(VISUAL_ENTRY_HEADER);
+
+    let format = entry.format;
+    if (format === 'encv') {
+      // The original format is in sinf/frma (ISO/IEC 23001-7 §4.1). Subsample
+      // encryption leaves SEI units in the clear, so protected video scans too.
+      const sinf = findBox(children, 'sinf');
+      const frma = sinf === null ? null : findBox(sinf.payload, 'frma');
+      if (frma === null || frma.payload.byteLength < 4) continue;
+      format = fourcc(frma.payload, 0);
+    }
+    const hevc = format === 'hvc1' || format === 'hev1';
+    if (!hevc && format !== 'avc1' && format !== 'avc3') continue;
+
+    // lengthSizeMinusOne is the low two bits of avcC byte 4 and hvcC byte 21.
+    const config = findBox(children, hevc ? 'hvcC' : 'avcC');
+    const lengthAt = hevc ? 21 : 4;
+    const lengthSize =
+      config !== null && config.payload.byteLength > lengthAt
+        ? ((config.payload[lengthAt] as number) & 0x03) + 1
+        : 4;
+
+    const trackAt = tkhd.payload[0] === 1 ? 20 : 12;
+    const scaleAt = mdhd.payload[0] === 1 ? 20 : 12;
+    if (tkhd.payload.byteLength < trackAt + 4 || mdhd.payload.byteLength < scaleAt + 4) continue;
+    const trackId = view(tkhd.payload).getUint32(trackAt);
+    const timescale = view(mdhd.payload).getUint32(scaleAt);
+    if (timescale === 0) continue;
+    const fallback = defaults.get(trackId);
+    tracks.set(trackId, {
+      timescale,
+      hevc,
+      lengthSize,
+      defaultDuration: fallback?.duration ?? 0,
+      defaultSize: fallback?.size ?? 0,
+    });
+  }
+  return tracks;
 }
 
-/** Walks one AVCC sample's length-prefixed NALs, collecting the SEI units. */
-function seiOfSample(sample: Uint8Array): Uint8Array[] {
-  const view = new DataView(sample.buffer, sample.byteOffset, sample.byteLength);
-  const sei: Uint8Array[] = [];
+/** Appends the SEI NAL units of one sample to `out`. */
+function seiUnits(sample: Uint8Array, track: VideoTrack, out: Uint8Array[]): void {
   let offset = 0;
-  while (offset + 4 <= sample.byteLength) {
-    const length = view.getUint32(offset);
-    offset += 4;
-    if (length === 0 || offset + length > sample.byteLength) break;
-    const nal = sample.subarray(offset, offset + length);
-    if (((nal[0] ?? 0) & 0x1f) === SEI_NAL_TYPE) sei.push(nal);
+  while (offset + track.lengthSize <= sample.byteLength) {
+    let length = 0;
+    for (let i = 0; i < track.lengthSize; i += 1) {
+      length = length * 256 + (sample[offset + i] as number);
+    }
+    offset += track.lengthSize;
+    if (length === 0 || offset + length > sample.byteLength) return;
+    const header = sample[offset] as number;
+    const hevcType = (header >> 1) & 0x3f;
+    const sei = track.hevc
+      ? hevcType === HEVC_PREFIX_SEI || hevcType === HEVC_SUFFIX_SEI
+      : (header & 0x1f) === AVC_SEI;
+    if (sei) out.push(sample.subarray(offset, offset + length));
     offset += length;
   }
-  return sei;
+}
+
+/**
+ * The caption packets of one media segment. A sample's time is the segment's
+ * presentation start plus its presentation offset from the first decode time
+ * of its track in the segment, the timeline cmaf-timing and the transmuxer
+ * produce. The tfdt itself may carry a broadcast clock.
+ */
+function captionPackets(
+  data: Uint8Array,
+  tracks: ReadonlyMap<number, VideoTrack>,
+  start: number,
+): CcPacket[] {
+  const packets: CcPacket[] = [];
+  const firstDecode = new Map<number, number>();
+  const nextDecode = new Map<number, number>();
+  for (const moof of findBoxes(data, 'moof')) {
+    // Without tfhd flags, the first traf's data base is the moof and each
+    // later traf's is the end of the previous traf's data.
+    let previousEnd = moof.start;
+    for (const traf of findBoxes(moof.payload, 'traf')) {
+      const tfhdBox = findBox(traf.payload, 'tfhd');
+      const tfhd = tfhdBox === null ? null : fullBox(tfhdBox.payload);
+      if (tfhd === null || tfhd.body.byteLength < 4) continue;
+      const tfhdView = view(tfhd.body);
+      const trackId = tfhdView.getUint32(0);
+      const track = tracks.get(trackId);
+      let at = 4;
+      let base = tfhd.flags & TFHD_DEFAULT_BASE_IS_MOOF ? moof.start : previousEnd;
+      if (tfhd.flags & TFHD_BASE_DATA_OFFSET) {
+        base = Number(tfhdView.getBigUint64(at));
+        at += 8;
+      }
+      if (tfhd.flags & TFHD_SAMPLE_DESCRIPTION) at += 4;
+      let defaultDuration = track?.defaultDuration ?? 0;
+      let defaultSize = track?.defaultSize ?? 0;
+      if (tfhd.flags & TFHD_DEFAULT_DURATION) {
+        defaultDuration = tfhdView.getUint32(at);
+        at += 4;
+      }
+      if (tfhd.flags & TFHD_DEFAULT_SIZE) defaultSize = tfhdView.getUint32(at);
+
+      const tfdt = findBox(traf.payload, 'tfdt');
+      const tfdtTime = tfdt === null ? undefined : parseTfdt(tfdt.payload)?.baseMediaDecodeTime;
+      let decode = tfdtTime ?? nextDecode.get(trackId) ?? 0;
+      const first = firstDecode.get(trackId) ?? decode;
+      firstDecode.set(trackId, first);
+
+      let cursor = base;
+      for (const trunBox of findBoxes(traf.payload, 'trun')) {
+        const trun = fullBox(trunBox.payload);
+        if (trun === null || trun.body.byteLength < 4) continue;
+        const trunView = view(trun.body);
+        const count = trunView.getUint32(0);
+        let p = 4;
+        if (trun.flags & TRUN_DATA_OFFSET) {
+          cursor = base + trunView.getInt32(p);
+          p += 4;
+        }
+        if (trun.flags & TRUN_FIRST_SAMPLE_FLAGS) p += 4;
+        // A sample occupies at least one mdat byte, so a count past the data is malformed.
+        const samples = Math.min(count, data.byteLength);
+        for (let i = 0; i < samples; i += 1) {
+          let duration = defaultDuration;
+          let size = defaultSize;
+          let cts = 0;
+          if (trun.flags & TRUN_DURATION) {
+            duration = trunView.getUint32(p);
+            p += 4;
+          }
+          if (trun.flags & TRUN_SIZE) {
+            size = trunView.getUint32(p);
+            p += 4;
+          }
+          if (trun.flags & TRUN_FLAGS) p += 4;
+          if (trun.flags & TRUN_CTS) {
+            cts = trun.version === 1 ? trunView.getInt32(p) : trunView.getUint32(p);
+            p += 4;
+          }
+          if (track !== undefined) {
+            const units: Uint8Array[] = [];
+            seiUnits(data.subarray(cursor, cursor + size), track, units);
+            const triples: CcTriple[] = [];
+            for (const unit of units) triples.push(...ccTriplesFromSei(unit, track.hevc ? 2 : 1));
+            if (triples.length > 0) {
+              packets.push({ time: start + (decode - first + cts) / track.timescale, triples });
+            }
+          }
+          cursor += size;
+          decode += duration;
+        }
+      }
+      previousEnd = cursor;
+      nextDecode.set(trackId, decode);
+    }
+  }
+  return packets;
 }
 
 export default function nalScan(): Stage {
-  // The video track timescale, learned from the init segment's mdhd and held
-  // across the media segments that follow it.
-  let timescale = DEFAULT_TIMESCALE;
+  // The caption-bearing video tracks of the latest init segment, by track ID.
+  let tracks: ReadonlyMap<number, VideoTrack> = new Map();
 
   return {
     name: 'nal-scan',
@@ -86,44 +266,16 @@ export default function nalScan(): Stage {
       ctx.registerTransform({
         name: 'nal-scan',
         order: SCAN_ORDER,
-        transform(data: Uint8Array, _meta: SegmentMeta): Uint8Array {
-          // Zero work unless a caption consumer is registered.
-          if (!captionsWanted()) return data;
-
-          // An init segment carries the timescale in the video track's mdhd.
-          const mdhd = findBox(data, 'moov/trak/mdia/mdhd');
-          if (mdhd !== null) {
-            const view = new DataView(
-              mdhd.payload.buffer,
-              mdhd.payload.byteOffset,
-              mdhd.payload.byteLength,
-            );
-            const version = view.getUint8(0);
-            timescale = version === 1 ? view.getUint32(20) : view.getUint32(12);
+        transform(data: Uint8Array, meta: SegmentMeta): Uint8Array {
+          // No work without a caption consumer. Audio buffers carry no video SEI.
+          if (!captionsWanted() || meta.contentType !== 'video') return data;
+          try {
+            if (findBox(data, 'moov') !== null) tracks = videoTracks(data);
+            if (tracks.size > 0) deliverCaptions(captionPackets(data, tracks, meta.start));
+          } catch {
+            // A malformed fragment yields no captions. The bytes still append,
+            // and MSE reports real corruption.
           }
-
-          const mdat = findBox(data, 'mdat');
-          const trunBox = findBox(data, 'moof/traf/trun');
-          if (mdat === null || trunBox === null) return data;
-          const tfdtBox = findBox(data, 'moof/traf/tfdt');
-          const base =
-            tfdtBox !== null ? (parseTfdt(tfdtBox.payload)?.baseMediaDecodeTime ?? 0) : 0;
-          const { samples } = parseTrun(trunBox.payload);
-
-          const packets: { time: number; triples: ReturnType<typeof ccTriplesFromSei> }[] = [];
-          let cursor = 0;
-          let decodeTime = base;
-          for (const sample of samples) {
-            const bytes = mdat.payload.subarray(cursor, cursor + sample.size);
-            cursor += sample.size;
-            const time = decodeTime / (timescale || DEFAULT_TIMESCALE);
-            decodeTime += sample.duration;
-            for (const sei of seiOfSample(bytes)) {
-              const triples = ccTriplesFromSei(sei);
-              if (triples.length > 0) packets.push({ time, triples });
-            }
-          }
-          deliverCaptions(packets);
           return data;
         },
       });

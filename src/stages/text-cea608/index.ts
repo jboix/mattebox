@@ -21,7 +21,8 @@ export default function textCea608(): Stage {
     name: 'text-cea608',
     provides: ['text-cea608', { contentType: 'text', mimeType: 'application/cea-608' }],
     // Either SEI source satisfies it; the loader resolves the alternative.
-    requires: [['ts-transmux', 'nal-scan']],
+    // nal-scan comes first because it reads fMP4, which every preset plays.
+    requires: [['nal-scan', 'ts-transmux']],
     install(ctx) {
       const decoder = new Cea608Decoder();
       const element = ctx.element;

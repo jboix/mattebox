@@ -16,6 +16,12 @@ import { probeInitSegment } from '../../containers/codec-probe/index.js';
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage } from '../../types/stage.js';
 
+declare module '../../index.js' {
+  interface MatteboxNamespaces {
+    codecProbe: CodecProbeApi;
+  }
+}
+
 export interface CodecProbeApi {
   /** The codec strings derived from the most recent init segment. */
   readonly detected: readonly string[];

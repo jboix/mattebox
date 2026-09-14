@@ -24,7 +24,7 @@ lists what each preset includes.
 | Everything, accessories included              | `mattebox.min.js`             |
 
 Every bundle plays on demand and live, adapts quality, recovers, switches
-audio, and renders WebVTT. The name says what it adds.
+audio, and renders WebVTT and CEA-608 captions. The name says what it adds.
 
 ## The script tag
 

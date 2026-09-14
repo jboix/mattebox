@@ -79,3 +79,10 @@ it('13. a quality-switch storm never wedges playback', async () => {
   expect(engine.error?.code ?? null).toBeNull();
   expect(engine.quality.active?.id ?? null).toBe(engine.quality.pinned);
 });
+
+it('14. a media playlist with no CODECS plays: codec-probe types the buffer from the init segment', async () => {
+  const player = await boot({ src: 'bare' });
+  await play(player, 2, 10_000);
+  expect(player.engine.error).toBeNull();
+  expect(player.engine.codecProbe?.mimeType).toMatch(/codecs="/);
+});

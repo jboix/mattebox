@@ -18,11 +18,13 @@ import abr from '../../src/stages/abr/index.js';
 import abrCapSize from '../../src/stages/abr-cap-size/index.js';
 import altAudio from '../../src/stages/alt-audio/index.js';
 import cmafTiming from '../../src/stages/cmaf-timing/index.js';
+import codecProbe from '../../src/stages/codec-probe/index.js';
 import codecSwitch from '../../src/stages/codec-switch/index.js';
 import contentSteering from '../../src/stages/content-steering/index.js';
 import emeCenc from '../../src/stages/eme-cenc/index.js';
 import emeCore from '../../src/stages/eme-core/index.js';
 import metaId3 from '../../src/stages/meta-id3/index.js';
+import mp4Box from '../../src/stages/mp4-box/index.js';
 import nalScan from '../../src/stages/nal-scan/index.js';
 import pdt from '../../src/stages/pdt/index.js';
 import recovery from '../../src/stages/recovery/index.js';
@@ -30,7 +32,7 @@ import textCea608 from '../../src/stages/text-cea608/index.js';
 import textWebvtt from '../../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../../src/stages/text-webvtt-segmented/index.js';
 
-export type Source = 'hls' | 'dash' | 'hls-live' | 'dash-live' | 'steer' | 'ts' | 'aac';
+export type Source = 'hls' | 'dash' | 'hls-live' | 'dash-live' | 'steer' | 'ts' | 'aac' | 'bare';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
 export interface BootOptions {
@@ -40,7 +42,6 @@ export interface BootOptions {
   readonly drm?: boolean;
   /** Load the legacy container family for a CMAF source too. */
   readonly ts?: boolean;
-  readonly cc?: boolean;
   readonly profile?: Profile;
   /** URLs containing this start 404ing after `failAfter` seconds. */
   readonly fail?: string;
@@ -78,6 +79,8 @@ const sources: Record<Source, () => string> = {
   // both H.264/AAC and playable only where ts-transmux is loaded.
   ts: () => '/streams/ts/master.m3u8',
   aac: () => '/streams/aac/master.m3u8',
+  // A media playlist alone: no master, so no CODECS for the SourceBuffer.
+  bare: () => `/streams/${flavor}/low.m3u8`,
 };
 
 const live: Array<{ player: Player; stop: () => void }> = [];
@@ -144,15 +147,19 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
     // clock needs it, VOD is untouched, so the suite runs the normalized
     // append path the presets ship.
     cmafTiming(),
+    // Also in every preset's base: the codec probe types a buffer whose
+    // playlist declares no codecs, and the caption scan walks every fMP4
+    // video segment.
+    mp4Box(),
+    codecProbe(),
+    nalScan(),
+    textCea608(),
   ];
   // The legacy container family loads for the TS and packed-audio sources.
   // It sniffs per segment, so it passes CMAF fMP4 straight through, but it is
   // gated here to keep the CMAF tests measuring the CMAF append path.
   if (src === 'ts' || src === 'aac' || options.ts === true) {
     stages.push(tsTransmux(), packedAudio(), metaId3());
-    // Captions come off the TS SEI through ts-transmux; nal-scan is the fMP4
-    // route, composed here so its transform is exercised on the same content.
-    if (options.cc === true) stages.push(nalScan(), textCea608());
   }
   if (options.abr === true) stages.push(abr());
   if (options.capsize === true) stages.push(abrCapSize());

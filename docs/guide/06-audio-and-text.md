@@ -80,13 +80,16 @@ own menu.
 
 ## CEA-608 captions
 
-CEA-608 captions are inside the H.264 bitstream. Reading them takes a
-bitstream scan, so it is a separate stage plus a source stage.
+CEA-608 captions are inside the video bitstream. `text-cea608` decodes them
+and requires a source stage that finds them: `nal-scan` or `ts-transmux`.
+Either one is enough. Every preset includes `nal-scan` and `text-cea608`.
 
-| Content        | Load                         |
-| -------------- | ---------------------------- |
-| MPEG-TS        | `ts-transmux`, `text-cea608` |
-| Fragmented MP4 | `nal-scan`, `text-cea608`    |
+| Content                       | Source stage  |
+| ----------------------------- | ------------- |
+| Fragmented MP4, H.264 or HEVC | `nal-scan`    |
+| MPEG-TS, H.264                | `ts-transmux` |
+
+Load both sources when a stream mixes TS and fMP4 renditions.
 
 ```ts
 import nalScan from 'mattebox/stages/nal-scan';

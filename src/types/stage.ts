@@ -139,7 +139,7 @@ export interface StageContext {
  * One entry in a stage's `requires`. A plain string is a hard dependency. An
  * array is a set of alternatives: the composition satisfies it if any one of
  * them is present. text-cea608 requires its SEI source as
- * `['ts-transmux', 'nal-scan']`, either of which supplies the caption bytes.
+ * `['nal-scan', 'ts-transmux']`, either of which supplies the caption bytes.
  */
 export type Requirement = string | readonly string[];
 

@@ -38,13 +38,15 @@ function toRbsp(nal: Uint8Array, start: number): Uint8Array {
 }
 
 /**
- * Extracts every CEA-608/708 cc_data triple from one SEI NAL. Returns an empty
+ * Extracts every CEA-608/708 cc_data triple from one SEI NAL. `headerLength`
+ * is the NAL header size: 1 byte for H.264, 2 for HEVC. Returns an empty
  * array for a SEI that carries no ATSC caption user data, and never reads past
  * the buffer: a malformed message stops the walk.
  */
-export function ccTriplesFromSei(seiNal: Uint8Array): CcTriple[] {
-  // SEI RBSP begins after the one-byte NAL header.
-  const rbsp = toRbsp(seiNal, 1);
+export function ccTriplesFromSei(seiNal: Uint8Array, headerLength = 1): CcTriple[] {
+  if (seiNal.byteLength <= headerLength) return [];
+  // SEI RBSP begins after the NAL header.
+  const rbsp = toRbsp(seiNal, headerLength);
   const triples: CcTriple[] = [];
   let offset = 0;
   const length = rbsp.byteLength;

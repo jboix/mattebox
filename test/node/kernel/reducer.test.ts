@@ -179,6 +179,60 @@ describe('seek during in-flight fetch', () => {
     expect(next.scheduling.inflight.has('t2')).toBe(false);
   });
 
+  describe('an init segment on a buffer codec-probe typed', () => {
+    type Loaded = NonNullable<KernelState['presentation']>;
+    const probed = 'video/mp4; codecs="avc1.64001f"';
+
+    /** The fixture with the video rendition's codecs replaced, and its init in flight. */
+    function initState(codecs: string | null): KernelState {
+      const period = vodFixture.periods[0] as Loaded['periods'][number];
+      const video = period.tracks[0] as Loaded['periods'][number]['tracks'][number];
+      const presentation: Loaded = {
+        ...vodFixture,
+        periods: [
+          {
+            ...period,
+            tracks: [{ ...video, renditions: video.renditions.map((r) => ({ ...r, codecs })) }],
+          },
+        ],
+      };
+      const base = readyStateWithInflight([
+        { token: 't2', trackId: 'v', seq: -1, url: 'u-init', sbId: 'sb-v', renditionId: 'v-1' },
+      ]);
+      return {
+        ...base,
+        presentation,
+        buffers: new Map([['sb-v', { codecs: probed, ranges: [], pendingAppends: 0 }]]),
+      };
+    }
+
+    const initLoaded = {
+      type: 'SEGMENT_LOADED',
+      trackId: 'v',
+      seq: -1,
+      token: 't2',
+      bytes: emptyBuffer(),
+      rtt: 30,
+      size: 800,
+    } as const;
+
+    it('keeps the probed type when the rendition declares no codecs', () => {
+      // A bare media playlist. A changeType back to plain video/mp4 fails in
+      // Chrome and WebKit, which is why the buffer was probed at all.
+      const [next, fx] = reduce(frozen(initState(null)), initLoaded);
+      expect(fx.filter((e) => e.kind === 'changeType')).toHaveLength(0);
+      expect(fx.filter((e) => e.kind === 'append')).toHaveLength(1);
+      expect(next.buffers.get('sb-v')).toMatchObject({ codecs: probed, initFor: 'v-1' });
+    });
+
+    it('still changes type when the rendition declares another codec family', () => {
+      const [next, fx] = reduce(frozen(initState('hvc1.1.6.L93')), initLoaded);
+      const hevc = 'video/mp4; codecs="hvc1.1.6.L93"';
+      expect(fx).toContainEqual({ kind: 'changeType', sbId: 'sb-v', codecs: hevc });
+      expect(next.buffers.get('sb-v')?.codecs).toBe(hevc);
+    });
+  });
+
   it('rejects SEEK with nothing loaded', () => {
     const [, fx] = reduce(frozen(initialState()), { type: 'SEEK', to: 10 });
     expect(fx[0]).toMatchObject({ kind: 'emit', event: 'command:rejected' });

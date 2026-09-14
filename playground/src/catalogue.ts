@@ -45,58 +45,59 @@ import textCea608 from '../../src/stages/text-cea608/index.js';
 import textWebvtt from '../../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../../src/stages/text-webvtt-segmented/index.js';
 import thumbnails from '../../src/stages/thumbnails/index.js';
+import type { Requirement } from '../../src/types/stage.js';
 
 export interface CatalogueEntry {
   readonly name: string;
   readonly layer: 'protocols' | 'containers' | 'stages';
-  readonly requires: readonly string[];
+  /** The stage's own `requires`, so the table never restates a dependency. */
+  readonly requires: readonly Requirement[];
+  /** Capability names the stage provides; a requirement can name one instead of a stage. */
+  readonly provides: readonly string[];
   readonly factory: (() => Stage) | null;
 }
 
+/** An implemented entry: name, requirements, and capabilities come from the stage it builds. */
+function built(layer: CatalogueEntry['layer'], factory: () => Stage): CatalogueEntry {
+  const stage = factory();
+  return {
+    name: stage.name,
+    layer,
+    requires: stage.requires ?? [],
+    provides: (stage.provides ?? []).filter((c): c is string => typeof c === 'string'),
+    factory,
+  };
+}
+
 export const CATALOGUE: readonly CatalogueEntry[] = [
-  { name: 'hls-cmaf', layer: 'protocols', requires: [], factory: hlsCmaf },
-  { name: 'hls-live', layer: 'protocols', requires: ['hls-cmaf'], factory: hlsLive },
-  { name: 'dash-cmaf', layer: 'protocols', requires: [], factory: dashCmaf },
-  { name: 'dash-live', layer: 'protocols', requires: ['dash-cmaf'], factory: dashLive },
-  { name: 'pdt', layer: 'stages', requires: [], factory: pdt },
-  { name: 'mp4-box', layer: 'containers', requires: [], factory: mp4Box },
-  { name: 'codec-probe', layer: 'containers', requires: ['mp4-box'], factory: codecProbe },
-  { name: 'codec-switch', layer: 'containers', requires: ['mse'], factory: codecSwitch },
-  { name: 'ts-transmux', layer: 'containers', requires: [], factory: tsTransmux },
-  { name: 'aes-128', layer: 'containers', requires: ['transport'], factory: aes128 },
-  { name: 'cmaf-timing', layer: 'containers', requires: [], factory: cmafTiming },
-  { name: 'packed-audio', layer: 'containers', requires: [], factory: packedAudio },
-  { name: 'meta-id3', layer: 'stages', requires: ['ts-transmux'], factory: metaId3 },
-  {
-    name: 'alt-audio',
-    layer: 'stages',
-    requires: ['scheduler', 'codec-switch'],
-    factory: altAudio,
-  },
-  { name: 'abr', layer: 'stages', requires: ['scheduler', 'track-registry'], factory: abr },
-  { name: 'abr-cap-size', layer: 'stages', requires: ['rendition-select'], factory: abrCapSize },
-  {
-    name: 'abr-persist',
-    layer: 'stages',
-    requires: ['abr'],
-    factory: () => abrPersist(localThroughputStorage()),
-  },
-  { name: 'text-webvtt', layer: 'stages', requires: ['scheduler'], factory: textWebvtt },
-  {
-    name: 'text-webvtt-segmented',
-    layer: 'stages',
-    requires: ['text-webvtt'],
-    factory: textWebvttSegmented,
-  },
-  { name: 'nal-scan', layer: 'stages', requires: [], factory: nalScan },
-  { name: 'text-cea608', layer: 'stages', requires: ['ts-transmux'], factory: textCea608 },
-  { name: 'eme-core', layer: 'stages', requires: ['mse'], factory: () => emeCore() },
-  { name: 'eme-cenc', layer: 'stages', requires: ['eme-core'], factory: emeCenc },
-  { name: 'eme-fairplay', layer: 'stages', requires: ['eme-core'], factory: () => emeFairplay() },
-  { name: 'recovery', layer: 'stages', requires: ['scheduler', 'mse'], factory: recovery },
-  { name: 'content-steering', layer: 'stages', requires: ['transport'], factory: contentSteering },
-  { name: 'cmcd', layer: 'stages', requires: ['transport'], factory: cmcd },
-  { name: 'thumbnails', layer: 'stages', requires: ['transport'], factory: thumbnails },
+  built('protocols', hlsCmaf),
+  built('protocols', hlsLive),
+  built('protocols', dashCmaf),
+  built('protocols', dashLive),
+  built('stages', pdt),
+  built('containers', mp4Box),
+  built('containers', codecProbe),
+  built('containers', codecSwitch),
+  built('containers', tsTransmux),
+  built('containers', aes128),
+  built('containers', cmafTiming),
+  built('containers', packedAudio),
+  built('stages', metaId3),
+  built('stages', altAudio),
+  built('stages', abr),
+  built('stages', abrCapSize),
+  built('stages', () => abrPersist(localThroughputStorage())),
+  built('stages', textWebvtt),
+  built('stages', textWebvttSegmented),
+  built('stages', nalScan),
+  built('stages', textCea608),
+  built('stages', () => emeCore()),
+  built('stages', emeCenc),
+  built('stages', () => emeFairplay()),
+  built('stages', recovery),
+  built('stages', contentSteering),
+  built('stages', cmcd),
+  built('stages', thumbnails),
 ];
 
 /**

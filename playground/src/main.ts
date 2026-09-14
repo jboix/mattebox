@@ -17,10 +17,12 @@ import type {
   TraceEntry,
 } from '../../src/index.js';
 import { createReducer, initialState, mattebox, replay } from '../../src/index.js';
+import { KERNEL_PROVIDES } from '../../src/kernel/loader.js';
 import { parse as parseDash } from '../../src/protocols/dash-cmaf/parse.js';
 import { parse, parseMediaPlaylist } from '../../src/protocols/hls-cmaf/parse.js';
 import emeCore from '../../src/stages/eme-core/index.js';
 import emeFairplay from '../../src/stages/eme-fairplay/index.js';
+import type { Requirement } from '../../src/types/stage.js';
 import { renderCapabilities } from './capabilities.js';
 import type { CatalogueEntry } from './catalogue.js';
 import { CATALOGUE, PRESETS, STREAMS } from './catalogue.js';
@@ -613,6 +615,25 @@ function renderManifestPicker(): void {
 
 // ---- stages panel --------------------------------------------------------
 
+/** A requirement's names: one for a hard dependency, several for alternatives. */
+function alternativesOf(requirement: Requirement): readonly string[] {
+  return typeof requirement === 'string' ? [requirement] : requirement;
+}
+
+/** The built entries that satisfy a name: the stage of that name, or one providing it. */
+function providersOf(name: string): CatalogueEntry[] {
+  return CATALOGUE.filter(
+    (e) => e.factory !== null && (e.name === name || e.provides.includes(name)),
+  );
+}
+
+/** True when the kernel or a composed stage satisfies one of the requirement's names. */
+function requirementMet(requirement: Requirement, stages: readonly string[]): boolean {
+  return alternativesOf(requirement).some(
+    (name) => KERNEL_PROVIDES.has(name) || providersOf(name).some((p) => stages.includes(p.name)),
+  );
+}
+
 /** The preset whose stage set equals the composition, or null for custom. */
 function matchPreset(stages: readonly string[]): string | null {
   const built = new Set(stages.filter((n) => CATALOGUE.some((e) => e.name === n && e.factory)));
@@ -660,12 +681,13 @@ function renderStages(): void {
         .map((entry) => {
           const built = entry.factory !== null;
           const checked = config.stages.includes(entry.name);
-          const requires = entry.requires.map((r) => {
-            const dep = CATALOGUE.find((e) => e.name === r);
-            const satisfied = dep === undefined || config.stages.includes(r);
+          const requires = entry.requires.map((requirement) => {
+            const names = alternativesOf(requirement);
+            const kernel = names.some((name) => KERNEL_PROVIDES.has(name));
+            const satisfied = requirementMet(requirement, config.stages);
             return `<span class="req ${satisfied ? '' : 'missing'}" title="${
-              dep === undefined ? 'provided by the kernel' : satisfied ? 'on' : 'off'
-            }">${r}</span>`;
+              kernel ? 'provided by the kernel' : satisfied ? 'on' : 'off'
+            }">${names.join(' or ')}</span>`;
           });
           return `<tr class="${built ? '' : 'unbuilt'}">
             <td><input type="checkbox" data-stage="${entry.name}" ${checked ? 'checked' : ''} ${built && custom ? '' : 'disabled'}></td>
@@ -689,11 +711,13 @@ function renderStages(): void {
       config.stages = box.checked
         ? [...config.stages, name]
         : config.stages.filter((n) => n !== name);
-      // Dependencies pull themselves in; nothing pulls a dependent out.
-      for (const req of entry.requires) {
-        const dep = CATALOGUE.find((e) => e.name === req);
-        if (box.checked && dep?.factory != null && !config.stages.includes(req)) {
-          config.stages.push(req);
+      // Dependencies pull themselves in; nothing pulls a dependent out. An
+      // unmet set of alternatives pulls in a provider of its first name.
+      if (box.checked) {
+        for (const requirement of entry.requires) {
+          if (requirementMet(requirement, config.stages)) continue;
+          const provider = alternativesOf(requirement).flatMap(providersOf)[0];
+          if (provider !== undefined) config.stages.push(provider.name);
         }
       }
       void rebuild();

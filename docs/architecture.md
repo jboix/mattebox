@@ -140,8 +140,8 @@ Stages group by feature. Each row is one directory under `src/stages/`.
 | `alt-audio`             | Keeps the audio track consistent with the video rendition's audio group | `scheduler`, `codec-switch` |
 | `text-webvtt`           | WebVTT parser and the text sink                                         | `scheduler`                 |
 | `text-webvtt-segmented` | Applies `X-TIMESTAMP-MAP` offsets to segmented HLS subtitles            | `text-webvtt`               |
-| `text-cea608`           | CEA-608 captions from SEI to a native caption track                     | `ts-transmux` or `nal-scan` |
-| `nal-scan`              | Finds SEI units in fMP4 samples for CEA-608                             | `mp4-box`                   |
+| `text-cea608`           | CEA-608 captions from SEI to a native caption track                     | `nal-scan` or `ts-transmux` |
+| `nal-scan`              | Finds SEI units in H.264 and HEVC fMP4 samples for CEA-608              |                             |
 | `meta-id3`              | ID3 timed metadata to a metadata track                                  | `media-transform`           |
 
 ### Live

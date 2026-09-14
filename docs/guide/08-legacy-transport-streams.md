@@ -66,17 +66,17 @@ URL, so a script tag needs neither option. See
 
 These stages depend on the container stages.
 
-| Stage         | Adds                                                 | See                                |
-| ------------- | ---------------------------------------------------- | ---------------------------------- |
-| `text-cea608` | Captions from the SEI units in the video             | [Chapter 06](06-audio-and-text.md) |
-| `meta-id3`    | ID3 timed metadata as cues                           | [Chapter 06](06-audio-and-text.md) |
-| `cmaf-timing` | Not needed. The transmuxer already normalizes timing | [Chapter 04](04-live-streaming.md) |
+| Stage         | Adds                                                                                                                   | See                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `text-cea608` | Captions from the SEI units in the video. Requires `ts-transmux` or `nal-scan`, so it works without the transmuxer too | [Chapter 06](06-audio-and-text.md) |
+| `meta-id3`    | ID3 timed metadata as cues                                                                                             | [Chapter 06](06-audio-and-text.md) |
+| `cmaf-timing` | Not needed. The transmuxer already normalizes timing                                                                   | [Chapter 04](04-live-streaming.md) |
 
 ## The codec-probe stage
 
 Manifests leave out or get codec strings wrong, and MSE needs the exact one.
 `codec-probe` reads the init segment and reports what it finds. It requires
-`mp4-box`.
+`mp4-box`. Every preset includes both.
 
 ```ts
 import codecProbe from 'mattebox/stages/codec-probe';

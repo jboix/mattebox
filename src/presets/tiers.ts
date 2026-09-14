@@ -19,12 +19,14 @@ import abrPersist from '../stages/abr-persist/index.js';
 import aes128 from '../stages/aes-128/index.js';
 import altAudio from '../stages/alt-audio/index.js';
 import cmafTiming from '../stages/cmaf-timing/index.js';
+import codecProbe from '../stages/codec-probe/index.js';
 import codecSwitch from '../stages/codec-switch/index.js';
 import contentSteering from '../stages/content-steering/index.js';
 import emeCenc from '../stages/eme-cenc/index.js';
 import emeCore from '../stages/eme-core/index.js';
 import emeFairplay from '../stages/eme-fairplay/index.js';
 import metaId3 from '../stages/meta-id3/index.js';
+import mp4Box from '../stages/mp4-box/index.js';
 import nalScan from '../stages/nal-scan/index.js';
 import pdt from '../stages/pdt/index.js';
 import recovery from '../stages/recovery/index.js';
@@ -34,11 +36,11 @@ import textWebvttSegmented from '../stages/text-webvtt-segmented/index.js';
 import type { Stage } from '../types/stage.js';
 import { localThroughputStorage } from './storage.js';
 
-/** HLS on demand and live, with program date time. */
+/** HLS on demand and live, with AES-128 segment decryption. */
 export function hlsLine(): Stage[] {
   // AES-128 rides with HLS: full-segment keys are common enough on HLS, and
   // the stage is a kilobyte, so no HLS deployment should meet one unprepared.
-  return [hlsCmaf(), hlsLive(), pdt(), aes128()];
+  return [hlsCmaf(), hlsLive(), aes128()];
 }
 
 /** DASH on demand and live. */
@@ -49,9 +51,12 @@ export function dashLine(): Stage[] {
 /**
  * What every preset carries: adaptive quality with a size cap and bandwidth
  * memory, recovery, content steering (inert until a manifest asks for it),
- * alternate audio with codec switching, WebVTT subtitles, and CMAF live
- * timing, which corrects the broadcast-clock tfdt some live packagers write
- * and leaves VOD untouched.
+ * alternate audio with codec switching, WebVTT subtitles, CMAF live timing
+ * (corrects the broadcast-clock tfdt some live packagers write, leaves VOD
+ * untouched), program date time from either protocol's anchor, the codec
+ * probe (types a SourceBuffer whose playlist declares no codecs, which Chrome
+ * otherwise refuses), and CEA-608 captions from fMP4 video. The caption scan
+ * costs per NAL unit, not per byte, and only when a segment has H.264 or HEVC.
  */
 export function base(): Stage[] {
   return [
@@ -65,16 +70,21 @@ export function base(): Stage[] {
     textWebvtt(),
     textWebvttSegmented(),
     cmafTiming(),
+    pdt(),
+    mp4Box(),
+    codecProbe(),
+    nalScan(),
+    textCea608(),
   ];
 }
 
 /**
- * Legacy MPEG-TS: the transmuxer and packed audio, plus what rides on the
- * transport stream, CEA-608 captions and ID3 metadata. nal-scan is included
- * so a mixed backend gets the same captions from its CMAF renditions.
+ * Legacy MPEG-TS: the transmuxer and packed audio, plus ID3 metadata, which
+ * rides on the transport stream. The transmuxer is also a caption source for
+ * the base's text-cea608, next to nal-scan.
  */
 export function tsTier(): Stage[] {
-  return [tsTransmux(), packedAudio(), nalScan(), textCea608(), metaId3()];
+  return [tsTransmux(), packedAudio(), metaId3()];
 }
 
 /** The EME stages: sessions, CENC (Widevine, PlayReady, ClearKey), FairPlay. */

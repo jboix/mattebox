@@ -785,16 +785,19 @@ function reduceFact(
             // practice, and forcing changeType there breaks WebKit. The
             // reducer emits the mechanism; codec-switch's policy governed
             // whether abr proposed the switch at all.
+            // A rendition that declares no codecs (a bare media playlist)
+            // cannot name a family change. The buffer keeps the type it was
+            // opened with, which codec-probe may have read from the init;
+            // a changeType back to the bare type fails in Chrome and WebKit.
             const targetSite = findRendition(state.presentation, matched.renditionId);
+            const declared = targetSite?.rendition.codecs ?? null;
             const targetCodecs =
-              targetSite === null
+              targetSite === null || declared === null
                 ? buffer.codecs
-                : targetSite.rendition.codecs === null
-                  ? targetSite.rendition.mimeType
-                  : `${targetSite.rendition.mimeType}; codecs="${targetSite.rendition.codecs}"`;
+                : `${targetSite.rendition.mimeType}; codecs="${declared}"`;
             const familyChanged =
-              codecFamily(targetSite?.rendition.codecs ?? null) !==
-              codecFamily(bufferCodecString(buffer.codecs));
+              declared !== null &&
+              codecFamily(declared) !== codecFamily(bufferCodecString(buffer.codecs));
             const nextBuffers = new Map(state.buffers);
             if (targetCodecs !== buffer.codecs && familyChanged) {
               effects.push({ kind: 'changeType', sbId: matched.sbId, codecs: targetCodecs });
