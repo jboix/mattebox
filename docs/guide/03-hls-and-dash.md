@@ -71,6 +71,29 @@ Detach before setting `src`, because an attached engine owns the element's
 a `MANIFEST_UNSUPPORTED` error. That error also covers an audio or video
 Content-Type on the manifest response, and bytes no adapter recognizes.
 
+## AirPlay
+
+Safari opens a ManagedMediaSource only with remote playback disabled or
+with an AirPlay source alternative, so by default the engine sets
+`disableRemotePlayback` and the element offers no AirPlay target. Pass a
+URL of the same content the receiver can play on its own, an HLS playlist
+in practice, and the engine attaches through two `<source>` children
+instead: the MediaSource first, that URL second.
+
+```ts
+await engine.attach(video, { airplay: { url: 'https://cdn.example/master.m3u8' } });
+engine.load('https://cdn.example/master.m3u8', { mimeType: 'application/vnd.apple.mpegurl' });
+```
+
+Safari plays the MediaSource and hands the second URL to the target the
+viewer picks, which plays it itself. The type defaults to
+`application/x-mpegURL`. Remote playback stays enabled, so `<video>`
+controls and the RemotePlayback API show the target.
+
+The alternative has to be playable by the receiver without the engine.
+Drop the option for DASH, and for content the receiver cannot decrypt:
+FairPlay over AirPlay needs a key session the engine does not open.
+
 ## Segment formats
 
 The adapters expect CMAF (fragmented MP4), which is what MSE accepts

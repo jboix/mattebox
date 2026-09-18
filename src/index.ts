@@ -378,10 +378,10 @@ export function mattebox(options: MatteboxOptions): Mattebox {
     get error() {
       return lastError;
     },
-    async attach(el) {
+    async attach(el, attachOptions) {
       // async so a synchronous composition or occupancy error surfaces as
       // a rejection, matching the declared Promise contract.
-      lifecycle.attach(el);
+      lifecycle.attach(el, attachOptions);
     },
     async detach() {
       lifecycle.detach();

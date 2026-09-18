@@ -5,6 +5,7 @@
  * no member shadowed, nothing monkey-patched.
  */
 
+import type { AttachOptions } from '../types/facade.js';
 import type { TimeRangesSnapshot } from '../types/ir.js';
 import type { KernelConfig, SliceReducer } from '../types/kernel.js';
 import type { Fact } from '../types/messages.js';
@@ -44,7 +45,7 @@ export interface LifecycleDeps {
 }
 
 export interface Lifecycle {
-  attach(el: HTMLMediaElement): void;
+  attach(el: HTMLMediaElement, options?: AttachOptions): void;
   detach(): void;
   element(): HTMLMediaElement | null;
 }
@@ -68,7 +69,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     elementListeners.push({ type, fn });
   }
 
-  function attach(el: HTMLMediaElement): void {
+  function attach(el: HTMLMediaElement, options: AttachOptions = {}): void {
     if (element !== null) {
       throw Object.assign(new Error('this engine is already attached'), {
         category: 'config',
@@ -104,7 +105,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     // resource-selection reset, ManagedMediaSource preference, srcObject
     // with revoke-at-sourceopen fallback. autoplay is never touched.
     try {
-      deps.mse.attach(el);
+      deps.mse.attach(el, options);
     } catch (err) {
       for (const fn of [...teardowns].reverse()) fn();
       teardowns = [];

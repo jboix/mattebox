@@ -7,7 +7,14 @@
  * reclaim buffer under memory pressure, and some iOS paths require it.
  * The blob-URL fallback revokes in the sourceopen handler, not on detach;
  * revoking on detach is the classic leak.
+ *
+ * With an AirPlay source alternative the element is attached through two
+ * `<source>` children instead: the MediaSource first, a natively playable
+ * URL of the same content second. Safari plays the first and offers the
+ * second to an AirPlay target, which is the only way to reach a receiver
+ * from MediaSource playback.
  */
+import type { AttachOptions } from '../types/facade.js';
 import type { SbId } from '../types/kernel.js';
 import type { Fact, SegmentMeta } from '../types/messages.js';
 import type { AppendQueue } from './append-queue.js';
@@ -77,7 +84,7 @@ export interface MseDiagnostics {
 
 export interface MseController {
   /** Docs-09 attach sequence. Throws when the element is already occupied. */
-  attach(el: HTMLMediaElement): void;
+  attach(el: HTMLMediaElement, options?: AttachOptions): void;
   /** Docs-09 detach sequence. Idempotent and safe from an error state. */
   detach(): void;
   registerHandlers(runner: EffectRunner): void;
@@ -119,6 +126,10 @@ export function createMseController(options: MseControllerOptions): MseControlle
   const deferred = new Map<SbId, string>();
   let objectUrl: string | null = null;
   let liveObjectUrls = 0;
+  /** The `<source>` children this controller added, to take back on detach. */
+  let sourceNodes: HTMLSourceElement[] = [];
+  /** The options of the current attach, so a reset reattaches the same way. */
+  let attachOptions: AttachOptions | undefined;
   let pendingEndOfStream: 'network' | 'decode' | 'none' | null = null;
   let pendingDuration: number | null = null;
   let pendingLiveRange: { start: number; end: number } | null = null;
@@ -257,7 +268,16 @@ export function createMseController(options: MseControllerOptions): MseControlle
     }
   }
 
-  function attach(el: HTMLMediaElement): void {
+  /** Appends one `<source>` child and answers it. */
+  function sourceElement(el: HTMLMediaElement, src: string, type: string): HTMLSourceElement {
+    const node = el.ownerDocument.createElement('source');
+    node.src = src;
+    node.type = type;
+    el.append(node);
+    return node;
+  }
+
+  function attach(el: HTMLMediaElement, options_: AttachOptions = {}): void {
     if (element !== null) {
       throw Object.assign(new Error('already attached'), {
         category: 'config',
@@ -279,6 +299,8 @@ export function createMseController(options: MseControllerOptions): MseControlle
     while (el.firstChild) el.removeChild(el.firstChild);
     el.load();
 
+    const airplay = options_.airplay;
+    attachOptions = options_;
     const Managed = options.preferManaged === false ? undefined : managedMediaSource();
     managed = Managed !== undefined;
     const ms: MediaSource = Managed !== undefined ? new Managed() : new MediaSource();
@@ -287,7 +309,10 @@ export function createMseController(options: MseControllerOptions): MseControlle
     opened = false;
 
     listen(ms, 'sourceopen', () => {
-      if (objectUrl !== null) {
+      // On the AirPlay path the URL stays live until detach: leaving an
+      // AirPlay target sends the element back to the first `<source>`, and
+      // a revoked URL would have nothing to go back to.
+      if (objectUrl !== null && sourceNodes.length === 0) {
         // Revoke at sourceopen, not detach. Waiting until detach leaks the
         // MediaSource for the lifetime of the page in shipped code.
         URL.revokeObjectURL(objectUrl);
@@ -305,24 +330,41 @@ export function createMseController(options: MseControllerOptions): MseControlle
     });
     if (managed) {
       unobserveManaged = evictor.observeManaged(ms, trimAllBackBuffers);
-      // Safari requires remote playback disabled before it will open a
-      // ManagedMediaSource.
-      el.disableRemotePlayback = true;
+      // Safari opens a ManagedMediaSource only with remote playback
+      // disabled or with an AirPlay source alternative. With an
+      // alternative the flag would take the AirPlay target away again.
+      if (airplay === undefined) el.disableRemotePlayback = true;
     }
 
-    let useSrcObject = options.attachMode !== 'object-url' && 'srcObject' in el;
-    if (useSrcObject) {
-      try {
-        el.srcObject = ms as unknown as MediaProvider;
-        useSrcObject = el.srcObject === (ms as unknown as MediaProvider);
-      } catch {
-        useSrcObject = false;
-      }
-    }
-    if (!useSrcObject) {
+    if (airplay !== undefined) {
+      // The browser reads the list top to bottom: it plays the
+      // MediaSource, and hands the second URL to an AirPlay target. A
+      // MediaSource reaches a `<source>` as an object URL only, because
+      // `srcObject` is a property of the element, not of the child.
       objectUrl = URL.createObjectURL(ms);
       liveObjectUrls += 1;
-      el.src = objectUrl;
+      sourceNodes = [
+        sourceElement(el, objectUrl, 'video/mp4'),
+        sourceElement(el, airplay.url, airplay.type ?? 'application/x-mpegURL'),
+      ];
+      // Resource selection ran on an empty element above; run it again now
+      // that the children are there.
+      el.load();
+    } else {
+      let useSrcObject = options.attachMode !== 'object-url' && 'srcObject' in el;
+      if (useSrcObject) {
+        try {
+          el.srcObject = ms as unknown as MediaProvider;
+          useSrcObject = el.srcObject === (ms as unknown as MediaProvider);
+        } catch {
+          useSrcObject = false;
+        }
+      }
+      if (!useSrcObject) {
+        objectUrl = URL.createObjectURL(ms);
+        liveObjectUrls += 1;
+        el.src = objectUrl;
+      }
     }
 
     absorb({ type: 'ELEMENT_ATTACHED', element: el });
@@ -364,10 +406,15 @@ export function createMseController(options: MseControllerOptions): MseControlle
     unlistenAll();
 
     if (el !== null) {
+      // The children go first: the occupancy check refuses an element that
+      // still has a `<source>`, so leaving them would refuse the next attach.
+      for (const node of sourceNodes) node.remove();
+      sourceNodes = [];
       if ('srcObject' in el) el.srcObject = null;
       el.removeAttribute('src');
       if (objectUrl !== null) {
-        // sourceopen never fired (attach aborted early); do not leak the URL.
+        // Either sourceopen never fired (an attach aborted early), or the
+        // AirPlay path held the URL for the session. Do not leak it.
         URL.revokeObjectURL(objectUrl);
         objectUrl = null;
         liveObjectUrls -= 1;
@@ -378,6 +425,7 @@ export function createMseController(options: MseControllerOptions): MseControlle
     element = null;
     mediaSource = null;
     managed = false;
+    attachOptions = undefined;
     pendingEndOfStream = null;
     pendingDuration = null;
     pendingLiveRange = null;
@@ -475,8 +523,9 @@ export function createMseController(options: MseControllerOptions): MseControlle
       // element (currentTime 0, no ranges).
       const el = element;
       if (el === null) return undefined;
+      const held = attachOptions;
       detach();
-      attach(el);
+      attach(el, held);
       return undefined;
     });
 

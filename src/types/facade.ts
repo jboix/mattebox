@@ -63,6 +63,23 @@ export interface TransportConfig {
   readonly responseHooks?: ReadonlyArray<(res: TransportResponseView) => void>;
 }
 
+/**
+ * A URL of the same content a receiver can play on its own, an HLS
+ * playlist in practice. Passing one on attach adds it to the element as a
+ * second `<source>`, which is what makes Safari offer an AirPlay target
+ * during MediaSource playback.
+ */
+export interface AirplaySource {
+  readonly url: string;
+  /** Default `application/x-mpegURL`, the type Safari matches for AirPlay. */
+  readonly type?: string;
+}
+
+export interface AttachOptions {
+  /** The AirPlay source alternative. Without one, remote playback is disabled on Safari. */
+  readonly airplay?: AirplaySource;
+}
+
 export interface LoadOptions {
   /**
    * The manifest's MIME type, when the caller knows it. Authoritative: a
@@ -96,7 +113,7 @@ export interface MatteboxBase {
   readonly stats: StatsApi;
   /** The last fatal error, with the trace attached, or null. */
   readonly error: TracedError | null;
-  attach(el: HTMLMediaElement): Promise<void>;
+  attach(el: HTMLMediaElement, options?: AttachOptions): Promise<void>;
   /** Idempotent and safe to call from an error state. */
   detach(): Promise<void>;
   load(url: string, options?: LoadOptions): void;
