@@ -29,3 +29,9 @@ updates:
         update-types: [ "version-update:semver-major" ]
       - dependency-name: "@babel/*"
         update-types: [ "version-update:semver-major" ]
+      # Playwright 1.63.0 ships WebKit 26.6, whose Linux build fails every
+      # MediaSource append with "Failed to push buffer" and errors the media
+      # element (MEDIA_ERR_SRC_NOT_SUPPORTED). That breaks the browser tier.
+      # Held at 1.62.x until a Playwright release ships a WebKit that appends.
+      - dependency-name: "playwright"
+        versions: [ ">=1.63.0" ]
