@@ -8,12 +8,13 @@
  * current state are absorbed and ignored, because the world already moved.
  */
 import type { MatteboxError } from '../types/error.js';
-import type { Presentation, Rendition, Track } from '../types/ir.js';
+import type { Presentation, Rendition, RenditionId, Track } from '../types/ir.js';
 import type {
   InflightRequest,
   KernelConfig,
   KernelState,
   Reducer,
+  SbId,
   SliceReducer,
 } from '../types/kernel.js';
 import type { Command, Effect, Fact, Message, Serializable } from '../types/messages.js';
@@ -81,6 +82,27 @@ type Reduction = readonly [KernelState, readonly Effect[]];
 
 /** Gap width treated as continuous when measuring buffered spans. */
 const GAP_TOLERANCE = 0.25;
+
+/** Drops one buffer's held init. */
+function withoutPendingInit(
+  pending: ReadonlyMap<SbId, RenditionId> | undefined,
+  sbId: SbId,
+): ReadonlyMap<SbId, RenditionId> | undefined {
+  if (pending === undefined || !pending.has(sbId)) return pending;
+  const next = new Map(pending);
+  next.delete(sbId);
+  return next.size === 0 ? undefined : next;
+}
+
+/** Writes held inits back into a scheduling slice; the field stays absent while empty. */
+function withPendingInit(
+  scheduling: KernelState['scheduling'],
+  pending: ReadonlyMap<SbId, RenditionId> | undefined,
+): KernelState['scheduling'] {
+  if (pending !== undefined && pending.size > 0) return { ...scheduling, pendingInit: pending };
+  const { pendingInit: _pendingInit, ...rest } = scheduling;
+  return rest;
+}
 
 /** The codecs part of an MSE type string ('video/mp4; codecs="avc1.42c00d"' -> 'avc1.42c00d'). */
 function bufferCodecString(type: string): string | null {
@@ -757,6 +779,7 @@ function reduceFact(
               ),
             };
       let buffers = state.buffers;
+      let pendingInit = state.scheduling.pendingInit;
       let timeline = state.timeline;
       let quality = state.quality;
       let cues = state.cues;
@@ -830,6 +853,13 @@ function reduceFact(
               codecs: targetCodecs,
             });
             buffers = nextBuffers;
+            pendingInit = withoutPendingInit(pendingInit, matched.sbId);
+          } else {
+            // The bytes beat the SOURCEBUFFER_CREATED fact: after a reload
+            // the media source has to reopen before the buffer exists. The
+            // controller holds the append until it does, so the init is
+            // recorded here and adopted on creation instead of refetched.
+            pendingInit = new Map(pendingInit ?? []).set(matched.sbId, matched.renditionId);
           }
         }
         // A media segment decodes only under its own rendition's init
@@ -847,7 +877,7 @@ function reduceFact(
         ) {
           const next: KernelState = {
             ...state,
-            scheduling: { ...state.scheduling, inflight },
+            scheduling: withPendingInit({ ...state.scheduling, inflight }, pendingInit),
             stats,
             buffers,
             cues,
@@ -928,7 +958,7 @@ function reduceFact(
           timeline,
           quality,
           cues,
-          scheduling: { ...state.scheduling, inflight },
+          scheduling: withPendingInit({ ...state.scheduling, inflight }, pendingInit),
           stats,
         },
         effects,
@@ -1014,8 +1044,21 @@ function reduceFact(
 
     case 'SOURCEBUFFER_CREATED': {
       const buffers = new Map(state.buffers);
-      buffers.set(msg.sbId, { codecs: msg.codecs, ranges: [], pendingAppends: 0 });
-      return [{ ...state, buffers }, []];
+      // An init that arrived before the buffer existed is held by the
+      // controller and appended on creation, so the buffer opens already
+      // initialized for that rendition.
+      const held = state.scheduling.pendingInit?.get(msg.sbId);
+      buffers.set(msg.sbId, {
+        codecs: msg.codecs,
+        ranges: [],
+        pendingAppends: 0,
+        ...(held !== undefined ? { initFor: held } : {}),
+      });
+      const scheduling = withPendingInit(
+        state.scheduling,
+        withoutPendingInit(state.scheduling.pendingInit, msg.sbId),
+      );
+      return [{ ...state, buffers, scheduling }, []];
     }
 
     case 'SOURCEBUFFER_UPDATEEND': {
@@ -1049,6 +1092,12 @@ function reduceFact(
       const count = (state.bufferErrors.get(msg.sbId) ?? 0) + 1;
       const bufferErrors = new Map(state.bufferErrors);
       bufferErrors.set(msg.sbId, count);
+      // The buffer never opened, so nothing holds its init any more: the
+      // next decision fetches it again.
+      const scheduling = withPendingInit(
+        state.scheduling,
+        withoutPendingInit(state.scheduling.pendingInit, msg.sbId),
+      );
       const fatal = msg.error.fatal || count >= cfg.bufferErrorLimit;
       const phase = fatal ? 'error' : state.lifecycle.phase;
       const effects: Effect[] = [
@@ -1083,7 +1132,7 @@ function reduceFact(
           ...state,
           bufferErrors,
           lifecycle: { phase },
-          scheduling: { ...state.scheduling, inflight },
+          scheduling: { ...scheduling, inflight },
         },
         effects,
       ];
@@ -1335,7 +1384,12 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
       state.buffers.get(sbId)?.initFor !== rendition.id &&
       inflight.length === 0
     ) {
-      initFetches.push({ trackId, sbId, rendition: rendition.id, init: rendition.init });
+      // Unless its bytes already arrived and wait for the buffer to open.
+      // Fetching them again is the wasted request, and a slow open would
+      // repeat it until the scheduling breaker called it a loop.
+      if (state.scheduling.pendingInit?.get(sbId) !== rendition.id) {
+        initFetches.push({ trackId, sbId, rendition: rendition.id, init: rendition.init });
+      }
       continue;
     }
     tracks.push({
@@ -1534,6 +1588,9 @@ export function createReducer(
   const DRIVING_FACTS = new Set([
     'MANIFEST_LOADED',
     'SEGMENT_LOADED',
+    // A buffer that opens holding an init unblocks media scheduling, and
+    // nothing else would drive it on a paused element.
+    'SOURCEBUFFER_CREATED',
     'SOURCEBUFFER_UPDATEEND',
     'SEEKING',
     'SEEKED',

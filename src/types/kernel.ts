@@ -188,6 +188,12 @@ export interface KernelState {
      * configured limit mean the loop makes no progress and must halt.
      */
     readonly repeat?: { readonly key: string; readonly count: number };
+    /**
+     * Init segments whose bytes arrived before their SourceBuffer existed,
+     * keyed by buffer. The controller holds those appends until the buffer
+     * opens, so the init is not fetched a second time meanwhile.
+     */
+    readonly pendingInit?: ReadonlyMap<SbId, RenditionId>;
   };
   readonly tracks: {
     readonly active: ReadonlyMap<ContentType, TrackId>;

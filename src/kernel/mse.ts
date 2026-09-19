@@ -124,6 +124,8 @@ export function createMseController(options: MseControllerOptions): MseControlle
   const appendChains = new Map<SbId, Promise<void>>();
   /** Buffers requested without codecs, waiting for their first bytes to be typed. */
   const deferred = new Map<SbId, string>();
+  /** Appends that arrived while their buffer's create was still pending. */
+  const heldAppends = new Map<SbId, ArrayBuffer[]>();
   let objectUrl: string | null = null;
   let liveObjectUrls = 0;
   /** The `<source>` children this controller added, to take back on detach. */
@@ -391,6 +393,7 @@ export function createMseController(options: MseControllerOptions): MseControlle
     buffers.clear();
     appendChains.clear();
     deferred.clear();
+    heldAppends.clear();
     pendingCreates.length = 0;
 
     if (ms !== null && ms.readyState === 'open') {
@@ -438,12 +441,18 @@ export function createMseController(options: MseControllerOptions): MseControlle
     try {
       // `type` is the full content type, e.g. 'video/mp4; codecs="avc1.42c01e"'.
       const sb = ms.addSourceBuffer(type);
-      buffers.set(sbId, { sb, queue: createQueue(sbId, sb) });
+      const queue = createQueue(sbId, sb);
+      buffers.set(sbId, { sb, queue });
+      // Bytes that arrived while this buffer was opening go in first, in
+      // arrival order, ahead of anything the new fact schedules.
+      for (const data of heldAppends.get(sbId) ?? []) queue.enqueue({ op: 'append', data });
+      heldAppends.delete(sbId);
       absorb({ type: 'SOURCEBUFFER_CREATED', sbId, codecs: type });
       return true;
     } catch (err) {
       // A bogus codec string surfaces as a MatteboxError fact, never as a
       // DOMException escaping into user code.
+      heldAppends.delete(sbId);
       absorb({
         type: 'SOURCEBUFFER_ERROR',
         sbId,
@@ -463,8 +472,8 @@ export function createMseController(options: MseControllerOptions): MseControlle
    * Hands bytes to the buffer's queue, first opening a deferred buffer with
    * the type the probe reads from them, or with the bare type when the probe
    * reads nothing, which is what an unprobed composition does from the
-   * start. Bytes for a buffer that does not exist and is not deferred are
-   * dropped, as before.
+   * start. Bytes whose buffer is still waiting for sourceopen are held until
+   * it opens. Bytes for a buffer that was never requested are dropped.
    */
   function enqueueAppend(sbId: SbId, data: ArrayBuffer): void {
     const bare = deferred.get(sbId);
@@ -472,6 +481,15 @@ export function createMseController(options: MseControllerOptions): MseControlle
       deferred.delete(sbId);
       const type = options.inferType?.(new Uint8Array(data)) ?? bare;
       if (!open(sbId, type)) return;
+    }
+    if (!buffers.has(sbId) && pendingCreates.some((create) => create.sbId === sbId)) {
+      // A reload fetches the init segment in the same tick as the buffer
+      // request, and the fresh MediaSource may not have opened yet.
+      // Dropping these bytes costs a refetch of the same init.
+      const held = heldAppends.get(sbId);
+      if (held === undefined) heldAppends.set(sbId, [data]);
+      else held.push(data);
+      return;
     }
     buffers.get(sbId)?.queue.enqueue({ op: 'append', data });
   }
@@ -485,6 +503,7 @@ export function createMseController(options: MseControllerOptions): MseControlle
         return;
       }
       if (ms === null || ms.readyState !== 'open') {
+        heldAppends.delete(effect.sbId);
         absorb({
           type: 'SOURCEBUFFER_ERROR',
           sbId: effect.sbId,
