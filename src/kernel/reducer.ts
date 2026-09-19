@@ -1550,6 +1550,17 @@ export function createReducer(
     let [next, effects] = isCommand(msg)
       ? reduceCommand(state, msg, cfg, hooks)
       : reduceFact(state, msg, cfg, hooks);
+    // A rejected command stops here. Acceptance is decided once, in the
+    // kernel branch; a slice that saw the refused command would act on an
+    // intent the kernel did not, and every slice would have to read the
+    // phase to tell the two apart. `reject` is the only producer of this
+    // event inside the reducer, and it never changes state.
+    if (
+      isCommand(msg) &&
+      effects.some((effect) => effect.kind === 'emit' && effect.event === 'command:rejected')
+    ) {
+      return [next, effects];
+    }
     // The buffer-goal loop runs on every fact that can change what to
     // fetch next. TIME_UPDATE drives inside its own reduction; the others
     // drive here, which is what makes startup work on a paused element

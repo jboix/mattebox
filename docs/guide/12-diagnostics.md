@@ -60,7 +60,8 @@ if (!result.ok) {
 ```
 
 Build the reducer with the same stage slices as the engine that recorded the
-trace.
+trace. Slices see accepted commands only; a trace recorded before that rule,
+holding a command the kernel rejected, diverges on replay at that entry.
 
 ## The playground
 

@@ -1036,3 +1036,43 @@ describe('suspend and resume', () => {
     expect(fx).toContainEqual({ kind: 'seekElement', to: 116 });
   });
 });
+
+describe('rejected commands and slices', () => {
+  it('a rejected command reaches no slice; accepted commands and facts do', () => {
+    const seen: string[] = [];
+    const probe: SliceReducer<number> = (slice, msg) => {
+      seen.push(msg.type);
+      return [(slice ?? 0) + 1, []];
+    };
+    const reduceWithSlice = createReducer([['probe', probe as SliceReducer]]);
+    let state = frozen(initialState());
+    let fx: readonly Effect[];
+
+    // LOAD before ATTACH is refused: the slice never hears of it.
+    [state, fx] = reduceWithSlice(state, { type: 'LOAD', url: 'https://cdn.example/m.m3u8' });
+    expect(fx).toEqual([
+      {
+        kind: 'emit',
+        event: 'command:rejected',
+        payload: { command: 'LOAD', reason: 'not attached' },
+      },
+    ]);
+    expect(seen).toEqual([]);
+    expect(state.probe).toBeUndefined();
+
+    // An accepted command reaches it.
+    [state] = reduceWithSlice(frozen(state), { type: 'ATTACH', element: {} as HTMLMediaElement });
+    expect(seen).toEqual(['ATTACH']);
+    expect(state.probe).toBe(1);
+
+    // SUSPEND outside ready is refused: still nothing for the slice.
+    [state, fx] = reduceWithSlice(frozen(state), { type: 'SUSPEND' });
+    expect(fx.map((e) => e.kind)).toEqual(['emit']);
+    expect(seen).toEqual(['ATTACH']);
+
+    // A fact is never rejected and always delivered.
+    [state] = reduceWithSlice(frozen(state), { type: 'TIME_UPDATE', currentTime: 0, buffered: [] });
+    expect(seen).toEqual(['ATTACH', 'TIME_UPDATE']);
+    expect(state.probe).toBe(2);
+  });
+});

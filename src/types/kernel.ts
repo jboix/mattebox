@@ -214,7 +214,8 @@ export type Reducer = (
 
 /**
  * A stage-contributed reducer. It receives only its own slice, undefined on
- * first run, plus a read-only view of kernel state.
+ * first run, plus a read-only view of kernel state. It sees every fact and
+ * every accepted command, never a rejected one.
  */
 export type SliceReducer<S = unknown> = (
   slice: S | undefined,

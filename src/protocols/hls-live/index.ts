@@ -240,9 +240,6 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
   if (msg.type === 'UNLOAD' || msg.type === 'DETACH') return [INITIAL, []];
 
   if (msg.type === 'SUSPEND') {
-    // Only an accepted SUSPEND freezes the loop; a rejected one leaves the
-    // kernel in another phase.
-    if (kernel.lifecycle.phase !== 'suspended') return [state, []];
     const effects: Effect[] = [];
     if (state.tickPending) effects.push({ kind: 'abort', token: TICK_TOKEN });
     if (state.inflight !== null) {

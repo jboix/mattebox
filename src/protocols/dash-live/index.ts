@@ -122,7 +122,6 @@ const reduceDashLive: SliceReducer<DashLiveSlice> = (slice, msg, kernel) => {
   if (msg.type === 'UNLOAD' || msg.type === 'DETACH') return [INITIAL, []];
 
   if (msg.type === 'SUSPEND') {
-    if (kernel.lifecycle.phase !== 'suspended') return [state, []];
     const effects: Effect[] = [];
     if (state.tickPending) effects.push({ kind: 'abort', token: TICK_TOKEN });
     if (state.clockPending) effects.push({ kind: 'abort', token: CLOCK_TOKEN });

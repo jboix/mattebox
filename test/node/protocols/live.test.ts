@@ -196,6 +196,33 @@ describe('hls-live', () => {
     );
   });
 
+  it('a SUSPEND the kernel rejects leaves the loop alone', () => {
+    let state = initialState();
+    [state] = reduce(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = reduce(state, { type: 'LOAD', url: 'https://live.example/live.m3u8' });
+    // The manifest is still loading: the kernel refuses, the slice never
+    // sees the command, so nothing is marked suspended.
+    const [refused, fx] = reduce(state, { type: 'SUSPEND' });
+    expect(refused.lifecycle.phase).toBe('loading');
+    expect(fx).toEqual([expect.objectContaining({ kind: 'emit', event: 'command:rejected' })]);
+    // The manifest then starts the loop as usual.
+    const settled = settle(
+      reduce,
+      ...reduce(refused, {
+        type: 'SEGMENT_LOADED',
+        trackId: 'manifest',
+        seq: 0,
+        bytes: bytes(livePlaylist(5, 5)),
+        rtt: 5,
+        size: 500,
+      }),
+    );
+    expect(settled.state.live).toEqual({ span: { start: 0, end: 20 }, edge: 8 });
+    expect(settled.effects).toContainEqual(
+      expect.objectContaining({ kind: 'schedule', token: 'hls-live:reload' }),
+    );
+  });
+
   it('the active audio playlist reloads as a companion on the same tick', () => {
     const master = [
       '#EXTM3U',

@@ -214,18 +214,18 @@ export default function myStage(): Stage {
 
 `install` receives a `StageContext`. Everything a stage does goes through it.
 
-| Hook                     | Registers                                                               | Used by                         |
-| ------------------------ | ----------------------------------------------------------------------- | ------------------------------- |
-| `registerSink`           | A destination for a content type                                        | `text-webvtt`, `meta-id3`       |
-| `registerParser`         | Bytes to cues for one MIME type                                         | `text-webvtt`, `meta-id3`       |
-| `registerTransform`      | One ordered step in the segment byte pipeline                           | `ts-transmux`, `cmaf-timing`    |
-| `registerNamespace`      | A public API at `engine.<name>`                                         | `eme-core`, `thumbnails`, `pdt` |
-| `registerChooser`        | The rendition chooser                                                   | `abr`                           |
-| `registerSwitchPolicy`   | Whether a rendition switch is seamless, needs `changeType`, or a reload | `codec-switch`                  |
-| `reduce`                 | A named state slice with its own pure reducer                           | protocol adapters, `recovery`   |
-| `addRequestHook`         | Sees and rewrites outgoing requests                                     | `cmcd`, `content-steering`      |
-| `request`                | A one-off fetch through the transport                                   | `eme-core`, `thumbnails`        |
-| `dispatch`, `on`, `emit` | Commands in, events out                                                 | every stage                     |
+| Hook                     | Registers                                                                       | Used by                         |
+| ------------------------ | ------------------------------------------------------------------------------- | ------------------------------- |
+| `registerSink`           | A destination for a content type                                                | `text-webvtt`, `meta-id3`       |
+| `registerParser`         | Bytes to cues for one MIME type                                                 | `text-webvtt`, `meta-id3`       |
+| `registerTransform`      | One ordered step in the segment byte pipeline                                   | `ts-transmux`, `cmaf-timing`    |
+| `registerNamespace`      | A public API at `engine.<name>`                                                 | `eme-core`, `thumbnails`, `pdt` |
+| `registerChooser`        | The rendition chooser                                                           | `abr`                           |
+| `registerSwitchPolicy`   | Whether a rendition switch is seamless, needs `changeType`, or a reload         | `codec-switch`                  |
+| `reduce`                 | A named state slice with its own pure reducer; sees facts and accepted commands | protocol adapters, `recovery`   |
+| `addRequestHook`         | Sees and rewrites outgoing requests                                             | `cmcd`, `content-steering`      |
+| `request`                | A one-off fetch through the transport                                           | `eme-core`, `thumbnails`        |
+| `dispatch`, `on`, `emit` | Commands in, events out                                                         | every stage                     |
 
 The lifecycle:
 
