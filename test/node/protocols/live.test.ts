@@ -158,6 +158,44 @@ describe('hls-live', () => {
     expect(halvedTick).toMatchObject({ delayMs: 2000 });
   });
 
+  it('SUSPEND stops the reload loop; RESUME reloads the playlists and rejoins at the edge', () => {
+    let { state } = bootHls(reduce);
+    let fx: readonly Effect[];
+    [state, fx] = reduce(state, { type: 'SUSPEND' });
+    expect(state.lifecycle.phase).toBe('suspended');
+    expect(state.live).toBeNull();
+    expect(fx).toContainEqual({ kind: 'abort', token: 'hls-live:reload' });
+
+    // A tick that fired before the abort landed reloads nothing.
+    [state, fx] = reduce(state, { type: 'TICK', token: 'hls-live:reload' });
+    expect(fx).toEqual([]);
+
+    // Resume reloads the target at once and nothing else: the window is
+    // unknown until the reload lands, so no segment is scheduled.
+    [state, fx] = reduce(state, { type: 'RESUME' });
+    expect(state.lifecycle.phase).toBe('ready');
+    expect(fx).toEqual([expect.objectContaining({ kind: 'fetch', token: 'hls:live:refresh:r-0' })]);
+
+    // The window moved on during the freeze: the reload reports it, the
+    // playhead rejoins at the edge, and the tick chain is alive again.
+    const settled = settle(
+      reduce,
+      ...reduce(state, {
+        type: 'SEGMENT_LOADED',
+        trackId: 'hls:live:refresh:r-0',
+        seq: 0,
+        bytes: bytes(livePlaylist(30, 5)),
+        rtt: 5,
+        size: 500,
+      }),
+    );
+    expect(settled.state.live).toEqual({ span: { start: 100, end: 120 }, edge: 108 });
+    expect(settled.effects).toContainEqual({ kind: 'seekElement', to: 108 });
+    expect(settled.effects).toContainEqual(
+      expect.objectContaining({ kind: 'schedule', token: 'hls-live:reload' }),
+    );
+  });
+
   it('the active audio playlist reloads as a companion on the same tick', () => {
     const master = [
       '#EXTM3U',
@@ -818,6 +856,37 @@ describe('dash-live', () => {
       const [, tickFx] = reduce(next, { type: 'TICK', token });
       expect(tickFx).toEqual([]);
     }
+  });
+
+  it('SUSPEND stops the reload and clock loops; RESUME refetches the MPD', () => {
+    let { state } = bootDash();
+    let fx: readonly Effect[];
+    [state, fx] = reduce(state, { type: 'SUSPEND' });
+    expect(state.lifecycle.phase).toBe('suspended');
+    expect(fx).toContainEqual({ kind: 'abort', token: 'dash-live:reload' });
+    expect(fx).toContainEqual({ kind: 'abort', token: 'dash-live:clock' });
+
+    // Ticks that fired before their aborts landed neither reload nor re-arm.
+    [state, fx] = reduce(state, { type: 'TICK', token: 'dash-live:reload' });
+    expect(fx).toEqual([]);
+    [state, fx] = reduce(state, { type: 'TICK', token: 'dash-live:clock', wallClock: AST + 30 });
+    expect(fx).toEqual([]);
+
+    [state, fx] = reduce(state, { type: 'RESUME' });
+    expect(state.lifecycle.phase).toBe('ready');
+    expect(fx).toEqual([expect.objectContaining({ kind: 'fetch', token: 'dash:live:mpd' })]);
+
+    // The MPD's parse feeds MANIFEST_LOADED, which re-arms both loops.
+    const settled = settle(
+      reduce,
+      ...reduce(state, { type: 'MANIFEST_LOADED', presentation: dynamicPresentation() }),
+    );
+    expect(settled.effects).toContainEqual(
+      expect.objectContaining({ kind: 'schedule', token: 'dash-live:reload' }),
+    );
+    expect(settled.effects).toContainEqual(
+      expect.objectContaining({ kind: 'schedule', token: 'dash-live:clock' }),
+    );
   });
 
   it('UTCTiming is fetched once and the skew comes from the response pair', () => {

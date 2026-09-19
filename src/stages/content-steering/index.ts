@@ -30,6 +30,8 @@ interface SteeringSlice {
   readonly fails: number;
   readonly fetchPending: boolean;
   readonly tickPending: boolean;
+  /** SUSPEND stopped the reload; RESUME refetches. */
+  readonly suspended: boolean;
 }
 
 const INITIAL: SteeringSlice = {
@@ -40,6 +42,7 @@ const INITIAL: SteeringSlice = {
   fails: 0,
   fetchPending: false,
   tickPending: false,
+  suspended: false,
 };
 
 /** Loops a message back into the bus through a zero-delay schedule effect. */
@@ -97,6 +100,25 @@ const reduceSteering: SliceReducer<SteeringSlice> = (slice, msg, kernel) => {
     return [INITIAL, []];
   }
 
+  if (msg.type === 'SUSPEND') {
+    if (kernel.lifecycle.phase !== 'suspended') return [state, []];
+    const effects: Effect[] = [];
+    if (state.tickPending) effects.push({ kind: 'abort', token: RELOAD_TOKEN });
+    if (state.fetchPending) effects.push({ kind: 'abort', token: MANIFEST_TOKEN });
+    return [{ ...state, tickPending: false, fetchPending: false, suspended: true }, effects];
+  }
+
+  if (msg.type === 'RESUME') {
+    if (!state.suspended) return [state, []];
+    const resumed = { ...state, suspended: false };
+    if (state.serverUri === null) return [resumed, []];
+    // The TTL clock went with the tick; a fresh manifest is the safe restart.
+    return [
+      { ...resumed, fetchPending: true },
+      [{ kind: 'fetch', token: MANIFEST_TOKEN, url: state.serverUri }],
+    ];
+  }
+
   if (msg.type === 'MANIFEST_LOADED') {
     const steering = msg.presentation.steering;
     if (steering === undefined) return [state, []];
@@ -147,7 +169,9 @@ const reduceSteering: SliceReducer<SteeringSlice> = (slice, msg, kernel) => {
   }
 
   if (msg.type === 'TICK' && msg.token === RELOAD_TOKEN) {
-    if (state.serverUri === null) return [{ ...state, tickPending: false }, []];
+    if (state.suspended || state.serverUri === null) {
+      return [{ ...state, tickPending: false }, []];
+    }
     return [
       { ...state, tickPending: false, fetchPending: true },
       [{ kind: 'fetch', token: MANIFEST_TOKEN, url: state.serverUri }],

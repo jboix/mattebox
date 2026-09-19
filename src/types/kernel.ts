@@ -71,7 +71,20 @@ export interface KernelConfig {
   readonly mediaTimeNormalized: boolean;
 }
 
-export type LifecyclePhase = 'idle' | 'attaching' | 'loading' | 'ready' | 'ended' | 'error';
+/**
+ * `suspended` is a frozen `ready`: the element stays attached and its
+ * buffers stay, but nothing is fetched until RESUME. For casting, and for a
+ * page in the background, where a live loop would otherwise reload playlists
+ * for hours on behalf of a paused element.
+ */
+export type LifecyclePhase =
+  | 'idle'
+  | 'attaching'
+  | 'loading'
+  | 'ready'
+  | 'suspended'
+  | 'ended'
+  | 'error';
 
 /** One request the transport currently has in flight, keyed by its effect token. */
 export interface InflightRequest {

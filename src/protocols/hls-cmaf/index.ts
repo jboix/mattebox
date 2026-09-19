@@ -183,7 +183,15 @@ const reduceHls: SliceReducer<HlsSlice> = (slice, msg, kernel) => {
   // media playlist the current selection still lacks. Selection is its own
   // trigger: on a paused or stalled element no TIME_UPDATE ever comes, and
   // a track whose playlist never loads is one the element can never play.
-  if (msg.type === 'MANIFEST_LOADED' || msg.type === 'SELECT_TRACK' || msg.type === 'TIME_UPDATE') {
+  // A suspended engine makes no request; RESUME fills what a selection
+  // during the freeze left lacking.
+  if (
+    (msg.type === 'MANIFEST_LOADED' ||
+      msg.type === 'SELECT_TRACK' ||
+      msg.type === 'TIME_UPDATE' ||
+      msg.type === 'RESUME') &&
+    kernel.lifecycle.phase !== 'suspended'
+  ) {
     const needed = neededPlaylists(kernel).filter(
       (rendition) => !Object.values(state.pending).includes(rendition.id),
     );

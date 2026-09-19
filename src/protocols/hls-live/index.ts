@@ -57,6 +57,8 @@ interface HlsLiveSlice {
    * from the past.
    */
   readonly awaitingTarget: boolean;
+  /** SUSPEND stopped the loop; RESUME restarts it. */
+  readonly suspended: boolean;
 }
 
 const INITIAL: HlsLiveSlice = {
@@ -68,6 +70,7 @@ const INITIAL: HlsLiveSlice = {
   inflight: null,
   lastEndSeq: -1,
   awaitingTarget: false,
+  suspended: false,
 };
 
 /**
@@ -236,6 +239,38 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
   if (msg.type === 'LOAD') return [{ ...INITIAL, manifestUrl: msg.url }, []];
   if (msg.type === 'UNLOAD' || msg.type === 'DETACH') return [INITIAL, []];
 
+  if (msg.type === 'SUSPEND') {
+    // Only an accepted SUSPEND freezes the loop; a rejected one leaves the
+    // kernel in another phase.
+    if (kernel.lifecycle.phase !== 'suspended') return [state, []];
+    const effects: Effect[] = [];
+    if (state.tickPending) effects.push({ kind: 'abort', token: TICK_TOKEN });
+    if (state.inflight !== null) {
+      effects.push({ kind: 'abort', token: refreshToken(state.inflight) });
+    }
+    return [{ ...state, tickPending: false, inflight: null, suspended: true }, effects];
+  }
+
+  if (msg.type === 'RESUME') {
+    if (!state.suspended) return [state, []];
+    const resumed = { ...state, suspended: false };
+    if (state.target === null || kernel.presentation?.isLive !== true) return [resumed, []];
+    // Every active playlist is stale, the ladder included: reload them all
+    // now, and hold the window until the target lands so the kernel never
+    // schedules against the old one. The target's answer restarts the tick.
+    const effects: Effect[] = [
+      { kind: 'fetch', token: refreshToken(state.target.renditionId), url: state.target.url },
+    ];
+    for (const companion of state.companions) {
+      effects.push({
+        kind: 'fetch',
+        token: refreshToken(companion.renditionId),
+        url: companion.url,
+      });
+    }
+    return [{ ...resumed, inflight: state.target.renditionId, awaitingTarget: true }, effects];
+  }
+
   if (msg.type === 'MANIFEST_LOADED') {
     if (!msg.presentation.isLive) {
       return [{ ...state, target: null, companions: [], inflight: null }, []];
@@ -277,7 +312,8 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
   }
 
   if (msg.type === 'TICK' && msg.token === TICK_TOKEN) {
-    if (state.target === null || kernel.presentation?.isLive !== true) {
+    // A tick that fired before its abort landed reloads nothing.
+    if (state.suspended || state.target === null || kernel.presentation?.isLive !== true) {
       return [{ ...state, tickPending: false, inflight: null }, []];
     }
     const effects: Effect[] = [];
@@ -357,7 +393,7 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
     // still pending: that tick carries on, this answer adds none. The
     // loop dies with ENDLIST.
     let tickPending = state.tickPending;
-    if (!media.playlist.endlist && !tickPending) {
+    if (!media.playlist.endlist && !tickPending && !state.suspended) {
       effects.push(tick(changed ? cadence : cadence / 2));
       tickPending = true;
     }

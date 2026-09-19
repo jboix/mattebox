@@ -35,6 +35,8 @@ interface DashLiveSlice {
   readonly lastWindowEnd: number;
   /** The newest wall clock any fact carried; window arithmetic input. */
   readonly lastWallClock: number | null;
+  /** SUSPEND stopped the loops; RESUME restarts them. */
+  readonly suspended: boolean;
 }
 
 const INITIAL: DashLiveSlice = {
@@ -45,6 +47,7 @@ const INITIAL: DashLiveSlice = {
   clockPending: false,
   lastWindowEnd: -1,
   lastWallClock: null,
+  suspended: false,
 };
 
 /** The window arithmetic; null when it cannot move or is not worth a fact. */
@@ -118,6 +121,30 @@ const reduceDashLive: SliceReducer<DashLiveSlice> = (slice, msg, kernel) => {
   if (msg.type === 'LOAD') return [{ ...INITIAL, manifestUrl: msg.url }, []];
   if (msg.type === 'UNLOAD' || msg.type === 'DETACH') return [INITIAL, []];
 
+  if (msg.type === 'SUSPEND') {
+    if (kernel.lifecycle.phase !== 'suspended') return [state, []];
+    const effects: Effect[] = [];
+    if (state.tickPending) effects.push({ kind: 'abort', token: TICK_TOKEN });
+    if (state.clockPending) effects.push({ kind: 'abort', token: CLOCK_TOKEN });
+    // An MPD reload in flight goes too. Its token is fixed, so the abort
+    // finds the request or finds nothing.
+    effects.push({ kind: 'abort', token: MPD_TOKEN });
+    // The kernel forgot the window. Forget the last end as well, or a
+    // window that barely moved during a short freeze is never reported.
+    return [
+      { ...state, tickPending: false, clockPending: false, lastWindowEnd: -1, suspended: true },
+      effects,
+    ];
+  }
+
+  if (msg.type === 'RESUME') {
+    if (!state.suspended) return [state, []];
+    const resumed = { ...state, suspended: false };
+    if (state.manifestUrl === null || !drivesWindow(kernel.presentation)) return [resumed, []];
+    // The MPD's answer restarts both loops and reports the window.
+    return [resumed, [{ kind: 'fetch', token: MPD_TOKEN, url: state.manifestUrl }]];
+  }
+
   if (msg.type === 'MANIFEST_LOADED') {
     if (!drivesWindow(msg.presentation)) return [state, []];
     const effects: Effect[] = [];
@@ -150,7 +177,7 @@ const reduceDashLive: SliceReducer<DashLiveSlice> = (slice, msg, kernel) => {
   }
 
   if (msg.type === 'TICK' && msg.token === CLOCK_TOKEN) {
-    if (!drivesWindow(kernel.presentation)) {
+    if (state.suspended || !drivesWindow(kernel.presentation)) {
       return [{ ...state, clockPending: false }, []];
     }
     let next: DashLiveSlice = { ...state, clockPending: true };
@@ -168,7 +195,7 @@ const reduceDashLive: SliceReducer<DashLiveSlice> = (slice, msg, kernel) => {
   }
 
   if (msg.type === 'TICK' && msg.token === TICK_TOKEN) {
-    if (state.manifestUrl === null || !drivesWindow(kernel.presentation)) {
+    if (state.suspended || state.manifestUrl === null || !drivesWindow(kernel.presentation)) {
       return [{ ...state, tickPending: false }, []];
     }
     return [

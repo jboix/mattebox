@@ -67,6 +67,10 @@ export type Command =
   | { readonly type: 'DETACH' }
   | { readonly type: 'LOAD'; readonly url: string; readonly mimeType?: string }
   | { readonly type: 'UNLOAD' }
+  /** Stops every request while the source stays loaded. Accepted in the ready phase only. */
+  | { readonly type: 'SUSPEND' }
+  /** Fetching starts again. A live presentation reloads its playlists first. */
+  | { readonly type: 'RESUME' }
   | { readonly type: 'SEEK'; readonly to: number }
   | { readonly type: 'SEEK_TO_LIVE_EDGE' }
   | {

@@ -392,6 +392,39 @@ describe('content steering', () => {
     expect(settled.state.quality.constraints.get('steering')).toEqual({ excludeIds: ['v-a'] });
   });
 
+  it('SUSPEND drops the steering reload; RESUME fetches a fresh manifest', () => {
+    const { state } = boot();
+    const manifest = JSON.stringify({ VERSION: 1, TTL: 100, 'PATHWAY-PRIORITY': ['a', 'b'] });
+    let settled = settle(
+      reduce,
+      ...reduce(state, {
+        type: 'SEGMENT_LOADED',
+        trackId: 'steering:manifest',
+        seq: 0,
+        bytes: new TextEncoder().encode(manifest).buffer as ArrayBuffer,
+        rtt: 5,
+        size: manifest.length,
+      }),
+    );
+    expect(settled.effects).toContainEqual(
+      expect.objectContaining({ kind: 'schedule', token: 'steering:reload' }),
+    );
+
+    let [next, fx] = reduce(settled.state, { type: 'SUSPEND' });
+    expect(fx).toContainEqual({ kind: 'abort', token: 'steering:reload' });
+    [next, fx] = reduce(next, { type: 'TICK', token: 'steering:reload' });
+    expect(fx).toEqual([]);
+
+    [next, fx] = reduce(next, { type: 'RESUME' });
+    expect(fx).toContainEqual(
+      expect.objectContaining({ kind: 'fetch', token: 'steering:manifest' }),
+    );
+    // The pathway chosen before the freeze still applies.
+    expect(next.quality.constraints.get('steering')).toEqual({ excludeIds: ['v-b'] });
+    settled = settle(reduce, next, fx);
+    expect(settled.state.lifecycle.phase).toBe('ready');
+  });
+
   it('failures on the active pathway fail over to the next', () => {
     const { state } = boot();
     let settled = settle(reduce, ...reduce(state, fail(0, 'v-a')));

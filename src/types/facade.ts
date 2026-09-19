@@ -118,6 +118,18 @@ export interface MatteboxBase {
   detach(): Promise<void>;
   load(url: string, options?: LoadOptions): void;
   unload(): void;
+  /**
+   * Stops every request while the element stays attached and its buffers
+   * stay: a freeze for casting, or for a page in the background. Expects a
+   * paused element. Accepted in the ready phase only; anywhere else the
+   * reducer rejects it and nothing changes.
+   */
+  suspend(): void;
+  /**
+   * Fetching starts again from the playhead. A live presentation reloads
+   * its playlists and rejoins at the edge, the way a fresh load does.
+   */
+  resume(): void;
   dispatch(cmd: Command): void;
   /** Every capability the loaded stages provide. */
   capabilities(): Iterable<string>;

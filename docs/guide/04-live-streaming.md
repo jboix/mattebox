@@ -28,6 +28,11 @@ listed and then stops.
 Both refresh every active track, so audio and subtitles don't run dry while
 the video keeps going.
 
+Both loops stop on `engine.suspend()` and start again on `engine.resume()`.
+The resume reloads every active playlist (or the MPD) before any segment is
+scheduled, and the playhead rejoins at the live edge. See
+[chapter 01](01-getting-started.md#suspend-and-resume).
+
 ## engine.live
 
 Either adapter adds `engine.live`. It works the same for both protocols.

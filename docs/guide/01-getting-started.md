@@ -88,6 +88,37 @@ await engine.detach();
 Call `detach` when the element leaves the page. Otherwise a single-page app
 leaks a media pipeline on every navigation.
 
+## Suspend and resume
+
+Suspend stops every request while the source stays loaded: the element
+stays attached, the buffers stay, and no playlist reload, segment fetch, or
+steering refresh runs until resume. Use it when the element is paused for a
+long time and nothing local will play, such as while a Chromecast or
+AirPlay receiver plays the same content, or while the page is in the
+background. A paused live stream would otherwise reload its playlists for
+as long as the pause lasts.
+
+```ts
+video.pause();
+engine.suspend();
+// later
+engine.resume();
+video.currentTime = remoteTime;
+await video.play();
+```
+
+Suspend expects a paused element and is accepted in the ready phase only.
+Anywhere else, such as while the manifest is still loading, the reducer
+rejects it with a `command:rejected` event and nothing changes. Resume
+refills the buffer from the playhead. A live presentation reloads its
+playlists first and rejoins at the live edge, the way a fresh load does, so
+`engine.live.edge` reads null while suspended.
+
+Suspend does not close DRM key sessions and does not refresh signed URLs. A
+license or a token that expires during the freeze behaves on resume the
+way it does after a long pause today: the key reports `DRM_KEY_EXPIRED`
+and playback waits, or the next request fails.
+
 ## Example
 
 ```ts

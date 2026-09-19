@@ -941,3 +941,98 @@ describe('manifest acceptance', () => {
     });
   });
 });
+
+describe('suspend and resume', () => {
+  it('SUSPEND aborts the fetches in flight and gates scheduling until RESUME', () => {
+    const state = readyStateWithInflight([
+      { token: 't1', trackId: 'v', seq: 0, url: 'u', sbId: 'sb-v' },
+    ]);
+    const [suspended, fx] = reduce(frozen(state), { type: 'SUSPEND' });
+    expect(suspended.lifecycle.phase).toBe('suspended');
+    expect(suspended.scheduling.inflight.size).toBe(0);
+    expect(fx).toEqual([{ kind: 'abort', token: 't1' }]);
+    // The source and its buffers stay: this is a freeze, not an unload.
+    expect(suspended.presentation).toEqual(state.presentation);
+    expect(suspended.buffers.size).toBe(1);
+
+    // Time moving on the paused element schedules nothing.
+    const [moved, moveFx] = reduce(frozen(suspended), {
+      type: 'TIME_UPDATE',
+      currentTime: 0,
+      buffered: [],
+    });
+    expect(moveFx).toEqual([]);
+    expect(moved.scheduling.inflight.size).toBe(0);
+
+    // A seek while suspended keeps the freeze.
+    const [sought, seekFx] = reduce(frozen(moved), { type: 'SEEKING', to: 2 });
+    expect(sought.lifecycle.phase).toBe('suspended');
+    expect(seekFx).toEqual([]);
+
+    const [resumed, resumeFx] = reduce(frozen(sought), { type: 'RESUME' });
+    expect(resumed.lifecycle.phase).toBe('ready');
+    expect(resumeFx.some((e) => e.kind === 'fetch')).toBe(true);
+    expect(resumed.scheduling.inflight.size).toBeGreaterThan(0);
+  });
+
+  it('rejects SUSPEND outside ready and RESUME outside suspended', () => {
+    const [loading, fx] = reduce(frozen({ ...initialState(), lifecycle: { phase: 'loading' } }), {
+      type: 'SUSPEND',
+    });
+    expect(loading.lifecycle.phase).toBe('loading');
+    expect(fx).toEqual([
+      {
+        kind: 'emit',
+        event: 'command:rejected',
+        payload: { command: 'SUSPEND', reason: 'not ready' },
+      },
+    ]);
+
+    const [ready, resumeFx] = reduce(frozen(readyStateWithInflight([])), { type: 'RESUME' });
+    expect(ready.lifecycle.phase).toBe('ready');
+    expect(resumeFx).toEqual([
+      {
+        kind: 'emit',
+        event: 'command:rejected',
+        payload: { command: 'RESUME', reason: 'not suspended' },
+      },
+    ]);
+  });
+
+  it('UNLOAD and DETACH leave the suspended phase the usual way', () => {
+    const [suspended] = reduce(frozen(readyStateWithInflight([])), { type: 'SUSPEND' });
+    const [unloaded, fx] = reduce(frozen(suspended), { type: 'UNLOAD' });
+    expect(unloaded.lifecycle.phase).toBe('attaching');
+    expect(fx).toEqual([{ kind: 'resetSource' }]);
+    const [detached] = reduce(frozen(suspended), { type: 'DETACH' });
+    expect(detached.lifecycle.phase).toBe('idle');
+  });
+
+  it('a suspended live presentation forgets its window and rejoins at the edge on resume', () => {
+    const live: KernelState = {
+      ...readyStateWithInflight([]),
+      presentation: { ...vodFixture, isLive: true },
+      live: { span: { start: 0, end: 20 }, edge: 16 },
+      playback: { currentTime: 16, buffered: [], seeking: false },
+    };
+    const [suspended] = reduce(frozen(live), { type: 'SUSPEND' });
+    expect(suspended.live).toBeNull();
+
+    // Resume alone schedules nothing: the window is unknown until a live
+    // slice reloads and reports it.
+    const [resumed, resumeFx] = reduce(frozen(suspended), { type: 'RESUME' });
+    expect(resumed.lifecycle.phase).toBe('ready');
+    expect(resumeFx).toEqual([]);
+
+    // The fresh window counts as a first one: the playhead moves to the
+    // edge and scheduling starts there.
+    const [rejoined, fx] = reduce(frozen(resumed), {
+      type: 'LIVE_WINDOW_CHANGED',
+      start: 100,
+      end: 120,
+      edge: 116,
+    });
+    expect(rejoined.playback.currentTime).toBe(116);
+    expect(fx).toContainEqual({ kind: 'seekElement', to: 116 });
+  });
+});

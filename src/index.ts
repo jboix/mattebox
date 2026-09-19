@@ -408,6 +408,12 @@ export function mattebox(options: MatteboxOptions): Mattebox {
     unload() {
       bus.dispatch({ type: 'UNLOAD' });
     },
+    suspend() {
+      bus.dispatch({ type: 'SUSPEND' });
+    },
+    resume() {
+      bus.dispatch({ type: 'RESUME' });
+    },
     dispatch(cmd) {
       bus.dispatch(cmd);
     },

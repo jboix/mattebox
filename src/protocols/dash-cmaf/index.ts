@@ -159,8 +159,12 @@ const reduceDash: SliceReducer<DashSlice> = (slice, msg, kernel) => {
   }
 
   // After a manifest lands or time moves, fetch any sidx index the current
-  // selection still lacks.
-  if (msg.type === 'MANIFEST_LOADED' || msg.type === 'TIME_UPDATE') {
+  // selection still lacks. A suspended engine makes no request; RESUME
+  // fills what the freeze left lacking.
+  if (
+    (msg.type === 'MANIFEST_LOADED' || msg.type === 'TIME_UPDATE' || msg.type === 'RESUME') &&
+    kernel.lifecycle.phase !== 'suspended'
+  ) {
     const needed = neededIndexes(kernel).filter(
       (rendition) => !Object.values(state.pending).includes(rendition.id),
     );

@@ -365,6 +365,28 @@ function reduceCommand(
       ];
     }
 
+    case 'SUSPEND': {
+      if (state.lifecycle.phase !== 'ready') {
+        return reject(state, msg.type, 'not ready');
+      }
+      const [next, aborts] = abortInflight(state);
+      // The live span goes stale the moment reloads stop. Forgetting it
+      // gates scheduling until a live slice reports a fresh one on resume,
+      // and lets that report count as the first, so a live presentation
+      // rejoins at the edge the way a fresh load does.
+      return [{ ...next, lifecycle: { phase: 'suspended' }, live: null }, aborts];
+    }
+
+    case 'RESUME': {
+      if (state.lifecycle.phase !== 'suspended') {
+        return reject(state, msg.type, 'not suspended');
+      }
+      // VOD refills from the playhead at once. Live waits: scheduling
+      // declines a live presentation without a span, and the live slice
+      // reloads its playlists on this same command to bring one.
+      return driveScheduling({ ...state, lifecycle: { phase: 'ready' } }, hooks, cfg);
+    }
+
     case 'SEEK': {
       if (state.presentation === null) {
         return reject(state, msg.type, 'no source');
@@ -1477,6 +1499,8 @@ const COMMAND_TYPES: Record<Command['type'], true> = {
   DETACH: true,
   LOAD: true,
   UNLOAD: true,
+  SUSPEND: true,
+  RESUME: true,
   SEEK: true,
   SEEK_TO_LIVE_EDGE: true,
   DESELECT_TRACK: true,
