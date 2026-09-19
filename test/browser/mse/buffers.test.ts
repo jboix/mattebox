@@ -37,6 +37,28 @@ describe.runIf(profile !== null)('source buffers', () => {
     stack.controller.detach();
   });
 
+  it('bytes that arrive before sourceopen are held and appended on creation', async () => {
+    // A reload fetches the init segment in the same tick as the buffer
+    // request, so on a fresh MediaSource the bytes can win the race. Dropped
+    // here, they cost a refetch of the same init.
+    const init = await fixture(profile.init);
+    const seg = await fixture(profile.seg);
+    const stack = createStack();
+    stack.controller.attach(stack.el);
+    expect(stack.controller.readyState()).toBe('closed');
+    stack.runner.run([{ kind: 'createSourceBuffer', sbId: 'sb:video', codecs: profile.type }]);
+    stack.runner.run([
+      { kind: 'append', sbId: 'sb:video', data: init, seq: -1 },
+      { kind: 'append', sbId: 'sb:video', data: seg, seq: 0 },
+    ]);
+    expect(stack.facts('SOURCEBUFFER_CREATED')).toHaveLength(0);
+
+    await waitFor(() => stack.hasFact('SOURCEBUFFER_CREATED'), 'buffer after sourceopen');
+    await waitFor(() => stack.el.buffered.length > 0, 'the held bytes appended');
+    expect(stack.facts('SOURCEBUFFER_ERROR')).toHaveLength(0);
+    stack.controller.detach();
+  });
+
   it('a codec-less buffer waits for its first segment and opens with the probed type', async () => {
     const stack = createStack({ inferType: () => profile.type });
     await attachAndOpen(stack);

@@ -336,12 +336,10 @@ describe('reload', () => {
               e.msg.type === 'SEGMENT_LOADED' && e.msg.trackId === 'video-main' && e.msg.seq < 0,
           ).length;
         // One init per load, not a loop. The media playlist also loads at
-        // sequence -1, hence the track filter.
-        // The reload allows one extra: the fresh MediaSource has to open
-        // before the SourceBuffer exists, and an init that lands first is
-        // dropped and refetched. The bound is what matters, not the count.
-        expect(initFetches).toBeLessThanOrEqual(3);
-        expect(initFetches).toBeGreaterThanOrEqual(2);
+        // sequence -1, hence the track filter. Exactly one: an init whose
+        // bytes beat the reload's fresh SourceBuffer is held until it
+        // opens, so no load refetches its own init.
+        expect(initFetches).toBe(2);
       } finally {
         await engine.detach();
         el.remove();

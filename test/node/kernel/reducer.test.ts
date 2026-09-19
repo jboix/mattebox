@@ -1076,3 +1076,100 @@ describe('rejected commands and slices', () => {
     expect(state.probe).toBe(2);
   });
 });
+
+describe('an init segment that lands before its SourceBuffer', () => {
+  type Loaded = NonNullable<KernelState['presentation']>;
+  const INIT_URL = 'https://cdn.example/v1/init.mp4';
+
+  /** vodFixture with an init segment on the video rendition. */
+  const withInit: Loaded = (() => {
+    const period = vodFixture.periods[0] as Loaded['periods'][number];
+    const video = period.tracks[0] as Loaded['periods'][number]['tracks'][number];
+    return {
+      ...vodFixture,
+      periods: [
+        {
+          ...period,
+          tracks: [
+            {
+              ...video,
+              renditions: video.renditions.map((r) => ({ ...r, init: { url: INIT_URL } })),
+            },
+            ...period.tracks.slice(1),
+          ],
+        },
+      ],
+    };
+  })();
+
+  /** Loaded to the point where the video init is in flight and no buffer exists yet. */
+  function loadedState(): { state: KernelState; token: string; sbId: string } {
+    let state = frozen(initialState());
+    [state] = reduce(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = reduce(frozen(state), { type: 'LOAD', url: 'https://cdn.example/master.m3u8' });
+    const [loaded, fx] = reduce(frozen(state), {
+      type: 'MANIFEST_LOADED',
+      presentation: withInit,
+    });
+    state = loaded;
+    const init = fx.find((e) => e.kind === 'fetch' && e.url === INIT_URL);
+    const create = fx.find((e) => e.kind === 'createSourceBuffer');
+    if (init?.kind !== 'fetch' || create?.kind !== 'createSourceBuffer') {
+      throw new Error('expected an init fetch beside the buffer request');
+    }
+    return { state, token: init.token, sbId: create.sbId };
+  }
+
+  const initLoaded = (token: string) =>
+    ({
+      type: 'SEGMENT_LOADED',
+      trackId: 'v',
+      seq: -1,
+      token,
+      bytes: emptyBuffer(),
+      rtt: 20,
+      size: 700,
+    }) as const;
+
+  it('is held, not fetched again', () => {
+    // The controller keeps the append until the buffer opens, so a second
+    // fetch of the same bytes would be waste. A slow sourceopen would
+    // repeat it until the scheduling breaker called it a loop.
+    const { state, token, sbId } = loadedState();
+    const [next, fx] = reduce(frozen(state), initLoaded(token));
+    expect(fx.filter((e) => e.kind === 'fetch' && e.url === INIT_URL)).toHaveLength(0);
+    expect(fx.filter((e) => e.kind === 'append')).toHaveLength(1);
+    expect(next.scheduling.pendingInit?.get(sbId)).toBe('v-1');
+  });
+
+  it('initializes the buffer on creation, and media follows', () => {
+    const { state, token, sbId } = loadedState();
+    const [held] = reduce(frozen(state), initLoaded(token));
+    const [next, fx] = reduce(frozen(held), {
+      type: 'SOURCEBUFFER_CREATED',
+      sbId,
+      codecs: 'video/mp4; codecs="avc1.64001f"',
+    });
+    expect(next.buffers.get(sbId)?.initFor).toBe('v-1');
+    expect(next.scheduling.pendingInit).toBeUndefined();
+    expect(fx.filter((e) => e.kind === 'fetch' && e.url !== INIT_URL)).not.toHaveLength(0);
+  });
+
+  it('is fetched again when the buffer fails to open', () => {
+    const { state, token, sbId } = loadedState();
+    const [held] = reduce(frozen(state), initLoaded(token));
+    const [failed] = reduce(frozen(held), {
+      type: 'SOURCEBUFFER_ERROR',
+      sbId,
+      error: {
+        category: 'media',
+        code: 'MEDIA_SOURCE_CLOSED',
+        fatal: false,
+        recoverable: true,
+      },
+    });
+    expect(failed.scheduling.pendingInit).toBeUndefined();
+    const [, fx] = reduce(frozen(failed), { type: 'TICK', token: 'kernel:retry' });
+    expect(fx.filter((e) => e.kind === 'fetch' && e.url === INIT_URL)).toHaveLength(1);
+  });
+});
