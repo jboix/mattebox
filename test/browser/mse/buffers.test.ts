@@ -241,4 +241,22 @@ describe.runIf(profile !== null)('source buffers', () => {
     expect(sink.ranges('v')[0]?.start ?? 1).toBeLessThan(0.5);
     stack.controller.detach();
   }, 30_000);
+
+  it('buffered answers empty once the media source closes under the controller', async () => {
+    const stack = createStack();
+    await attachAndOpen(stack);
+    await createBufferAndWait(stack, 'sb:video', profile.type);
+    stack.runner.run([{ kind: 'append', sbId: 'sb:video', data: await fixture(profile.init) }]);
+    await waitFor(() => stack.facts('SOURCEBUFFER_UPDATEEND').length >= 1, 'init appended');
+
+    // A media element error closes the source and removes its buffers
+    // without telling the controller. `load()` reproduces that end state.
+    // `buffered` then throws InvalidStateError on the removed SourceBuffer.
+    stack.el.srcObject = null;
+    stack.el.load();
+    await waitFor(() => stack.controller.readyState() === 'closed', 'source closed');
+
+    expect(stack.controller.buffered('sb:video')).toEqual([]);
+    stack.controller.detach();
+  }, 30_000);
 });

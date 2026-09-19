@@ -602,9 +602,18 @@ export function createMseController(options: MseControllerOptions): MseControlle
       const entry = buffers.get(sbId);
       if (entry === undefined) return [];
       const out: Array<{ start: number; end: number }> = [];
-      const { buffered } = entry.sb;
-      for (let i = 0; i < buffered.length; i += 1) {
-        out.push({ start: buffered.start(i), end: buffered.end(i) });
+      try {
+        const { buffered } = entry.sb;
+        for (let i = 0; i < buffered.length; i += 1) {
+          out.push({ start: buffered.start(i), end: buffered.end(i) });
+        }
+      } catch {
+        // W3C MSE 2 §SourceBuffer.buffered throws InvalidStateError once the
+        // buffer has been removed from its parent media source, which a
+        // media element error does behind the controller's back. There are
+        // no ranges left to report, and a DOMException never escapes into
+        // caller code.
+        return [];
       }
       return out;
     },
