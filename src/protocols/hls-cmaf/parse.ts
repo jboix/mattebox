@@ -9,6 +9,8 @@
  * EXT-X-MEDIA entries into their own tracks, and records the bundle in the
  * coupling table as data. Generic descriptors only; the kernel routes.
  */
+import type { PlaylistRefresh } from '../../kernel/refresh.js';
+import { applyRefresh } from '../../kernel/refresh.js';
 import type { MatteboxError } from '../../types/error.js';
 import type {
   ByteRange,
@@ -562,22 +564,36 @@ function timelineShift(previous: SegmentAddressing, next: readonly Segment[]): n
 }
 
 /**
- * Immutably merges a fetched media playlist into the rendition that
- * referenced it. Duration, liveness, init, and protection all come from
- * the media playlist; the presentation learns them here. On a live refresh
- * the new window is rebased onto the running timeline first, so segment start
- * times stay absolute across reloads.
+ * The PLAYLIST_REFRESHED fact that merges a fetched media playlist into the
+ * rendition that referenced it, or null when the playlist is older than
+ * what the rendition holds. On a live refresh the new window is rebased
+ * onto the running timeline first, so segment start times stay absolute
+ * across reloads. The kernel merges the fact into the presentation it
+ * holds when the fact lands (applyRefresh).
  */
-export function mergePlaylist(
+export function refreshFor(
   presentation: Presentation,
   renditionId: string,
   playlist: MediaPlaylist,
-): Presentation {
+): PlaylistRefresh | null {
   let previous: SegmentAddressing = [];
+  // A live rendition loaded for the first time mid-stream has no window of
+  // its own to rebase onto. A sibling in the same track does: the ladder
+  // shares media sequence numbers, so the sibling's window places this one
+  // on the running timeline. A VOD rendition needs no such anchor, and its
+  // siblings may cut segments at other boundaries.
+  let sibling: readonly Segment[] = [];
   for (const period of presentation.periods) {
     for (const track of period.tracks) {
+      if (!track.renditions.some((r) => r.id === renditionId)) continue;
       for (const rendition of track.renditions) {
-        if (rendition.id === renditionId) previous = rendition.segments;
+        if (rendition.id === renditionId) {
+          previous = rendition.segments;
+        } else if (Array.isArray(rendition.segments) && rendition.segments.length > 0) {
+          const candidate = rendition.segments as readonly Segment[];
+          const newest = (list: readonly Segment[]) => list[list.length - 1]?.seq ?? -1;
+          if (newest(candidate) > newest(sibling)) sibling = candidate;
+        }
       }
     }
   }
@@ -591,54 +607,43 @@ export function mergePlaylist(
     !playlist.endlist &&
     incomingLast.seq < knownLast.seq
   ) {
-    return presentation;
+    return null;
   }
-  const shift = timelineShift(previous, playlist.segments);
+  const anchor =
+    !playlist.endlist && knownLast === undefined && sibling.length > 0 ? sibling : previous;
+  const shift = timelineShift(anchor, playlist.segments);
   const segments =
     shift === 0
       ? playlist.segments
       : playlist.segments.map((s) => ({ ...s, start: s.start + shift }));
-  const duration = segments.reduce((sum, s) => sum + s.duration, 0);
-  const dateAnchor =
-    playlist.dateAnchor !== undefined
-      ? {
-          wallClock: playlist.dateAnchor.wallClock,
-          presentationTime: playlist.dateAnchor.presentationTime + shift,
-        }
-      : undefined;
-  const periods = presentation.periods.map((period) => ({
-    ...period,
-    tracks: period.tracks.map((track) => {
-      if (!track.renditions.some((r) => r.id === renditionId)) return track;
-      return {
-        ...track,
-        protection: track.protection ?? playlist.protection,
-        renditions: track.renditions.map((rendition) =>
-          rendition.id === renditionId
-            ? {
-                ...rendition,
-                segments,
-                ...(playlist.init !== null ? { init: playlist.init } : {}),
-              }
-            : rendition,
-        ),
-      };
-    }),
-  }));
-  const knownDuration = presentation.duration ?? 0;
   return {
-    ...presentation,
-    isLive: !playlist.endlist,
-    ...(playlist.endlist ? { duration: Math.max(knownDuration, duration) } : {}),
-    ...(playlist.endlist
-      ? {}
-      : {
-          live: {
-            ...presentation.live,
-            updatePeriod: playlist.targetDuration || 4,
-            ...(dateAnchor !== undefined ? { dateAnchor } : {}),
+    type: 'PLAYLIST_REFRESHED',
+    trackId: renditionId,
+    renditionId,
+    mediaSequence: playlist.mediaSequence,
+    segments,
+    ...(playlist.init !== null ? { init: playlist.init } : {}),
+    protection: playlist.protection,
+    endlist: playlist.endlist,
+    ...(playlist.endlist ? {} : { updatePeriod: playlist.targetDuration || 4 }),
+    ...(playlist.dateAnchor !== undefined
+      ? {
+          dateAnchor: {
+            wallClock: playlist.dateAnchor.wallClock,
+            presentationTime: playlist.dateAnchor.presentationTime + shift,
           },
-        }),
-    periods,
+        }
+      : {}),
   };
+}
+
+/** Immutably merges a fetched media playlist into the rendition that referenced it. */
+export function mergePlaylist(
+  presentation: Presentation,
+  renditionId: string,
+  playlist: MediaPlaylist,
+): Presentation {
+  const refresh = refreshFor(presentation, renditionId, playlist);
+  if (refresh === null) return presentation;
+  return applyRefresh(presentation, refresh) ?? presentation;
 }

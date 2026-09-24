@@ -22,6 +22,7 @@ import type {
 import { APPENDED_MEMORY } from '../types/kernel.js';
 import type { Command, Effect, Fact, Message, Serializable } from '../types/messages.js';
 import { normalizeMimeType } from './mime.js';
+import { applyRefresh } from './refresh.js';
 import type { AbrChooser, SwitchPolicy } from './rendition-select.js';
 import { canSwitchTo, codecFamily, createArbiter, planPinApply } from './rendition-select.js';
 import type { ScheduleTrackInput } from './scheduler.js';
@@ -724,6 +725,68 @@ function reduceCommand(
   }
 }
 
+/**
+ * A presentation replaces the one held: a manifest landed, or a playlist
+ * merged into it. Activates default tracks and reports what changed.
+ */
+function loadPresentation(state: KernelState, presentation: Presentation): Reduction {
+  const available: string[] = [];
+  for (const period of presentation.periods) {
+    for (const track of period.tracks) available.push(track.id);
+  }
+  const inflight = new Map(state.scheduling.inflight);
+  for (const [token, request] of inflight) {
+    if (request.trackId === 'manifest') inflight.delete(token);
+  }
+  const phase = state.lifecycle.phase === 'loading' ? 'ready' : state.lifecycle.phase;
+  // Default activation: the first video and audio track, so a manifest
+  // alone yields a playable composition without a SELECT_TRACK.
+  const active = new Map(state.tracks.active);
+  for (const period of presentation.periods) {
+    for (const track of period.tracks) {
+      if (
+        (track.contentType === 'video' || track.contentType === 'audio') &&
+        !active.has(track.contentType)
+      ) {
+        active.set(track.contentType, track.id);
+      }
+    }
+  }
+  const loaded: KernelState = {
+    ...state,
+    lifecycle: { phase },
+    presentation,
+    scheduling: { ...state.scheduling, inflight },
+    tracks: { active, available },
+    quality: bumped(state.quality),
+  };
+  // Every playlist merge lands here too; the track list only changed if
+  // the ids did.
+  const sameTracks =
+    available.length === state.tracks.available.length &&
+    available.every((id, index) => id === state.tracks.available[index]);
+  const manifestEffects: Effect[] = sameTracks
+    ? []
+    : [{ kind: 'emit', event: 'tracks:changed', payload: { available } }];
+  // The manifest DRM route: emit every track's protection schemes so
+  // eme-core (if loaded) can open sessions. Serializable init data
+  // rides the event; nothing DRM-specific enters the reducer.
+  const schemes = presentation.periods.flatMap((period) =>
+    period.tracks.flatMap((track) => track.protection?.schemes ?? []),
+  );
+  if (schemes.length > 0) {
+    manifestEffects.push({
+      kind: 'emit',
+      event: 'presentation:protection',
+      payload: schemes as unknown as import('../types/messages.js').Serializable,
+    });
+  }
+  if (!presentation.isLive && presentation.duration !== undefined) {
+    manifestEffects.push({ kind: 'setDuration', seconds: presentation.duration });
+  }
+  return [loaded, manifestEffects];
+}
+
 function reduceFact(
   state: KernelState,
   msg: Fact,
@@ -737,71 +800,45 @@ function reduceFact(
       // Lifecycle detail owned by the mse module. Absorbed for the trace.
       return [state, []];
 
-    case 'MANIFEST_LOADED': {
-      const available: string[] = [];
-      for (const period of msg.presentation.periods) {
-        for (const track of period.tracks) available.push(track.id);
-      }
-      const inflight = new Map(state.scheduling.inflight);
-      for (const [token, request] of inflight) {
-        if (request.trackId === 'manifest') inflight.delete(token);
-      }
-      const phase = state.lifecycle.phase === 'loading' ? 'ready' : state.lifecycle.phase;
-      // Default activation: the first video and audio track, so a manifest
-      // alone yields a playable composition without a SELECT_TRACK.
-      const active = new Map(state.tracks.active);
-      for (const period of msg.presentation.periods) {
-        for (const track of period.tracks) {
-          if (
-            (track.contentType === 'video' || track.contentType === 'audio') &&
-            !active.has(track.contentType)
-          ) {
-            active.set(track.contentType, track.id);
-          }
-        }
-      }
-      const loaded: KernelState = {
-        ...state,
-        lifecycle: { phase },
-        presentation: msg.presentation,
-        scheduling: { ...state.scheduling, inflight },
-        tracks: { active, available },
-        quality: bumped(state.quality),
-      };
-      // A live reload feeds a MANIFEST_LOADED per playlist; the track list
-      // only changed if the ids did.
-      const sameTracks =
-        available.length === state.tracks.available.length &&
-        available.every((id, index) => id === state.tracks.available[index]);
-      const manifestEffects: Effect[] = sameTracks
-        ? []
-        : [{ kind: 'emit', event: 'tracks:changed', payload: { available } }];
-      // The manifest DRM route: emit every track's protection schemes so
-      // eme-core (if loaded) can open sessions. Serializable init data
-      // rides the event; nothing DRM-specific enters the reducer.
-      const schemes = msg.presentation.periods.flatMap((period) =>
-        period.tracks.flatMap((track) => track.protection?.schemes ?? []),
-      );
-      if (schemes.length > 0) {
-        manifestEffects.push({
-          kind: 'emit',
-          event: 'presentation:protection',
-          payload: schemes as unknown as import('../types/messages.js').Serializable,
-        });
-      }
-      if (!msg.presentation.isLive && msg.presentation.duration !== undefined) {
-        manifestEffects.push({ kind: 'setDuration', seconds: msg.presentation.duration });
-      }
-      return [loaded, manifestEffects];
-    }
+    case 'MANIFEST_LOADED':
+      return loadPresentation(state, msg.presentation);
 
     case 'MANIFEST_FAILED':
       return failManifest(state, msg.error);
 
-    case 'PLAYLIST_REFRESHED':
-      // Merging a refreshed live playlist into the presentation belongs to
-      // the protocol stages. Absorbed for the trace until they exist.
-      return [state, []];
+    case 'PLAYLIST_REFRESHED': {
+      // Merged into the presentation held now, not a snapshot an adapter
+      // took earlier: another rendition may have merged in between.
+      const merged = state.presentation === null ? null : applyRefresh(state.presentation, msg);
+      if (merged === null) return [state, []];
+      return loadPresentation(state, merged);
+    }
+
+    case 'MEDIA_ERROR': {
+      // The element gave up. An engine that already failed keeps its error.
+      if (state.lifecycle.phase === 'error') return [state, []];
+      const [stopped, aborts] = abortInflight(state);
+      return [
+        { ...stopped, lifecycle: { phase: 'error' } },
+        [
+          ...aborts,
+          {
+            kind: 'emit',
+            event: 'error',
+            payload: {
+              category: msg.error.category,
+              code: msg.error.code,
+              fatal: true,
+              recoverable: msg.error.recoverable,
+              // The facade builds this context from the element's strings.
+              ...(msg.error.context !== undefined
+                ? { context: msg.error.context as { readonly [key: string]: Serializable } }
+                : {}),
+            },
+          },
+        ],
+      ];
+    }
 
     case 'SEGMENT_LOADED': {
       let matched: InflightRequest | null = null;
@@ -1725,6 +1762,7 @@ export function createReducer(
   const cfg = resolveConfig(config);
   const DRIVING_FACTS = new Set([
     'MANIFEST_LOADED',
+    'PLAYLIST_REFRESHED',
     'SEGMENT_LOADED',
     // A buffer that opens holding an init unblocks media scheduling, and
     // nothing else would drive it on a paused element.
@@ -1760,7 +1798,9 @@ export function createReducer(
     // fetch next. TIME_UPDATE drives inside its own reduction; the others
     // drive here, which is what makes startup work on a paused element
     // that fires no timeupdate.
-    if (!isCommand(msg) && DRIVING_FACTS.has(msg.type)) {
+    // A refresh that merged nothing changes nothing to drive.
+    const merged = msg.type !== 'PLAYLIST_REFRESHED' || next.presentation !== state.presentation;
+    if (!isCommand(msg) && DRIVING_FACTS.has(msg.type) && merged) {
       const [driven, driveEffects] = driveScheduling(next, hooks, cfg);
       next = driven;
       if (driveEffects.length > 0) effects = [...effects, ...driveEffects];
@@ -1801,6 +1841,13 @@ export function createReducer(
     // After the slices: a stage flushes too, recovery for one.
     const buffers = forgetFlushed(next.buffers, effects);
     if (buffers !== next.buffers) next = { ...next, buffers };
+    // A failed engine starts nothing: no fetch, no timer, no append, from
+    // the kernel or from any stage. Reports and aborts still go out. A
+    // response or a timer already on its way lands here and ends here, so
+    // every loop (playlist reloads, steering, retries) stops on its own.
+    if (next.lifecycle.phase === 'error') {
+      effects = effects.filter((effect) => effect.kind === 'emit' || effect.kind === 'abort');
+    }
     return [next, effects];
   };
 }

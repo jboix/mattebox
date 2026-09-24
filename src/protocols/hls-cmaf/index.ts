@@ -5,16 +5,19 @@
  * The choreography is a slice reducer, so the whole protocol lives inside
  * the message loop and the trace: manifest bytes arrive as SEGMENT_LOADED
  * facts, parsing is pure, and results loop back through zero-delay
- * schedule effects carrying MANIFEST_LOADED. Media playlists fetch under
- * `hls:pl:` tokens the transport correlates back by token.
+ * schedule effects: MANIFEST_LOADED for the multivariant playlist, one
+ * PLAYLIST_REFRESHED per rendition for a media playlist. Media playlists
+ * fetch under `hls:pl:` tokens the transport correlates back by token.
  */
 
 import { normalizeMimeType } from '../../kernel/mime.js';
+import { ladderNeighbours } from '../../kernel/rendition-select.js';
+import type { MatteboxError } from '../../types/error.js';
 import type { Presentation, Rendition, Track } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
-import { mergePlaylist, parse, parseMediaPlaylist } from './parse.js';
+import { parse, parseMediaPlaylist, refreshFor } from './parse.js';
 
 const PLAYLIST_TOKEN = 'hls:pl:';
 
@@ -30,11 +33,28 @@ interface HlsSlice {
   readonly manifestUrl: string | null;
   /** The caller's `mimeType` from LOAD, normalized, or null to sniff the bytes. */
   readonly mimeType: string | null;
-  /** Media-playlist fetches in flight, token to renditionId. */
+  /** Media-playlist fetches in flight, token to playlist URL. */
   readonly pending: Readonly<Record<string, string>>;
+  /**
+   * Playlist URLs already answered: true when they loaded, false when they
+   * failed. Neither is fetched again by this slice; hls-live reloads a live
+   * playlist on its own cadence.
+   */
+  readonly answered: Readonly<Record<string, boolean>>;
+  /** The selection last looked at, so the playlist choice runs only when it changes. */
+  readonly seen: string;
 }
 
-const INITIAL: HlsSlice = { manifestUrl: null, mimeType: null, pending: {} };
+const INITIAL: HlsSlice = {
+  manifestUrl: null,
+  mimeType: null,
+  pending: {},
+  answered: {},
+  seen: '',
+};
+
+/** The constraint source that excludes renditions whose playlist failed. */
+const UNAVAILABLE = 'hls:unavailable';
 
 /**
  * Whether this adapter owns the manifest bytes. An explicit mimeType
@@ -48,53 +68,60 @@ function claims(state: HlsSlice, text: string): boolean {
   return text.trimStart().startsWith('#EXTM3U');
 }
 
-function findRendition(
-  presentation: Presentation,
-  renditionId: string,
-): { rendition: Rendition; track: Track } | null {
+function findTrackOf(presentation: Presentation, renditionId: string): Track | null {
   for (const period of presentation.periods) {
     for (const track of period.tracks) {
-      for (const rendition of track.renditions) {
-        if (rendition.id === renditionId) return { rendition, track };
-      }
+      if (track.renditions.some((r) => r.id === renditionId)) return track;
     }
   }
   return null;
 }
 
 /**
- * The renditions whose media playlists still need fetching: every rendition of
- * every active track. Fetching only the "chosen" one is not enough, because ABR
- * (or any switch policy) selects independently and can pick a rendition this
- * slice would not have; its segments would then stay empty and the scheduler
- * would stall the moment ABR ramped onto it, which looks like playback dying
- * once the buffer drains. Fetching all of an active track's playlists means the
- * rendition ABR lands on is already loaded, and a switch never stalls.
+ * The playlist URLs the selection needs and this slice has not asked for:
+ * the playing video rendition and its ladder neighbours, and every
+ * rendition of the active audio and text tracks (one each in practice; an
+ * audio-only ladder is short). Fetching the whole ladder up front costs one
+ * request per variant, hundreds on a large multivariant playlist.
  */
-function neededPlaylists(kernel: Readonly<KernelState>): readonly Rendition[] {
+function neededPlaylists(state: HlsSlice, kernel: Readonly<KernelState>): readonly string[] {
   const presentation = kernel.presentation;
   if (presentation === null) return [];
-  const activeIds = new Set(
-    (['video', 'audio', 'text'] as const)
-      .map((contentType) => kernel.tracks.active.get(contentType))
-      .filter((id): id is string => id !== undefined),
-  );
-  const needed: Rendition[] = [];
-  for (const period of presentation.periods) {
-    for (const track of period.tracks) {
-      if (!activeIds.has(track.id)) continue;
-      for (const rendition of track.renditions) {
-        if (
-          rendition.playlistUrl !== undefined &&
-          Array.isArray(rendition.segments) &&
-          rendition.segments.length === 0
-        ) {
-          needed.push(rendition);
+  const asked = new Set(Object.values(state.pending));
+  const needed: string[] = [];
+  for (const contentType of ['video', 'audio', 'text'] as const) {
+    const trackId = kernel.tracks.active.get(contentType);
+    if (trackId === undefined) continue;
+    for (const period of presentation.periods) {
+      for (const track of period.tracks) {
+        if (track.id !== trackId) continue;
+        const candidates =
+          contentType === 'video'
+            ? ladderNeighbours(track.renditions, kernel.quality.active, kernel.quality.constraints)
+            : track.renditions;
+        for (const rendition of candidates) {
+          const url = rendition.playlistUrl;
+          if (url === undefined || url in state.answered || asked.has(url)) continue;
+          if (needed.includes(url)) continue;
+          needed.push(url);
         }
       }
     }
   }
   return needed;
+}
+
+/** Every rendition that reads the playlist at `url`. */
+function renditionsAt(presentation: Presentation, url: string): readonly Rendition[] {
+  const out: Rendition[] = [];
+  for (const period of presentation.periods) {
+    for (const track of period.tracks) {
+      for (const rendition of track.renditions) {
+        if (rendition.playlistUrl === url) out.push(rendition);
+      }
+    }
+  }
+  return out;
 }
 
 /** Loops a message back into the bus through a zero-delay schedule effect. */
@@ -103,8 +130,39 @@ function feed(message: Message): Effect {
   return { kind: 'schedule', token: 'hls:loopback', delayMs: 0, then: message };
 }
 
-function loopBack(presentation: Presentation): Effect {
-  return feed({ type: 'MANIFEST_LOADED', presentation });
+/**
+ * A playlist that failed to load or parse. Its renditions are excluded,
+ * so arbitration moves off them and nothing asks for the playlist again.
+ * When that leaves a media track with no rendition at all, the load
+ * fails: the stream cannot play, and waiting would only stall.
+ */
+function unavailable(
+  state: HlsSlice,
+  kernel: Readonly<KernelState>,
+  url: string,
+  error: MatteboxError,
+): [HlsSlice, Effect[]] {
+  const answered = { ...state.answered, [url]: false };
+  const next = { ...state, answered };
+  const presentation = kernel.presentation;
+  if (presentation === null) return [next, []];
+  const failed = (r: Rendition) => r.playlistUrl !== undefined && answered[r.playlistUrl] === false;
+  const hit = renditionsAt(presentation, url);
+  for (const rendition of hit) {
+    const track = findTrackOf(presentation, rendition.id);
+    const media = track?.contentType === 'video' || track?.contentType === 'audio';
+    if (track !== null && media && track.renditions.every(failed)) {
+      return [next, [feed({ type: 'MANIFEST_FAILED', error: { ...error, fatal: true } })]];
+    }
+  }
+  const excludeIds: string[] = [];
+  for (const period of presentation.periods) {
+    for (const track of period.tracks) {
+      for (const rendition of track.renditions)
+        if (failed(rendition)) excludeIds.push(rendition.id);
+    }
+  }
+  return [next, [feed({ type: 'CONSTRAIN', source: UNAVAILABLE, constraint: { excludeIds } })]];
 }
 
 const reduceHls: SliceReducer<HlsSlice> = (slice, msg, kernel) => {
@@ -113,9 +171,9 @@ const reduceHls: SliceReducer<HlsSlice> = (slice, msg, kernel) => {
   if (msg.type === 'LOAD') {
     return [
       {
+        ...INITIAL,
         manifestUrl: msg.url,
         mimeType: msg.mimeType === undefined ? null : normalizeMimeType(msg.mimeType),
-        pending: {},
       },
       [],
     ];
@@ -145,69 +203,83 @@ const reduceHls: SliceReducer<HlsSlice> = (slice, msg, kernel) => {
         ],
       ];
     }
-    return [state, [loopBack(result.presentation)]];
+    return [state, [feed({ type: 'MANIFEST_LOADED', presentation: result.presentation })]];
   }
 
-  if (msg.type === 'SEGMENT_LOADED' && msg.trackId.startsWith(PLAYLIST_TOKEN)) {
-    const renditionId = state.pending[msg.trackId];
-    if (renditionId === undefined || kernel.presentation === null) return [state, []];
-    const site = findRendition(kernel.presentation, renditionId);
+  let next = state;
+  const effects: Effect[] = [];
+
+  if (msg.type === 'SEGMENT_LOADED' && msg.trackId in state.pending) {
+    const url = state.pending[msg.trackId] as string;
     const pending = { ...state.pending };
     delete pending[msg.trackId];
-    if (site === null || site.rendition.playlistUrl === undefined) {
-      return [{ ...state, pending }, []];
+    next = { ...next, pending };
+    const media = parseMediaPlaylist(new TextDecoder().decode(msg.bytes), url);
+    const playlist = media.playlist;
+    // A complete playlist with no segment can never be played from, the
+    // same as one that does not parse.
+    const error: MatteboxError | null =
+      playlist === null
+        ? (media.error ?? {
+            category: 'manifest',
+            code: 'MANIFEST_PARSE_FAILED',
+            fatal: false,
+            recoverable: false,
+          })
+        : playlist.endlist && playlist.segments.length === 0
+          ? { category: 'manifest', code: 'MANIFEST_EMPTY', fatal: false, recoverable: false }
+          : null;
+    if (error !== null || playlist === null || kernel.presentation === null) {
+      if (error === null) return [next, effects];
+      effects.push({
+        kind: 'emit',
+        event: 'error',
+        payload: {
+          category: error.category,
+          code: error.code,
+          fatal: false,
+          recoverable: false,
+          url,
+        },
+      });
+      const [failed, failEffects] = unavailable(next, kernel, url, error);
+      return [failed, [...effects, ...failEffects]];
     }
-    const text = new TextDecoder().decode(msg.bytes);
-    const media = parseMediaPlaylist(text, site.rendition.playlistUrl);
-    if (media.playlist === null) {
-      return [
-        { ...state, pending },
-        [
-          feed({
-            type: 'MANIFEST_FAILED',
-            error: media.error ?? {
-              category: 'manifest',
-              code: 'MANIFEST_PARSE_FAILED',
-              fatal: true,
-              recoverable: false,
-            },
-          }),
-        ],
-      ];
+    next = { ...next, answered: { ...next.answered, [url]: true } };
+    // One fetch serves every rendition that reads this playlist. Each
+    // merges as its own fact, into the presentation the kernel holds
+    // when the fact lands.
+    for (const rendition of renditionsAt(kernel.presentation, url)) {
+      const refresh = refreshFor(kernel.presentation, rendition.id, playlist);
+      if (refresh !== null) effects.push(feed(refresh));
     }
-    const merged = mergePlaylist(kernel.presentation, renditionId, media.playlist);
-    return [{ ...state, pending }, [loopBack(merged)]];
+    return [next, effects];
   }
 
-  // After a manifest lands, a selection changes, or time moves, fetch any
-  // media playlist the current selection still lacks. Selection is its own
-  // trigger: on a paused or stalled element no TIME_UPDATE ever comes, and
-  // a track whose playlist never loads is one the element can never play.
-  // A suspended engine makes no request; RESUME fills what a selection
-  // during the freeze left lacking.
-  if (
-    (msg.type === 'MANIFEST_LOADED' ||
-      msg.type === 'SELECT_TRACK' ||
-      msg.type === 'TIME_UPDATE' ||
-      msg.type === 'RESUME') &&
-    kernel.lifecycle.phase !== 'suspended'
-  ) {
-    const needed = neededPlaylists(kernel).filter(
-      (rendition) => !Object.values(state.pending).includes(rendition.id),
-    );
-    if (needed.length === 0) return [state, []];
-    const effects: Effect[] = [];
+  if (msg.type === 'SEGMENT_FAILED' && msg.trackId in state.pending) {
+    // The transport already retried under its policy; the kernel reported
+    // the failure. What is left is to stop relying on the playlist.
+    const url = state.pending[msg.trackId] as string;
     const pending = { ...state.pending };
-    for (const rendition of needed) {
-      const token = `${PLAYLIST_TOKEN}${rendition.id}`;
-      if (pending[token] !== undefined) continue;
-      pending[token] = rendition.id;
-      effects.push({ kind: 'fetch', token, url: rendition.playlistUrl as string });
-    }
-    return [{ ...state, pending }, effects];
+    delete pending[msg.trackId];
+    return unavailable({ ...next, pending }, kernel, url, msg.error);
   }
 
-  return [state, []];
+  // Look at the selection again when it changed: a manifest, a merge, a
+  // track or quality switch, a constraint. Each bumps the quality version.
+  // A suspended engine makes no request and keeps the old key, so RESUME
+  // fills what a selection during the freeze left lacking.
+  if (kernel.lifecycle.phase !== 'ready' || kernel.presentation === null) return [next, effects];
+  const key = `${kernel.quality.version}:${kernel.quality.active}`;
+  if (key === state.seen && msg.type !== 'RESUME') return [next, effects];
+  next = { ...next, seen: key };
+  const pending = { ...next.pending };
+  for (const url of neededPlaylists(next, kernel)) {
+    const token = `${PLAYLIST_TOKEN}${url}`;
+    pending[token] = url;
+    effects.push({ kind: 'fetch', token, url });
+  }
+  return [{ ...next, pending }, effects];
 };
 
 /**

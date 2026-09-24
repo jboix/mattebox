@@ -310,12 +310,17 @@ export function mattebox(options: MatteboxOptions): Mattebox {
     const code = el.error?.code ?? 0;
     // An abort is the app's doing; an engine that already halted keeps its error.
     if (code === 1 || lastError !== null) return;
-    bus.emitEvent('error', {
-      category: 'media',
-      code: code === 4 ? 'MEDIA_CODEC_UNSUPPORTED' : 'MEDIA_DECODE_ERROR',
-      fatal: true,
-      recoverable: false,
-      context: { mediaError: MEDIA_ERR[code] ?? code, message: el.error?.message ?? '' },
+    // A fact, not only an event: the kernel moves to `error` and stops
+    // fetching, where a report alone left every loop running.
+    bus.absorb({
+      type: 'MEDIA_ERROR',
+      error: {
+        category: 'media',
+        code: code === 4 ? 'MEDIA_CODEC_UNSUPPORTED' : 'MEDIA_DECODE_ERROR',
+        fatal: true,
+        recoverable: false,
+        context: { mediaError: MEDIA_ERR[code] ?? String(code), message: el.error?.message ?? '' },
+      },
     });
   }
 
@@ -440,6 +445,10 @@ export function mattebox(options: MatteboxOptions): Mattebox {
         recoverable: summary.recoverable ?? false,
         trace: bus.trace(),
       };
+      // A failed engine starts nothing new (the reducer drops those
+      // effects). Requests and timers started before the failure go too,
+      // so nothing keeps reaching the network after the error.
+      if (bus.getState().lifecycle.phase === 'error') runner.cancelAll();
     }
   });
 

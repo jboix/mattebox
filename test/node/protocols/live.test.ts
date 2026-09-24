@@ -502,8 +502,8 @@ describe('hls-live', () => {
     for (const fetch of settled.effects.filter(
       (e) => e.kind === 'fetch' && e.token.startsWith('hls:pl:'),
     )) {
-      const token = (fetch as { token: string }).token;
-      const prefix = token.endsWith('v-3000000') ? 'high/' : 'low/';
+      const { token, url } = fetch as { token: string; url: string };
+      const prefix = url.endsWith('high.m3u8') ? 'high/' : 'low/';
       settled = settle(
         reduce,
         ...reduce(state, {

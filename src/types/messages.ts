@@ -13,7 +13,9 @@ import type {
   ByteRange,
   ContentType,
   Presentation,
+  ProtectionInfo,
   Segment,
+  SegmentRef,
   TimeRangesSnapshot,
   TrackId,
 } from './ir.js';
@@ -101,11 +103,34 @@ export type Fact =
   | { readonly type: 'MANIFEST_LOADED'; readonly presentation: Presentation }
   | { readonly type: 'MANIFEST_FAILED'; readonly error: MatteboxError }
   | {
+      /**
+       * One rendition's segment list is known: a media playlist loaded or
+       * reloaded, or a DASH index resolved. The kernel merges it into the
+       * presentation it holds when the fact lands. A full presentation
+       * snapshot would be stale by then whenever another rendition merged
+       * in between, and would undo that merge.
+       */
       readonly type: 'PLAYLIST_REFRESHED';
       readonly trackId: TrackId;
+      /** The rendition to merge into. Without it the fact is recorded and nothing merges. */
       readonly renditionId?: string;
       readonly mediaSequence: number;
+      /** The rendition's segments, already on the presentation timeline. */
       readonly segments: readonly Segment[];
+      /** The rendition's init segment, when the playlist names one. */
+      readonly init?: SegmentRef;
+      /** Protection the playlist declares. It applies to a track that declares none. */
+      readonly protection?: ProtectionInfo | null;
+      /**
+       * Whether the playlist is complete (HLS EXT-X-ENDLIST). Present, it
+       * decides the presentation's liveness and, when true, extends the
+       * duration to cover these segments. Absent, liveness stays as it is.
+       */
+      readonly endlist?: boolean;
+      /** Live refresh cadence in seconds. Applies while the playlist is not complete. */
+      readonly updatePeriod?: number;
+      /** A wall-clock anchor on the presentation timeline. Applies while the playlist is not complete. */
+      readonly dateAnchor?: { readonly wallClock: number; readonly presentationTime: number };
     }
   | {
       readonly type: 'SEGMENT_LOADED';
@@ -174,6 +199,8 @@ export type Fact =
     }
   | { readonly type: 'THROUGHPUT_SAMPLE'; readonly bps: number; readonly trackId: TrackId }
   | { readonly type: 'ENDED'; readonly at: number }
+  /** The element reported its own error (HTMLMediaElement.error). Playback cannot continue. */
+  | { readonly type: 'MEDIA_ERROR'; readonly error: MatteboxError }
   | {
       /** A scheduled timer fired. The kernel ignores it; slices match on their own token. */
       readonly type: 'TICK';

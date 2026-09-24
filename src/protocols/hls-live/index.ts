@@ -15,11 +15,14 @@
  * passes the edge it was fetched at, which looks like a live stream dying
  * a minute in.
  */
+
+import { ladderNeighbours } from '../../kernel/rendition-select.js';
+import type { MatteboxError } from '../../types/error.js';
 import type { Presentation, Rendition } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
-import { mergePlaylist, parseMediaPlaylist } from '../hls-cmaf/parse.js';
+import { parseMediaPlaylist, refreshFor } from '../hls-cmaf/parse.js';
 import { registerLiveNamespace } from '../live-shared.js';
 
 const REFRESH_TOKEN = 'hls:live:refresh';
@@ -30,6 +33,8 @@ interface ReloadTarget {
   readonly renditionId: string;
   /** Another rung of the video ladder, reloaded at a slower cadence. */
   readonly ladder: boolean;
+  /** Playback cannot go on without it: the window rendition, an audio companion. */
+  readonly critical: boolean;
 }
 
 interface HlsLiveSlice {
@@ -43,7 +48,7 @@ interface HlsLiveSlice {
   /**
    * A reload tick is scheduled. The loop is one chain: at most one tick
    * pending and at most one target reload in flight, so neither the
-   * MANIFEST_LOADED every companion feeds nor the reload a switch fires at
+   * PLAYLIST_REFRESHED every companion feeds nor the reload a switch fires at
    * once can fork it into two.
    */
   readonly tickPending: boolean;
@@ -59,6 +64,10 @@ interface HlsLiveSlice {
   readonly awaitingTarget: boolean;
   /** SUSPEND stopped the loop; RESUME restarts it. */
   readonly suspended: boolean;
+  /** Consecutive failed reloads per rendition. A success clears the count. */
+  readonly failures: Readonly<Record<string, number>>;
+  /** Renditions that failed FAILURE_LIMIT times in a row and are no longer reloaded. */
+  readonly abandoned: readonly string[];
 }
 
 const INITIAL: HlsLiveSlice = {
@@ -71,7 +80,19 @@ const INITIAL: HlsLiveSlice = {
   lastEndSeq: -1,
   awaitingTarget: false,
   suspended: false,
+  failures: {},
+  abandoned: [],
 };
+
+/**
+ * Failed reloads of one playlist in a row before the loop gives up on it.
+ * Each reload already carries the transport's own retries, so this is
+ * several rounds of a playlist that does not answer: an expired token, a
+ * stream that ended without ENDLIST. A critical playlist then fails the
+ * load; any other stops reloading. Retrying forever only keeps the
+ * network busy for a stream that cannot play.
+ */
+const FAILURE_LIMIT = 4;
 
 /**
  * A two-hour DVR playlist is tens of kilobytes; reloading four of them every
@@ -110,35 +131,48 @@ function findRendition(presentation: Presentation, renditionId: string): Renditi
 }
 
 /**
- * The active tracks' playlists other than the window rendition's: every
- * other video rendition, the audio group rendition, a segmented subtitle
- * playlist. The whole video ladder reloads because a switch can only land
- * on a rendition whose playlist reaches the playhead; one left at its
- * startup window can never be scheduled from, so the switch never happens.
- * Renditions without a playlist of their own (muxed audio, a text track in
- * a single file) need no reload.
+ * The active tracks' playlists other than the window rendition's: the audio
+ * group rendition, a segmented subtitle playlist, and the video rungs next
+ * to the window rendition. A switch can only land on a rendition whose
+ * playlist reaches the playhead, and ABR steps one rung at a time, so the
+ * neighbours stay fresh; a longer jump reloads its target at once (the
+ * switch branch). Reloading the whole ladder saturates the link on a large
+ * multivariant playlist. Renditions without a playlist of their own (muxed
+ * audio, a text track in a single file) need no reload, and a playlist
+ * shared by several renditions reloads once.
  */
 function companionTargets(
   presentation: Presentation,
   kernel: Readonly<KernelState>,
-  windowRenditionId: string | null,
+  window: Rendition | null,
+  abandoned: readonly string[],
 ): ReloadTarget[] {
-  const activeIds = new Set(
-    (['video', 'audio', 'text'] as const)
-      .map((contentType) => kernel.tracks.active.get(contentType))
-      .filter((id): id is string => id !== undefined),
-  );
+  const urls = new Set<string>();
+  if (window?.playlistUrl !== undefined) urls.add(window.playlistUrl);
   const out: ReloadTarget[] = [];
-  for (const period of presentation.periods) {
-    for (const track of period.tracks) {
-      if (!activeIds.has(track.id)) continue;
-      for (const rendition of track.renditions) {
-        if (rendition.id === windowRenditionId || rendition.playlistUrl === undefined) continue;
-        out.push({
-          url: rendition.playlistUrl,
-          renditionId: rendition.id,
-          ladder: track.contentType === 'video',
-        });
+  const add = (rendition: Rendition, ladder: boolean, critical: boolean) => {
+    const url = rendition.playlistUrl;
+    if (url === undefined || urls.has(url) || abandoned.includes(rendition.id)) return;
+    urls.add(url);
+    out.push({ url, renditionId: rendition.id, ladder, critical });
+  };
+  for (const contentType of ['video', 'audio', 'text'] as const) {
+    const trackId = kernel.tracks.active.get(contentType);
+    if (trackId === undefined) continue;
+    for (const period of presentation.periods) {
+      for (const track of period.tracks) {
+        if (track.id !== trackId) continue;
+        if (contentType !== 'video') {
+          for (const rendition of track.renditions) add(rendition, false, contentType === 'audio');
+          continue;
+        }
+        if (window === null) continue;
+        const neighbours = ladderNeighbours(
+          track.renditions,
+          window.id,
+          kernel.quality.constraints,
+        );
+        for (const rendition of neighbours) add(rendition, true, false);
       }
     }
   }
@@ -191,7 +225,7 @@ function windowRendition(
 /**
  * The window fact for the rendition's current segment list, or null when
  * the kernel already holds exactly that window: every companion reload
- * feeds a MANIFEST_LOADED, and a window that has not moved is not news.
+ * feeds a PLAYLIST_REFRESHED, and a window that has not moved is not news.
  */
 function windowFact(
   presentation: Presentation,
@@ -233,6 +267,68 @@ function playlistUrlFor(
   return target !== null && target.renditionId === renditionId ? target.url : null;
 }
 
+/** Every rendition whose playlist is `url`. */
+function renditionIdsAt(presentation: Presentation, url: string): readonly string[] {
+  const ids: string[] = [];
+  for (const period of presentation.periods) {
+    for (const track of period.tracks) {
+      for (const rendition of track.renditions) {
+        if (rendition.playlistUrl === url) ids.push(rendition.id);
+      }
+    }
+  }
+  return ids;
+}
+
+/**
+ * A reload that failed, or answered with a playlist that does not parse.
+ * The target tries again soon rather than let the loop die, and every
+ * other playlist waits for the next tick, up to FAILURE_LIMIT times in a
+ * row. Then a critical playlist fails the load and any other stops
+ * reloading.
+ */
+function reloadFailed(
+  state: HlsLiveSlice,
+  renditionId: string,
+  error: MatteboxError,
+): [HlsLiveSlice, Effect[]] {
+  const count = (state.failures[renditionId] ?? 0) + 1;
+  const failures = { ...state.failures, [renditionId]: count };
+  const isTarget = state.target !== null && renditionId === state.target.renditionId;
+  const companion = state.companions.find((c) => c.renditionId === renditionId);
+  if (count >= FAILURE_LIMIT) {
+    if (isTarget || companion?.critical === true) {
+      return [
+        { ...state, failures, inflight: null },
+        [
+          feed({
+            type: 'MANIFEST_FAILED',
+            error: {
+              category: 'manifest',
+              code: 'MANIFEST_REFRESH_FAILED',
+              fatal: true,
+              recoverable: false,
+              context: { cause: error.code, renditionId, attempts: count },
+            },
+          }),
+        ],
+      ];
+    }
+    return [
+      {
+        ...state,
+        failures,
+        abandoned: [...state.abandoned, renditionId],
+        companions: state.companions.filter((c) => c.renditionId !== renditionId),
+      },
+      [],
+    ];
+  }
+  if (!isTarget) return [{ ...state, failures }, []];
+  if (state.tickPending) return [{ ...state, failures, inflight: null }, []];
+  return [{ ...state, failures, inflight: null, tickPending: true }, [tick(2)]];
+}
+
 const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
   const state = slice ?? INITIAL;
 
@@ -268,20 +364,27 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
     return [{ ...resumed, inflight: state.target.renditionId, awaitingTarget: true }, effects];
   }
 
-  if (msg.type === 'MANIFEST_LOADED') {
-    if (!msg.presentation.isLive) {
+  // The presentation changed: the multivariant playlist landed, or a
+  // playlist merged into it. Read it from the kernel, which holds every
+  // merge so far.
+  if (
+    (msg.type === 'MANIFEST_LOADED' || msg.type === 'PLAYLIST_REFRESHED') &&
+    kernel.presentation !== null
+  ) {
+    const presentation = kernel.presentation;
+    if (!presentation.isLive) {
       return [{ ...state, target: null, companions: [], inflight: null }, []];
     }
-    const rendition = windowRendition(msg.presentation, kernel);
+    const rendition = windowRendition(presentation, kernel);
     const effects: Effect[] = [];
     // The reload target: the rendition's own playlist when it has one, the
     // manifest itself for a bare media-playlist source.
     const url = rendition?.playlistUrl ?? state.manifestUrl;
     const target =
       url !== null && rendition !== null
-        ? { url, renditionId: rendition.id, ladder: false }
+        ? { url, renditionId: rendition.id, ladder: false, critical: true }
         : state.target;
-    const companions = companionTargets(msg.presentation, kernel, rendition?.id ?? null);
+    const companions = companionTargets(presentation, kernel, rendition, state.abandoned);
     const switched =
       state.target !== null && target !== null && target.renditionId !== state.target.renditionId;
     let awaitingTarget = state.awaitingTarget;
@@ -296,13 +399,13 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
       }
       awaitingTarget = true;
     } else if (!awaitingTarget && rendition !== null) {
-      const window = windowFact(msg.presentation, rendition, kernel);
+      const window = windowFact(presentation, rendition, kernel);
       if (window !== null) effects.push(window);
     }
     // Only a dead loop (startup, or after ENDLIST) starts one.
     let tickPending = state.tickPending;
     if (!tickPending && inflight === null && target !== null) {
-      effects.push(tick(msg.presentation.live?.updatePeriod ?? 4));
+      effects.push(tick(presentation.live?.updatePeriod ?? 4));
       tickPending = true;
     }
     return [{ ...state, target, companions, tickPending, inflight, awaitingTarget }, effects];
@@ -340,11 +443,7 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
   if (msg.type === 'SEGMENT_FAILED') {
     const renditionId = renditionOfToken(msg.trackId);
     if (renditionId === null) return [state, []];
-    // A failed companion reload is nothing; a failed target reload is not
-    // fatal either: try again soon rather than let the loop die.
-    if (state.target === null || renditionId !== state.target.renditionId) return [state, []];
-    if (state.tickPending) return [{ ...state, inflight: null }, []];
-    return [{ ...state, inflight: null, tickPending: true }, [tick(2)]];
+    return reloadFailed(state, renditionId, msg.error);
   }
 
   if (msg.type === 'SEGMENT_LOADED') {
@@ -356,29 +455,38 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
     const text = new TextDecoder().decode(msg.bytes);
     const media = parseMediaPlaylist(text, url);
     if (media.playlist === null) {
-      // A bad reload is not fatal: try again on the same cadence.
-      if (!isTarget) return [state, []];
-      if (state.tickPending) return [{ ...state, inflight: null }, []];
-      return [{ ...state, inflight: null, tickPending: true }, [tick(2)]];
-    }
-    // Always merge, never re-parse: mergePlaylist rebases the new window onto
-    // the running timeline, which a fresh parse of a bare media playlist would
-    // throw away, stalling live once the first window drains.
-    const refreshed = mergePlaylist(kernel.presentation, renditionId, media.playlist);
-    const effects: Effect[] = [
-      feed({
-        type: 'PLAYLIST_REFRESHED',
-        trackId: renditionId,
+      return reloadFailed(
+        state,
         renditionId,
-        mediaSequence: media.playlist.mediaSequence,
-        segments: media.playlist.segments,
-      }),
-      feed({ type: 'MANIFEST_LOADED', presentation: refreshed }),
-    ];
+        media.error ?? {
+          category: 'manifest',
+          code: 'MANIFEST_PARSE_FAILED',
+          fatal: false,
+          recoverable: false,
+        },
+      );
+    }
+    const failures = { ...state.failures };
+    delete failures[renditionId];
+    // Merge, never re-parse: refreshFor rebases the new window onto the
+    // running timeline, which a fresh parse of a bare media playlist would
+    // throw away, stalling live once the first window drains. The kernel
+    // merges each fact into the presentation it holds when the fact lands,
+    // so a companion and the target answering together both keep theirs.
+    // Every rendition reading this playlist takes the same window.
+    const sharing =
+      findRendition(kernel.presentation, renditionId)?.playlistUrl === undefined
+        ? [renditionId]
+        : renditionIdsAt(kernel.presentation, url);
+    const effects: Effect[] = [];
+    for (const id of sharing) {
+      const refresh = refreshFor(kernel.presentation, id, media.playlist);
+      if (refresh !== null) effects.push(feed(refresh));
+    }
     if (!isTarget) {
       // A companion, or the target of a moment ago: merged in, nothing
       // else. The window and the cadence belong to the target's reload.
-      return [state, effects];
+      return [{ ...state, failures }, effects];
     }
 
     const lastSegment = media.playlist.segments[media.playlist.segments.length - 1];
@@ -395,7 +503,14 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
       tickPending = true;
     }
     return [
-      { ...state, lastEndSeq: endSeq, tickPending, inflight: null, awaitingTarget: false },
+      {
+        ...state,
+        failures,
+        lastEndSeq: endSeq,
+        tickPending,
+        inflight: null,
+        awaitingTarget: false,
+      },
       effects,
     ];
   }

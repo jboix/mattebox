@@ -37,7 +37,18 @@ interface DashLiveSlice {
   readonly lastWallClock: number | null;
   /** SUSPEND stopped the loops; RESUME restarts them. */
   readonly suspended: boolean;
+  /** Consecutive MPD reloads that failed or did not parse. A good reload clears it. */
+  readonly failures: number;
 }
+
+/**
+ * Failed MPD reloads in a row before the load fails. Each reload already
+ * carries the transport's own retries, so this is several update periods
+ * of an MPD that does not answer. Without a limit the stream stops moving
+ * and nothing says why; retrying forever keeps the network busy for a
+ * stream that cannot play.
+ */
+const FAILURE_LIMIT = 4;
 
 const INITIAL: DashLiveSlice = {
   manifestUrl: null,
@@ -48,6 +59,7 @@ const INITIAL: DashLiveSlice = {
   lastWindowEnd: -1,
   lastWallClock: null,
   suspended: false,
+  failures: 0,
 };
 
 /** The window arithmetic; null when it cannot move or is not worth a fact. */
@@ -105,6 +117,40 @@ function clockTick(): Effect {
     // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
     then: { type: 'TICK', token: CLOCK_TOKEN },
   };
+}
+
+/**
+ * An MPD reload that failed or did not parse. The next reload waits one
+ * update period, as a good one would; after FAILURE_LIMIT in a row the
+ * load fails.
+ */
+function reloadFailed(
+  state: DashLiveSlice,
+  presentation: Presentation | null,
+  cause: string,
+): [DashLiveSlice, Effect[]] {
+  const failures = state.failures + 1;
+  if (failures >= FAILURE_LIMIT) {
+    return [
+      { ...state, failures },
+      [
+        feed({
+          type: 'MANIFEST_FAILED',
+          error: {
+            category: 'manifest',
+            code: 'MANIFEST_REFRESH_FAILED',
+            fatal: true,
+            recoverable: false,
+            context: { cause, attempts: failures },
+          },
+        }),
+      ],
+    ];
+  }
+  if (state.tickPending || state.suspended || !drivesWindow(presentation)) {
+    return [{ ...state, failures }, []];
+  }
+  return [{ ...state, failures, tickPending: true }, [tick(presentation.live.updatePeriod ?? 4)]];
 }
 
 const reduceDashLive: SliceReducer<DashLiveSlice> = (slice, msg, kernel) => {
@@ -203,6 +249,15 @@ const reduceDashLive: SliceReducer<DashLiveSlice> = (slice, msg, kernel) => {
     ];
   }
 
+  // No time server answer: the skew stays unknown and counts as zero.
+  if (msg.type === 'SEGMENT_FAILED' && msg.trackId === UTC_TOKEN) {
+    return [{ ...state, utcPending: false }, []];
+  }
+
+  if (msg.type === 'SEGMENT_FAILED' && msg.trackId === MPD_TOKEN) {
+    return reloadFailed(state, kernel.presentation, msg.error.code);
+  }
+
   if (msg.type === 'SEGMENT_LOADED' && msg.trackId === UTC_TOKEN) {
     const serverTime = Date.parse(new TextDecoder().decode(msg.bytes).trim());
     if (!Number.isFinite(serverTime) || msg.wallClock === undefined) {
@@ -214,16 +269,21 @@ const reduceDashLive: SliceReducer<DashLiveSlice> = (slice, msg, kernel) => {
   if (msg.type === 'SEGMENT_LOADED' && msg.trackId === MPD_TOKEN) {
     if (state.manifestUrl === null) return [state, []];
     const result = parse(new TextDecoder().decode(msg.bytes), state.manifestUrl);
+    if (result.presentation === null) {
+      return reloadFailed(
+        state,
+        kernel.presentation,
+        result.error?.code ?? 'MANIFEST_PARSE_FAILED',
+      );
+    }
     const effects: Effect[] = [];
-    let next = state;
-    if (result.presentation !== null) {
-      effects.push(feed({ type: 'MANIFEST_LOADED', presentation: result.presentation }));
-      if (result.presentation.isLive && result.presentation.live !== undefined) {
-        const window = windowUpdate(next, result.presentation.live);
-        if (window !== null) {
-          next = window.next;
-          effects.push(window.fact);
-        }
+    let next: DashLiveSlice = { ...state, failures: 0 };
+    effects.push(feed({ type: 'MANIFEST_LOADED', presentation: result.presentation }));
+    if (result.presentation.isLive && result.presentation.live !== undefined) {
+      const window = windowUpdate(next, result.presentation.live);
+      if (window !== null) {
+        next = window.next;
+        effects.push(window.fact);
       }
     }
     return [next, effects];

@@ -123,6 +123,47 @@ function lowest(allowed: readonly Rendition[]): Rendition {
   return best;
 }
 
+/**
+ * The video renditions an adapter resolves ahead of need: the active one
+ * and the nearest rung below and above on its pathway. ABR moves one rung
+ * at a time from a full buffer, so its next pick is resolved before it is
+ * chosen; a longer jump resolves when it happens, while the buffer plays.
+ * Renditions a constraint excludes by id (another pathway, a failed
+ * playlist) are skipped, and renditions that share a playlist count once.
+ * Without a usable active rendition the lowest stands in, as arbitration picks it.
+ */
+export function ladderNeighbours(
+  renditions: readonly Rendition[],
+  activeId: RenditionId | null,
+  constraints: ReadonlyMap<string, Constraint>,
+): readonly Rendition[] {
+  const excluded = new Set<string>();
+  for (const constraint of constraints.values()) {
+    for (const id of constraint.excludeIds ?? []) excluded.add(id);
+  }
+  const usable = renditions.filter((r) => !excluded.has(r.id));
+  const pool = [...(usable.length > 0 ? usable : renditions)].sort((a, b) => a.bitrate - b.bitrate);
+  // An excluded active rendition (its playlist failed, its pathway lost)
+  // is about to be replaced; arbitration falls back to the lowest.
+  const active = pool.find((r) => r.id === activeId) ?? pool[0];
+  if (active === undefined) return [];
+  const key = (r: Rendition) => r.playlistUrl ?? r.id;
+  const ladder: Rendition[] = [];
+  const seen = new Set<string>();
+  for (const rendition of pool) {
+    if (rendition.pathway !== active.pathway || seen.has(key(rendition))) continue;
+    seen.add(key(rendition));
+    ladder.push(rendition);
+  }
+  const at = ladder.findIndex((r) => key(r) === key(active));
+  if (at === -1) return [active];
+  return [
+    ...(at > 0 ? [ladder[at - 1] as Rendition] : []),
+    active,
+    ...(at + 1 < ladder.length ? [ladder[at + 1] as Rendition] : []),
+  ];
+}
+
 /** The strict arbitration order from docs/08. Never deviate; never return zero renditions. */
 export function arbitrate(ctx: ArbitrationContext): ArbitrationOutcome {
   const events: Effect[] = [];
