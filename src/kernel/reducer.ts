@@ -21,15 +21,22 @@ import type {
 } from '../types/kernel.js';
 import { APPENDED_MEMORY } from '../types/kernel.js';
 import type { Command, Effect, Fact, Message, Serializable } from '../types/messages.js';
+import type { MediaTimeProbe } from '../types/stage.js';
 import { normalizeMimeType } from './mime.js';
 import { applyRefresh } from './refresh.js';
 import type { AbrChooser, SwitchPolicy } from './rendition-select.js';
-import { canSwitchTo, codecFamily, createArbiter, planPinApply } from './rendition-select.js';
+import {
+  canSwitchTo,
+  codecFamily,
+  createArbiter,
+  planPinApply,
+  withDeadGroups,
+} from './rendition-select.js';
 import type { ScheduleTrackInput } from './scheduler.js';
 import { bufferedEndFrom, schedule } from './scheduler.js';
 import type { MediaContentType } from './sinks/mse-sink.js';
 import { sbIdFor } from './sinks/mse-sink.js';
-import { segmentAtTime } from './timeline.js';
+import { reconciledOffset, segmentAtTime } from './timeline.js';
 import { DEFAULT_TRACE_CAPACITY } from './trace.js';
 
 /**
@@ -57,7 +64,6 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = {
   // Long enough that a recovery stage's zero-delay commands apply first,
   // short enough that a retry without recovery still feels prompt.
   baseRetryDelayMs: 400,
-  mediaTimeNormalized: false,
 };
 
 export function resolveConfig(config?: Partial<KernelConfig>): KernelConfig {
@@ -69,7 +75,7 @@ export function initialState(config?: Partial<KernelConfig>): KernelState {
   return {
     lifecycle: { phase: 'idle' },
     presentation: null,
-    timeline: { periodOffsets: new Map(), discontinuitySeq: 0 },
+    timeline: { periodOffsets: new Map(), discontinuitySeq: 0, reconciled: new Map() },
     buffers: new Map(),
     bufferErrors: new Map(),
     cues: new Map(),
@@ -511,6 +517,14 @@ function reduceCommand(
       if (track === null) {
         return reject(state, msg.type, `unknown track: ${msg.trackId}`);
       }
+      // A track the browser cannot decode would fail its buffer.
+      const undecodableIds = state.quality.constraints.get(CODECS)?.excludeIds ?? [];
+      if (
+        track.renditions.length > 0 &&
+        track.renditions.every((r) => undecodableIds.includes(r.id))
+      ) {
+        return reject(state, msg.type, `undecodable track: ${msg.trackId}`);
+      }
       const previous = state.tracks.active.get(track.contentType);
       const active = new Map(state.tracks.active);
       active.set(track.contentType, track.id);
@@ -725,11 +739,41 @@ function reduceCommand(
   }
 }
 
+/** The constraint source for renditions this browser cannot decode. */
+const CODECS = 'codecs';
+
+/**
+ * The renditions this browser cannot play: a declared codec it does not
+ * decode, and a video variant whose audio group it cannot decode at all.
+ * VHS drops these when the manifest loads; left in, ABR climbs onto one and
+ * its buffer fails to open or to append. A rendition that declares no
+ * codec counts as decodable.
+ */
+function undecodable(
+  presentation: Presentation,
+  decodable: (type: string) => boolean,
+): Set<string> {
+  const out = new Set<string>();
+  for (const period of presentation.periods) {
+    for (const track of period.tracks) {
+      if (track.contentType !== 'video' && track.contentType !== 'audio') continue;
+      for (const r of track.renditions) {
+        if (r.codecs !== null && !decodable(`${r.mimeType}; codecs="${r.codecs}"`)) out.add(r.id);
+      }
+    }
+  }
+  return withDeadGroups(presentation, out);
+}
+
 /**
  * A presentation replaces the one held: a manifest landed, or a playlist
  * merged into it. Activates default tracks and reports what changed.
  */
-function loadPresentation(state: KernelState, presentation: Presentation): Reduction {
+function loadPresentation(
+  state: KernelState,
+  presentation: Presentation,
+  undecodableIds: ReadonlySet<string> = new Set(),
+): Reduction {
   const available: string[] = [];
   for (const period of presentation.periods) {
     for (const track of period.tracks) available.push(track.id);
@@ -739,14 +783,16 @@ function loadPresentation(state: KernelState, presentation: Presentation): Reduc
     if (request.trackId === 'manifest') inflight.delete(token);
   }
   const phase = state.lifecycle.phase === 'loading' ? 'ready' : state.lifecycle.phase;
-  // Default activation: the first video and audio track, so a manifest
-  // alone yields a playable composition without a SELECT_TRACK.
+  // Default activation: the first video and audio track the browser can
+  // decode, so a manifest alone yields a playable composition without a
+  // SELECT_TRACK.
   const active = new Map(state.tracks.active);
   for (const period of presentation.periods) {
     for (const track of period.tracks) {
       if (
         (track.contentType === 'video' || track.contentType === 'audio') &&
-        !active.has(track.contentType)
+        !active.has(track.contentType) &&
+        track.renditions.some((r) => !undecodableIds.has(r.id))
       ) {
         active.set(track.contentType, track.id);
       }
@@ -800,8 +846,35 @@ function reduceFact(
       // Lifecycle detail owned by the mse module. Absorbed for the trace.
       return [state, []];
 
-    case 'MANIFEST_LOADED':
-      return loadPresentation(state, msg.presentation);
+    case 'MANIFEST_LOADED': {
+      if (hooks.decodable === undefined) return loadPresentation(state, msg.presentation);
+      const excluded = undecodable(msg.presentation, hooks.decodable);
+      const tracks = msg.presentation.periods.flatMap((period) => period.tracks);
+      const lead = (['video', 'audio'] as const).find((c) =>
+        tracks.some((t) => t.contentType === c),
+      );
+      // Nothing to play: say so now, not after a buffer fails to open.
+      if (
+        lead !== undefined &&
+        !tracks.some((t) => t.contentType === lead && t.renditions.some((r) => !excluded.has(r.id)))
+      ) {
+        const codecs = new Set(tracks.flatMap((t) => t.renditions.map((r) => r.codecs ?? '')));
+        codecs.delete('');
+        return failManifest(
+          state,
+          { category: 'media', code: 'MEDIA_CODEC_UNSUPPORTED', fatal: true, recoverable: false },
+          { codecs: [...codecs] },
+        );
+      }
+      const constraints = new Map(state.quality.constraints);
+      if (excluded.size > 0) constraints.set(CODECS, { excludeIds: [...excluded] });
+      else constraints.delete(CODECS);
+      return loadPresentation(
+        { ...state, quality: { ...state.quality, constraints } },
+        msg.presentation,
+        excluded,
+      );
+    }
 
     case 'MANIFEST_FAILED':
       return failManifest(state, msg.error);
@@ -818,26 +891,13 @@ function reduceFact(
       // The element gave up. An engine that already failed keeps its error.
       if (state.lifecycle.phase === 'error') return [state, []];
       const [stopped, aborts] = abortInflight(state);
-      return [
-        { ...stopped, lifecycle: { phase: 'error' } },
-        [
-          ...aborts,
-          {
-            kind: 'emit',
-            event: 'error',
-            payload: {
-              category: msg.error.category,
-              code: msg.error.code,
-              fatal: true,
-              recoverable: msg.error.recoverable,
-              // The facade builds this context from the element's strings.
-              ...(msg.error.context !== undefined
-                ? { context: msg.error.context as { readonly [key: string]: Serializable } }
-                : {}),
-            },
-          },
-        ],
-      ];
+      const [failed, report] = failManifest(
+        stopped,
+        { ...msg.error, fatal: true },
+        // The facade builds this context from the element's strings.
+        { context: msg.error.context as { readonly [key: string]: Serializable } },
+      );
+      return [failed, [...aborts, ...report]];
     }
 
     case 'SEGMENT_LOADED': {
@@ -997,30 +1057,44 @@ function reduceFact(
             ],
           ];
         }
-        // The scheduler computed the epoch's offset at request time; apply
-        // it ahead of the append when it differs from what the buffer has.
+        // The offset this append takes. The first media segment to land in
+        // an epoch settles it for every buffer: its presentation start minus
+        // the decode time the probe read from its bytes, or the manifest's
+        // prediction when nothing read one. Later segments of the epoch,
+        // on any buffer, apply the settled value, so audio and video keep
+        // the alignment their shared media clock gives them: one offset per
+        // timeline, as videojs-http-streaming takes it from its main loader.
         // Playlist discontinuities and period boundaries both land here.
+        let reconciled = state.timeline.reconciled;
+        let offset = matched.epoch === undefined ? undefined : reconciled.get(matched.epoch);
         if (
-          matched.timestampOffset !== undefined &&
-          state.timeline.periodOffsets.get(matched.sbId) !== matched.timestampOffset
+          offset === undefined &&
+          matched.epoch !== undefined &&
+          matched.seq >= 0 &&
+          matched.segmentStart !== undefined
         ) {
-          effects.push({
-            kind: 'setTimestampOffset',
-            sbId: matched.sbId,
-            offset: matched.timestampOffset,
-          });
-          const periodOffsets = new Map(state.timeline.periodOffsets);
-          periodOffsets.set(matched.sbId, matched.timestampOffset);
-          timeline = { ...state.timeline, periodOffsets };
+          const settled =
+            msg.mediaStart !== undefined
+              ? reconciledOffset(matched.segmentStart, msg.mediaStart)
+              : matched.timestampOffset;
+          if (settled !== undefined) {
+            offset = settled;
+            reconciled = new Map(reconciled).set(matched.epoch, settled);
+          }
         }
-        effects.push({
-          kind: 'append',
-          sbId: matched.sbId,
-          data: msg.bytes,
-          ...(matched.segmentStart !== undefined ? { start: matched.segmentStart } : {}),
-          ...(matched.renditionId !== undefined ? { renditionId: matched.renditionId } : {}),
-          seq: matched.seq,
-        });
+        if (offset === undefined) offset = matched.timestampOffset;
+        let periodOffsets = state.timeline.periodOffsets;
+        if (offset !== undefined && periodOffsets.get(matched.sbId) !== offset) {
+          effects.push({ kind: 'setTimestampOffset', sbId: matched.sbId, offset });
+          periodOffsets = new Map(periodOffsets).set(matched.sbId, offset);
+        }
+        if (
+          periodOffsets !== state.timeline.periodOffsets ||
+          reconciled !== state.timeline.reconciled
+        ) {
+          timeline = { ...state.timeline, periodOffsets, reconciled };
+        }
+        effects.push({ kind: 'append', sbId: matched.sbId, data: msg.bytes });
         const buffer = buffers.get(matched.sbId);
         if (buffer !== undefined) {
           const nextBuffers = new Map(buffers);
@@ -1453,6 +1527,20 @@ export interface ReducerHooks {
    * must pass the same set the recording ran with.
    */
   readonly manifestTypes?: ReadonlySet<string>;
+  /**
+   * Whether the browser decodes a full MSE type; the facade asks the MSE
+   * layer. Renditions it rejects are excluded when a manifest loads.
+   * Absent, every declared codec counts as decodable. A replay must answer
+   * as the recording's browser did.
+   */
+  readonly decodable?: (type: string) => boolean;
+  /**
+   * The composition's media-time probe, when one is registered. Its
+   * readings arrive on SEGMENT_LOADED facts; the reducer only asks whether
+   * it exists, to hold a companion track's fetch until the lead track's
+   * segment settles the epoch. A replay must register one the same way.
+   */
+  readonly timeProbe?: MediaTimeProbe | null;
 }
 
 /**
@@ -1599,13 +1687,24 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
     });
   }
 
+  // The lead buffer settles each epoch's offset: video when the
+  // presentation has it, else audio. Its init and media requests count as
+  // pending, so a companion track cannot settle the epoch from its own
+  // bytes while the lead is still on its way there.
+  const leadSbId = sbIdFor(state.tracks.active.has('video') ? 'video' : 'audio');
+  const leadPending =
+    initFetches.some((pending) => pending.sbId === leadSbId) ||
+    [...state.scheduling.inflight.values()].some((request) => request.sbId === leadSbId);
   const result = schedule({
     currentTime: state.playback.currentTime,
     bufferGoal: state.scheduling.bufferGoal,
     tokenSeq: state.scheduling.tokenSeq + initFetches.length,
     tracks,
     liveWindow: state.presentation.isLive ? (state.live?.span ?? null) : null,
-    mediaTimeNormalized: cfg.mediaTimeNormalized,
+    reconciles: hooks.timeProbe != null,
+    leadSbId,
+    reconciled: state.timeline.reconciled,
+    leadPending,
   });
 
   // The scheduling breaker: an identical decision repeated past the limit

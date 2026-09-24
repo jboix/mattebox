@@ -113,6 +113,29 @@ describe('transport', () => {
     expect(h.facts[0]).toMatchObject({ type: 'SEGMENT_FAILED', status: 404 });
   });
 
+  it("a stage's fetch names its rendition in the failure, so steering can count it", async () => {
+    const facts: Fact[] = [];
+    const runner = createEffectRunner();
+    const transport = createTransport({
+      absorb: (fact) => facts.push(fact),
+      // A stage's fetch has no kernel request record.
+      inflight: () => undefined,
+      fetchImpl: () => Promise.resolve(new Response(null, { status: 403 })),
+      now: () => Date.now(),
+    });
+    transport.registerHandlers(runner);
+    runner.run([
+      { kind: 'fetch', token: 'hls:pl:v2', url: 'https://cdn.example/v2.m3u8', renditionId: 'v-2' },
+    ]);
+    await vi.runAllTimersAsync();
+    expect(facts[0]).toMatchObject({
+      type: 'SEGMENT_FAILED',
+      trackId: 'hls:pl:v2',
+      renditionId: 'v-2',
+      status: 403,
+    });
+  });
+
   it('treats a stalled request as a timeout, distinct from failure, and retries', async () => {
     let aborts = 0;
     const h = harness(

@@ -60,15 +60,6 @@ export interface KernelConfig {
   readonly traceCapacity: number;
   /** Backoff before a failed media fetch re-drives scheduling, in milliseconds. */
   readonly baseRetryDelayMs: number;
-  /**
-   * True when a loaded transform rewrites every segment's decode time to its
-   * presentation start (ts-transmux, packed-audio, cmaf-timing). Media time
-   * then equals presentation time by construction and the scheduler applies a
-   * zero timestampOffset, instead of the epoch arithmetic that re-anchors the
-   * media clock at a discontinuity and would shift such a segment twice.
-   * The engine factory sets it from the composition's capabilities.
-   */
-  readonly mediaTimeNormalized: boolean;
 }
 
 /**
@@ -95,12 +86,18 @@ export interface InflightRequest {
   /** The SourceBuffer the bytes are destined for, when known at request time. */
   readonly sbId?: SbId;
   /**
-   * The timestampOffset this segment's append requires, computed by the
-   * scheduler from the timeline epochs. The reducer emits a
-   * setTimestampOffset effect before the append when it differs from the
-   * offset currently applied to the buffer.
+   * The timestampOffset the timeline epochs predict for this segment from
+   * the manifest alone. The reducer applies it when the segment's epoch has
+   * no settled offset yet and the bytes report no decode time; a settled
+   * epoch overrides it.
    */
   readonly timestampOffset?: number;
+  /**
+   * The timeline epoch the segment belongs to, named so every track of the
+   * period shares it (`epochKey` in timeline). The reducer settles one
+   * offset per name from the first media segment that lands in it.
+   */
+  readonly epoch?: string;
   /** The rendition the bytes belong to. Feeds the append log behind `quality.playing`. */
   readonly renditionId?: RenditionId;
   /** Segment window in presentation time, for the append log. */
@@ -181,8 +178,18 @@ export interface KernelState {
   readonly lifecycle: { readonly phase: LifecyclePhase };
   readonly presentation: Presentation | null;
   readonly timeline: {
+    /** The timestampOffset each SourceBuffer currently has, by sbId. */
     readonly periodOffsets: ReadonlyMap<string, number>;
     readonly discontinuitySeq: number;
+    /**
+     * The settled timestampOffset per timeline epoch, by epoch name. The
+     * first media segment to land in an epoch settles it: its presentation
+     * start minus the decode time the probe read from its bytes, or the
+     * manifest's prediction without a reading. Every buffer then applies
+     * that one value, so audio and video keep the alignment their shared
+     * media clock gives them. Cleared with the presentation on UNLOAD.
+     */
+    readonly reconciled: ReadonlyMap<string, number>;
   };
   readonly buffers: ReadonlyMap<SbId, BufferState>;
   /** Consecutive SourceBuffer failures per buffer; a successful append clears the entry. */

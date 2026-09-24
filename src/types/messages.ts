@@ -148,6 +148,14 @@ export type Fact =
       readonly size: number;
       /** Wall clock at receipt, epoch seconds. Live edge arithmetic input; the reducer never reads a clock. */
       readonly wallClock?: number;
+      /**
+       * The decode time the media bytes start at, in seconds of their own
+       * clock, read by the composition's time probe after the transform
+       * pipeline. The reducer settles the segment's epoch offset from it.
+       * Absent without a probe, for init segments, and when the bytes
+       * carry no readable clock.
+       */
+      readonly mediaStart?: number;
     }
   | {
       readonly type: 'SEGMENT_FAILED';
@@ -235,24 +243,25 @@ export type Effect =
       readonly url: string;
       readonly range?: ByteRange;
       readonly timeout?: number;
+      /**
+       * The rendition a stage's fetch serves (a media playlist, an index).
+       * A failure then names it, so content steering counts it toward
+       * failover. The kernel's own fetches carry it in their request record.
+       */
+      readonly renditionId?: string;
     }
   | { readonly kind: 'abort'; readonly token: string }
   /** Drops every SourceBuffer and the MediaSource, and attaches a fresh MediaSource to the element. */
   | { readonly kind: 'resetSource' }
   | { readonly kind: 'createSourceBuffer'; readonly sbId: string; readonly codecs: string }
   | {
+      /**
+       * Bytes for a SourceBuffer, already in their final form: the transform
+       * pipeline ran between the network and the SEGMENT_LOADED fact.
+       */
       readonly kind: 'append';
       readonly sbId: string;
       readonly data: ArrayBuffer;
-      /**
-       * The segment's presentation start, forwarded to a media transform so
-       * a transmux step can align its baseMediaDecodeTime to the playlist
-       * timeline. Absent on CMAF appends, which run no transform.
-       */
-      readonly start?: number;
-      /** The segment's rendition and sequence, so a transform can find its playlist entry (a key, say). */
-      readonly renditionId?: string;
-      readonly seq?: number;
     }
   | {
       readonly kind: 'remove';

@@ -51,12 +51,13 @@ export function dashLine(): Stage[] {
 /**
  * What every preset carries: adaptive quality with a size cap and bandwidth
  * memory, recovery, content steering (inert until a manifest asks for it),
- * alternate audio with codec switching, WebVTT subtitles, CMAF live timing
- * (corrects the broadcast-clock tfdt some live packagers write, leaves VOD
- * untouched), program date time from either protocol's anchor, the codec
- * probe (types a SourceBuffer whose playlist declares no codecs, which Chrome
- * otherwise refuses), and CEA-608 captions from fMP4 video. The caption scan
- * costs per NAL unit, not per byte, and only when a segment has H.264 or HEVC.
+ * alternate audio with codec switching, WebVTT subtitles, CMAF timing (reads
+ * each segment's decode time so the kernel lands it at its playlist time,
+ * whatever clock the packager wrote), program date time from either
+ * protocol's anchor, the codec probe (types a SourceBuffer whose playlist
+ * declares no codecs, which Chrome otherwise refuses), and CEA-608 captions
+ * from fMP4 video. The caption scan costs per NAL unit, not per byte, and
+ * only when a segment has H.264 or HEVC.
  */
 export function base(): Stage[] {
   return [

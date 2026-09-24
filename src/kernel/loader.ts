@@ -35,14 +35,12 @@ function capabilityKey(capability: Capability): string {
 /**
  * Capabilities that name a shared trait rather than a singleton service, so
  * more than one stage may provide them without conflict. `media-transform`
- * is the marker every byte-transform container (ts-transmux, packed-audio)
- * carries so the composition root knows to route media appends through the
- * transform pipeline; several such containers coexist by design.
+ * is the marker a byte-rewriting container (aes-128, ts-transmux,
+ * packed-audio) carries; several coexist by design. The kernel routes
+ * media bytes through whatever transforms are registered, so the marker
+ * documents the composition rather than switching a path.
  */
-const SHARED_CAPABILITIES: ReadonlySet<string> = new Set([
-  'media-transform',
-  'media-time-normalized',
-]);
+const SHARED_CAPABILITIES: ReadonlySet<string> = new Set(['media-transform']);
 
 export interface Composition {
   /** Stages in dependency order; install in this order, tear down reversed. */

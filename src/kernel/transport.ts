@@ -343,6 +343,7 @@ export function createTransport(options: TransportOptions): Transport {
           trackId: effect.token,
           seq: -1,
           url: effect.url,
+          ...(effect.renditionId !== undefined ? { renditionId: effect.renditionId } : {}),
         };
         attempt(effect.token, request, effect.url, effect.range, effect.timeout, 1);
         return () => cancel(effect.token);

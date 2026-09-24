@@ -6,10 +6,13 @@
  * transform pipeline as everything else, and this step rewrites the ones that
  * are transport streams.
  *
- * The `media-transform` capability is what tells the composition root to wire
- * the append path through the transform pipeline; `media-time-normalized`
- * tells the scheduler the rewritten media time equals presentation time. A
- * CMAF composition never provides either, so its append path is untouched.
+ * The transmux writes each segment's baseMediaDecodeTime at its playlist
+ * start, so the time probe reads a decode time equal to the presentation
+ * start and the kernel settles a zero timestampOffset: the same path as
+ * native CMAF, no special case. Without the probe the kernel would apply
+ * the manifest's prediction, which re-anchors a discontinuity the bytes
+ * already carry at its presentation time, so the stage requires one.
+ * `media-transform` marks the stage as a byte rewriter.
  */
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage, StageContext } from '../../types/stage.js';
@@ -37,7 +40,8 @@ function tracksFor(ctx: StageContext, meta: SegmentMeta): TransmuxTracks {
 export default function tsTransmux(options: TransmuxRunnerOptions = {}): Stage {
   return {
     name: 'ts-transmux',
-    provides: ['ts-transmux', 'media-transform', 'media-time-normalized'],
+    provides: ['ts-transmux', 'media-transform'],
+    requires: ['media-time-probe'],
     install(ctx) {
       const runner = createTransmuxRunner(options);
       let announcedDrop = false;

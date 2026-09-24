@@ -25,28 +25,29 @@ Three rules:
 The kernel alone is a working player: it attaches and plays the lowest
 rendition once a protocol adapter parses a manifest.
 
-| Module                  | Responsibility                                                                                  |
-| ----------------------- | ----------------------------------------------------------------------------------------------- |
-| `bus`                   | One queue for every message. Registries for sinks, parsers, transforms, and namespaces          |
-| `reducer`               | Pure `reduce(state, message)` returning the next state and a list of effects                    |
-| `effects`               | Runs effect descriptors through registered handlers. Results re-enter as facts                  |
-| `trace`                 | The diagnostic ring buffer, its export format, and offline replay                               |
-| `loader`                | Resolves `requires` into an install order. Duplicate and missing capabilities fail here         |
-| `lifecycle`             | Attach and detach sequences, element listeners, stage teardown in reverse order                 |
-| `context`               | The `StageContext` every stage receives at install                                              |
-| `mime`                  | MIME type normalization, shared by the engine, the reducer, and the adapters                    |
-| `mse`                   | MediaSource and ManagedMediaSource lifecycle, SourceBuffer creation, `changeType`               |
-| `append-queue`          | Per-SourceBuffer FIFO serialized on `updateend`, quota retry                                    |
-| `evictor`               | Back-buffer removal under quota pressure                                                        |
-| `scheduler`             | The buffer-goal loop. Decides what to fetch next per track. Knows nothing about SourceBuffers   |
-| `transport`             | Fetch wrapper with byte ranges, abort, retry, and request and response hooks                    |
-| `timeline`              | Media time to presentation time. Discontinuities and period boundaries are handled the same way |
-| `watchdog`              | Detects a decoder that stopped inside buffered data and reports a stall                         |
-| `track-registry`        | Track enumeration and selection, the `engine.tracks` surface                                    |
-| `rendition-select`      | The constraint solver behind `engine.quality`. Pins and named constraints                       |
-| `sinks/mse-sink`        | Audio and video bytes to SourceBuffers                                                          |
-| `sinks/text-track-sink` | Text cues to a native `TextTrack`                                                               |
-| `sinks/metadata-sink`   | Timed metadata cues to a metadata `TextTrack`                                                   |
+| Module                  | Responsibility                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
+| `bus`                   | One queue for every message. Registries for sinks, parsers, transforms, and namespaces              |
+| `reducer`               | Pure `reduce(state, message)` returning the next state and a list of effects                        |
+| `effects`               | Runs effect descriptors through registered handlers. Results re-enter as facts                      |
+| `trace`                 | The diagnostic ring buffer, its export format, and offline replay                                   |
+| `loader`                | Resolves `requires` into an install order. Duplicate and missing capabilities fail here             |
+| `lifecycle`             | Attach and detach sequences, element listeners, stage teardown in reverse order                     |
+| `context`               | The `StageContext` every stage receives at install                                                  |
+| `mime`                  | MIME type normalization, shared by the engine, the reducer, and the adapters                        |
+| `mse`                   | MediaSource and ManagedMediaSource lifecycle, SourceBuffer creation, `changeType`                   |
+| `append-queue`          | Per-SourceBuffer FIFO serialized on `updateend`, quota retry                                        |
+| `evictor`               | Back-buffer removal under quota pressure                                                            |
+| `scheduler`             | The buffer-goal loop. Decides what to fetch next per track. Knows nothing about SourceBuffers       |
+| `transport`             | Fetch wrapper with byte ranges, abort, retry, and request and response hooks                        |
+| `prepare`               | Runs the transform pipeline and the time probe on media bytes between the transport and the reducer |
+| `timeline`              | Media time to presentation time. Discontinuities and period boundaries are handled the same way     |
+| `watchdog`              | Detects a decoder that stopped inside buffered data and reports a stall                             |
+| `track-registry`        | Track enumeration and selection, the `engine.tracks` surface                                        |
+| `rendition-select`      | The constraint solver behind `engine.quality`. Pins and named constraints                           |
+| `sinks/mse-sink`        | Audio and video bytes to SourceBuffers                                                              |
+| `sinks/text-track-sink` | Text cues to a native `TextTrack`                                                                   |
+| `sinks/metadata-sink`   | Timed metadata cues to a metadata `TextTrack`                                                       |
 
 ### The message loop
 
@@ -146,10 +147,10 @@ Stages group by feature. Each row is one directory under `src/stages/`.
 
 ### Live
 
-| Stage         | Responsibility                                                        | Requires   | Namespace |
-| ------------- | --------------------------------------------------------------------- | ---------- | --------- |
-| `pdt`         | Converts between wall clock and presentation time                     | `timeline` | `pdt`     |
-| `cmaf-timing` | Rewrites `tfdt` so live CMAF segments land at their presentation time |            |           |
+| Stage         | Responsibility                                                               | Requires   | Namespace |
+| ------------- | ---------------------------------------------------------------------------- | ---------- | --------- |
+| `pdt`         | Converts between wall clock and presentation time                            | `timeline` | `pdt`     |
+| `cmaf-timing` | Reads each segment's decode time so the kernel lands it at its manifest time |            |           |
 
 ### Legacy HLS
 
@@ -218,7 +219,8 @@ export default function myStage(): Stage {
 | ------------------------ | ------------------------------------------------------------------------------- | ------------------------------- |
 | `registerSink`           | A destination for a content type                                                | `text-webvtt`, `meta-id3`       |
 | `registerParser`         | Bytes to cues for one MIME type                                                 | `text-webvtt`, `meta-id3`       |
-| `registerTransform`      | One ordered step in the segment byte pipeline                                   | `ts-transmux`, `cmaf-timing`    |
+| `registerTransform`      | One ordered step in the segment byte pipeline                                   | `ts-transmux`, `aes-128`        |
+| `registerTimeProbe`      | The reader of a media segment's start decode time, one per composition          | `cmaf-timing`                   |
 | `registerNamespace`      | A public API at `engine.<name>`                                                 | `eme-core`, `thumbnails`, `pdt` |
 | `registerChooser`        | The rendition chooser                                                           | `abr`                           |
 | `registerSwitchPolicy`   | Whether a rendition switch is seamless, needs `changeType`, or a reload         | `codec-switch`                  |

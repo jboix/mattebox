@@ -51,13 +51,14 @@ const videoMeta: SegmentMeta = {
 };
 
 describe('ts-transmux stage', () => {
-  it('provides ts-transmux and media-transform, requiring no adapter', () => {
+  it('provides ts-transmux and media-transform, requiring only the time probe', () => {
     const stage = tsTransmux();
     expect(stage.provides).toContain('ts-transmux');
     expect(stage.provides).toContain('media-transform');
-    // It contributes only a transform; it requires nothing, so it composes
-    // beside any protocol adapter without one importing it.
-    expect(stage.requires ?? []).toHaveLength(0);
+    // It contributes only a transform and composes beside any protocol
+    // adapter without one importing it. The probe reads the decode time it
+    // writes, so the kernel applies no offset on top of it.
+    expect(stage.requires).toEqual(['media-time-probe']);
   });
 
   it('registers one transform at an order after decrypt', () => {

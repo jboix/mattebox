@@ -70,7 +70,7 @@ These stages depend on the container stages.
 | ------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
 | `text-cea608` | Captions from the SEI units in the video. Requires `ts-transmux` or `nal-scan`, so it works without the transmuxer too | [Chapter 06](06-audio-and-text.md) |
 | `meta-id3`    | ID3 timed metadata as cues                                                                                             | [Chapter 06](06-audio-and-text.md) |
-| `cmaf-timing` | Not needed. The transmuxer already normalizes timing                                                                   | [Chapter 04](04-live-streaming.md) |
+| `cmaf-timing` | Required. It reads the decode time the transmuxer wrote, so the kernel applies no offset on top of it                  | [Chapter 04](04-live-streaming.md) |
 
 ## The codec-probe stage
 

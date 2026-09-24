@@ -16,7 +16,7 @@
  */
 import type { AttachOptions } from '../types/facade.js';
 import type { SbId } from '../types/kernel.js';
-import type { Fact, SegmentMeta } from '../types/messages.js';
+import type { Fact } from '../types/messages.js';
 import type { AppendQueue } from './append-queue.js';
 import { createAppendQueue } from './append-queue.js';
 import type { EffectRunner } from './effects.js';
@@ -32,13 +32,13 @@ function managedMediaSource(): ManagedMediaSourceCtor | undefined {
   return (globalThis as { ManagedMediaSource?: ManagedMediaSourceCtor }).ManagedMediaSource;
 }
 
-// The boundary meta a media transform receives. A transmux step reads the
-// content type (which the sbId names) to know which stream it is unwrapping,
-// and the presentation start to align its baseMediaDecodeTime to the
-// playlist timeline. Only referenced on the appendTransform path.
-function appendMeta(sbId: SbId, start: number, renditionId: string, seq: number): SegmentMeta {
-  const contentType = sbId === 'sb:audio' ? 'audio' : 'video';
-  return { trackId: sbId, renditionId, contentType, seq, start, duration: 0, isInit: seq < 0 };
+/**
+ * Whether the MediaSource this module opens accepts a full MSE type. Without
+ * MSE (a worker, a test) every type counts as decodable: nothing is filtered.
+ */
+export function decodable(type: string): boolean {
+  const ctor = managedMediaSource() ?? globalThis.MediaSource;
+  return ctor === undefined ? true : ctor.isTypeSupported(type);
 }
 
 /** Whether a SourceBuffer type names its codecs; a bare `video/mp4` does not. */
@@ -62,18 +62,6 @@ export interface MseControllerOptions {
    * bare type is tried as given: some browsers accept it.
    */
   readonly inferType?: (bytes: Uint8Array) => string | null;
-  /**
-   * Rewrites segment bytes before they reach the SourceBuffer, for the
-   * transform pipeline (ts-transmux, packed-audio). Absent in every CMAF
-   * composition, so the direct-enqueue path below is byte-for-byte what it
-   * always was. When present, appends are serialized per buffer through a
-   * promise chain so an asynchronous transform (a Worker round-trip) never
-   * reorders segments.
-   */
-  readonly appendTransform?: (
-    data: Uint8Array,
-    meta: SegmentMeta,
-  ) => Uint8Array | Promise<Uint8Array>;
 }
 
 export interface MseDiagnostics {
@@ -120,8 +108,6 @@ export function createMseController(options: MseControllerOptions): MseControlle
   let mediaSource: MediaSource | null = null;
   let managed = false;
   const buffers = new Map<SbId, TrackedBuffer>();
-  // Per-buffer append ordering when a transform pipeline is loaded.
-  const appendChains = new Map<SbId, Promise<void>>();
   /** Buffers requested without codecs, waiting for their first bytes to be typed. */
   const deferred = new Map<SbId, string>();
   /** Appends that arrived while their buffer's create was still pending. */
@@ -391,7 +377,6 @@ export function createMseController(options: MseControllerOptions): MseControlle
       }
     }
     buffers.clear();
-    appendChains.clear();
     deferred.clear();
     heldAppends.clear();
     pendingCreates.length = 0;
@@ -548,88 +533,30 @@ export function createMseController(options: MseControllerOptions): MseControlle
       return undefined;
     });
 
+    // Bytes arrive in their final form: the transform pipeline ran before
+    // the SEGMENT_LOADED fact, so every buffer operation reaches the queue
+    // synchronously and in the order the reducer emitted it.
     runner.register('append', (effect) => {
-      const { appendTransform } = options;
-      if (appendTransform === undefined) {
-        enqueueAppend(effect.sbId, effect.data);
-        return undefined;
-      }
-      // A transform pipeline is loaded. Serialize per buffer so a Worker
-      // round-trip cannot let segment N+1 land before segment N. The chain
-      // holds arrival order; the queue then holds append order.
-      const prior = appendChains.get(effect.sbId) ?? Promise.resolve();
-      const next = prior
-        .then(async () => {
-          const out = await appendTransform(
-            new Uint8Array(effect.data),
-            appendMeta(effect.sbId, effect.start ?? 0, effect.renditionId ?? '', effect.seq ?? 0),
-          );
-          const bytes =
-            out.byteOffset === 0 && out.byteLength === out.buffer.byteLength
-              ? (out.buffer as ArrayBuffer)
-              : (out.slice().buffer as ArrayBuffer);
-          enqueueAppend(effect.sbId, bytes);
-        })
-        .catch((err) => {
-          // A transmux failure is a container error, never a throw or a hang.
-          absorb({
-            type: 'SOURCEBUFFER_ERROR',
-            sbId: effect.sbId,
-            error: {
-              category: 'media',
-              code: 'MEDIA_CONTAINER_INVALID',
-              fatal: false,
-              recoverable: false,
-              context: { message: String(err) },
-            },
-          });
-        });
-      appendChains.set(effect.sbId, next);
+      enqueueAppend(effect.sbId, effect.data);
       return undefined;
     });
 
-    // With a transform pipeline loaded, appends reach the queue only after
-    // an async hop. Every other buffer operation must take the same hop,
-    // or a remove or offset change emitted after an append runs before it:
-    // a switch's flush would then land under the segment it meant to cut,
-    // and the decoder would meet one rendition's frames under another's
-    // init segment.
-    function sequenced(sbId: SbId, op: () => void): void {
-      if (options.appendTransform === undefined) {
-        op();
-        return;
-      }
-      const prior = appendChains.get(sbId) ?? Promise.resolve();
-      appendChains.set(
-        sbId,
-        prior.then(op).catch(() => undefined),
-      );
-    }
-
     runner.register('remove', (effect) => {
-      sequenced(effect.sbId, () => {
-        const entry = buffers.get(effect.sbId);
-        if (entry === undefined) return;
-        const clamped = evictor.clamp(entry.sb, effect.start, effect.end, currentTime());
-        if (clamped === null) return;
-        entry.queue.enqueue({ op: 'remove', start: clamped.start, end: clamped.end });
-      });
+      const entry = buffers.get(effect.sbId);
+      if (entry === undefined) return undefined;
+      const clamped = evictor.clamp(entry.sb, effect.start, effect.end, currentTime());
+      if (clamped === null) return undefined;
+      entry.queue.enqueue({ op: 'remove', start: clamped.start, end: clamped.end });
       return undefined;
     });
 
     runner.register('changeType', (effect) => {
-      sequenced(effect.sbId, () => {
-        buffers.get(effect.sbId)?.queue.enqueue({ op: 'changeType', type: effect.codecs });
-      });
+      buffers.get(effect.sbId)?.queue.enqueue({ op: 'changeType', type: effect.codecs });
       return undefined;
     });
 
     runner.register('setTimestampOffset', (effect) => {
-      sequenced(effect.sbId, () => {
-        buffers
-          .get(effect.sbId)
-          ?.queue.enqueue({ op: 'setTimestampOffset', offset: effect.offset });
-      });
+      buffers.get(effect.sbId)?.queue.enqueue({ op: 'setTimestampOffset', offset: effect.offset });
       return undefined;
     });
 

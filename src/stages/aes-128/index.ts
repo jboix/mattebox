@@ -48,8 +48,8 @@ function findSegment(
 export default function aes128(): Stage {
   return {
     name: 'aes-128',
-    // media-transform routes appends through the pipeline; the step itself
-    // leaves timing alone, so it is not media-time-normalized.
+    // A byte rewriter, so it carries the media-transform marker; the step
+    // itself leaves timing alone.
     provides: ['aes-128', 'media-transform'],
     install(ctx) {
       const keys = new Map<string, Promise<CryptoKey>>();

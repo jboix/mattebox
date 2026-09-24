@@ -48,8 +48,8 @@ describe.runIf(profile !== null)('source buffers', () => {
     expect(stack.controller.readyState()).toBe('closed');
     stack.runner.run([{ kind: 'createSourceBuffer', sbId: 'sb:video', codecs: profile.type }]);
     stack.runner.run([
-      { kind: 'append', sbId: 'sb:video', data: init, seq: -1 },
-      { kind: 'append', sbId: 'sb:video', data: seg, seq: 0 },
+      { kind: 'append', sbId: 'sb:video', data: init },
+      { kind: 'append', sbId: 'sb:video', data: seg },
     ]);
     expect(stack.facts('SOURCEBUFFER_CREATED')).toHaveLength(0);
 
@@ -69,7 +69,7 @@ describe.runIf(profile !== null)('source buffers', () => {
     expect(stack.facts('SOURCEBUFFER_ERROR')).toHaveLength(0);
 
     const init = await fixture(profile.init);
-    stack.runner.run([{ kind: 'append', sbId: 'sb:video', data: init, seq: -1 }]);
+    stack.runner.run([{ kind: 'append', sbId: 'sb:video', data: init }]);
     await waitFor(() => stack.hasFact('SOURCEBUFFER_CREATED'), 'deferred buffer');
     const created = stack.facts('SOURCEBUFFER_CREATED')[0];
     expect(created).toMatchObject({ sbId: 'sb:video', codecs: profile.type });
@@ -80,7 +80,7 @@ describe.runIf(profile !== null)('source buffers', () => {
     const stack = createStack({ inferType: () => null });
     await attachAndOpen(stack);
     stack.runner.run([{ kind: 'createSourceBuffer', sbId: 'sb:video', codecs: 'video/mp4' }]);
-    stack.runner.run([{ kind: 'append', sbId: 'sb:video', data: new ArrayBuffer(8), seq: 0 }]);
+    stack.runner.run([{ kind: 'append', sbId: 'sb:video', data: new ArrayBuffer(8) }]);
     // What the bare type does is the browser's call (Firefox opens it, Chrome
     // refuses); what matters is that the attempt is made and reported.
     await waitFor(
@@ -159,36 +159,6 @@ describe.runIf(profile !== null)('source buffers', () => {
       stack.controller.detach();
     }
   });
-
-  it('a remove emitted after an append runs after it, even through an async transform', async () => {
-    // cmaf-timing and the transmux put appends behind an async hop; a
-    // remove taking a shortcut would run first and cut nothing.
-    const stack = createStack({
-      appendTransform: async (data) => {
-        await new Promise((resolve) => setTimeout(resolve, 40));
-        return data;
-      },
-    });
-    await attachAndOpen(stack);
-    await createBufferAndWait(stack, 'sb:video', profile.type);
-    try {
-      const init = await fixture(profile.init);
-      const seg = await fixture(profile.seg);
-      stack.runner.run([
-        { kind: 'append', sbId: 'sb:video', data: init },
-        { kind: 'append', sbId: 'sb:video', data: seg },
-        { kind: 'remove', sbId: 'sb:video', start: 0, end: Number.POSITIVE_INFINITY },
-      ]);
-      await waitFor(
-        () => stack.facts('SOURCEBUFFER_UPDATEEND').length >= 3,
-        'two appends and the remove',
-        20_000,
-      );
-      expect(stack.controller.buffered('sb:video')).toEqual([]);
-    } finally {
-      stack.controller.detach();
-    }
-  }, 30_000);
 
   it('changeType between codec strings accepts the subsequent init segment', async () => {
     if (

@@ -10,7 +10,8 @@ import { createEffectRunner } from './kernel/effects.js';
 import { createLifecycle } from './kernel/lifecycle.js';
 import { compose } from './kernel/loader.js';
 import { normalizeMimeType } from './kernel/mime.js';
-import { createMseController } from './kernel/mse.js';
+import { createMseController, decodable } from './kernel/mse.js';
+import { createSegmentPreparer } from './kernel/prepare.js';
 import { createReducer, initialState, resolveConfig } from './kernel/reducer.js';
 import { createArbiter } from './kernel/rendition-select.js';
 import { createMseSink } from './kernel/sinks/mse-sink.js';
@@ -58,14 +59,7 @@ const registry = new WeakMap<HTMLMediaElement, Mattebox>();
 /** Creates an engine. The element is supplied later via `attach`. */
 export function mattebox(options: MatteboxOptions): Mattebox {
   const composition = compose(options.stages ?? []);
-  // A timing transform makes media time equal presentation time; the
-  // scheduler must know, or a discontinuity gets re-anchored twice.
-  const config: Partial<KernelConfig> = {
-    ...options.config,
-    mediaTimeNormalized:
-      options.config?.mediaTimeNormalized ??
-      composition.capabilities.includes('media-time-normalized'),
-  };
+  const config: Partial<KernelConfig> = { ...options.config };
   const cfg = resolveConfig(config);
 
   const bus = createBus({
@@ -76,33 +70,27 @@ export function mattebox(options: MatteboxOptions): Mattebox {
   const runner = createEffectRunner({ onEvent: (event, payload) => bus.emitEvent(event, payload) });
   bus.setEffectSink((effects) => runner.run(effects));
 
-  // A transform pipeline routes media bytes through registerTransform steps
-  // before the SourceBuffer, exactly as the deliver effect routes cue bytes.
-  // Wired only when the composition actually registered a transform, so a
-  // CMAF composition keeps the direct-enqueue append path untouched.
-  const mediaTransforms = composition.capabilities.includes('media-transform');
   const mse = createMseController({
     absorb: (fact) => bus.absorb(fact),
     backBufferSeconds: cfg.backBufferSeconds,
     // A codec-less rendition's buffer is typed from its first segment,
     // when a stage registered a probe; without one the bare type is tried.
     inferType: (bytes) => hooks.typeProbe?.(bytes) ?? null,
-    ...(mediaTransforms
-      ? {
-          appendTransform: async (data, meta) => {
-            let out = data;
-            for (const step of bus.transforms()) {
-              out = new Uint8Array(await step.transform(out, meta));
-            }
-            return out;
-          },
-        }
-      : {}),
   });
   mse.registerHandlers(runner);
 
-  const transport = createTransport({
+  // Media bytes reach the reducer prepared: through the registerTransform
+  // steps (the deliver effect runs the same steps for cue bytes) and past
+  // the time probe, so the reducer settles an epoch's offset before it
+  // emits the append. A composition with neither forwards the fact as is.
+  const prepare = createSegmentPreparer({
+    transforms: () => bus.transforms(),
+    timeProbe: () => hooks.timeProbe ?? null,
+    inflight: (token) => bus.getState().scheduling.inflight.get(token),
     absorb: (fact) => bus.absorb(fact),
+  });
+  const transport = createTransport({
+    absorb: prepare,
     inflight: (token) => bus.getState().scheduling.inflight.get(token),
     // A media Content-Type on the manifest response that no adapter parses
     // (an mp3, a progressive mp4) is refused before the body downloads.
@@ -236,7 +224,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
   const arbiter = createArbiter();
   // Shared with the stage contexts: the abr stage sets `abr` at install and
   // the reducer reads it live through this object.
-  const hooks: HookRegistry = { manifestTypes: composition.manifestTypes };
+  const hooks: HookRegistry = { manifestTypes: composition.manifestTypes, decodable };
   let lastError: TracedError | null = null;
 
   function accepts(mimeType: string): boolean {

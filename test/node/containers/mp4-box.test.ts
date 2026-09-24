@@ -2,15 +2,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  earliestDecodeTime,
   findBox,
   findBoxes,
-  normalizeTfdt,
   parseSidx,
   parseTfdt,
   trackTimescales,
   walkBoxes,
 } from '../../../src/containers/mp4-box/index.js';
-import { reconcileTfdt } from '../../../src/kernel/timeline.js';
+import { reconciledOffset } from '../../../src/kernel/timeline.js';
 
 const FIXTURES = join(import.meta.dirname, '../../fixtures/segments');
 
@@ -88,13 +88,10 @@ describe('FullBox version variants', () => {
     expect(tfdtBox).not.toBeNull();
     const tfdt = parseTfdt((tfdtBox as NonNullable<typeof tfdtBox>).payload);
     expect(tfdt).not.toBeNull();
-    const epoch = { periodId: 'p0', firstSeq: 0, presentationStart: 10, mediaStart: 0 };
-    const corrected = reconcileTfdt(
-      epoch,
-      (tfdt as NonNullable<typeof tfdt>).baseMediaDecodeTime,
-      12800,
-    );
-    expect(Number.isFinite(corrected.mediaStart)).toBe(true);
+    const timescales = trackTimescales(fixture('init-v-base.mp4'));
+    const start = earliestDecodeTime(seg, timescales);
+    expect(start).toBe((tfdt as NonNullable<typeof tfdt>).baseMediaDecodeTime / 12800);
+    expect(Number.isFinite(reconciledOffset(10, start as number))).toBe(true);
   });
 
   it('sidx version 0 and version 1 both parse, including references', () => {
@@ -229,7 +226,7 @@ describe('malformed input never throws and never loops', () => {
   });
 });
 
-describe('CMAF timing normalization', () => {
+describe('CMAF decode time', () => {
   it('reads each track timescale from a real init segment', () => {
     const timescales = trackTimescales(fixture('rts-cmaf-video-init.mp4'));
     // The RTS Info CMAF video init declares track 1 at a 50000 timescale.
@@ -266,18 +263,34 @@ describe('CMAF timing normalization', () => {
     return new Uint8Array(box('moof', traf));
   }
 
-  it('rewrites a broadcast-clock tfdt to the presentation start times the timescale', () => {
+  it('reads a broadcast-clock tfdt in seconds of the track timescale', () => {
     const segment = fragment(1, 89_418_813_200_000n);
-    const rewritten = normalizeTfdt(segment, 7188, new Map([[1, 50000]]), 50000);
-    expect(rewritten).toBe(1);
-    const tfdt = parseTfdt(findBox(segment, 'moof/traf/tfdt')?.payload as Uint8Array);
-    expect(tfdt?.baseMediaDecodeTime).toBe(7188 * 50000);
+    expect(earliestDecodeTime(segment, new Map([[1, 50000]]))).toBe(89_418_813_200_000 / 50000);
+    expect(earliestDecodeTime(fragment(1, 0n), new Map([[1, 50000]]))).toBe(0);
   });
 
-  it('is a no-op for VOD whose media clock already starts at zero', () => {
-    const segment = fragment(1, 0n);
-    normalizeTfdt(segment, 0, new Map([[1, 50000]]), 50000);
-    const tfdt = parseTfdt(findBox(segment, 'moof/traf/tfdt')?.payload as Uint8Array);
-    expect(tfdt?.baseMediaDecodeTime).toBe(0);
+  it('takes the earliest fragment of a multi-fragment segment, never a rewrite', () => {
+    // Apple packages nine one-second fragments into a ten-second segment,
+    // and a caption track on its own clock beside the video.
+    const a = fragment(1, 238_999n);
+    const b = fragment(2, 10_000n);
+    const c = fragment(1, 263_023n);
+    const segment = new Uint8Array(a.byteLength + b.byteLength + c.byteLength);
+    segment.set(a, 0);
+    segment.set(b, a.byteLength);
+    segment.set(c, a.byteLength + b.byteLength);
+    const before = [...segment];
+    const scales = new Map([
+      [1, 24000],
+      [2, 1000],
+    ]);
+    expect(earliestDecodeTime(segment, scales)).toBeCloseTo(238_999 / 24000, 9);
+    expect([...segment]).toEqual(before);
+  });
+
+  it('skips a fragment whose track has no known timescale and reports null without any', () => {
+    const segment = fragment(1, 48_000n);
+    expect(earliestDecodeTime(segment, new Map([[2, 1000]]))).toBeNull();
+    expect(earliestDecodeTime(fragment(1, 48_000n), new Map([[1, 0]]))).toBeNull();
   });
 });

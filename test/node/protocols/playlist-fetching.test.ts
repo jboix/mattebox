@@ -27,6 +27,7 @@ function compose(...factories: Array<() => Stage>): Reduce {
       registerChooser: () => undefined,
       registerSwitchPolicy: () => undefined,
       registerTypeProbe: () => undefined,
+      registerTimeProbe: () => undefined,
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
       request: async () => new Response(),
@@ -246,14 +247,42 @@ describe('hls-cmaf fetches the media playlists the selection needs', () => {
     expect(fetches(settled.effects, 'hls:pl:').map((f) => f.url)).toEqual([`${BASE}v3.m3u8`]);
   });
 
-  it('a media track left with no playlist fails the load, and nothing is fetched after', () => {
+  it('an audio group that fails excludes the variants that need it, and playback goes on', () => {
     const booted = boot();
     const audio = fetches(booted.effects, 'hls:pl:').find((f) => f.url.endsWith('audio.m3u8'));
     if (audio === undefined) throw new Error('audio was not fetched');
     const settled = settle(reduce, ...reduce(booted.state, failed(audio.token)));
+    expect(settled.state.lifecycle.phase).toBe('ready');
+    const excluded = settled.state.quality.constraints.get('hls:unavailable')?.excludeIds ?? [];
+    // Every variant on the aac group goes; the ac-3 variant is left to play.
+    expect([...excluded].sort()).toEqual(
+      ['aac:English', 'v-1000000', 'v-2000000', 'v-3000000', 'v-4000000', 'v-5000000'].sort(),
+    );
+  });
+
+  it('when no audio group is left the load fails, and nothing is fetched after', () => {
+    const booted = boot();
+    const audio = fetches(booted.effects, 'hls:pl:').find((f) => f.url.endsWith('audio.m3u8'));
+    if (audio === undefined) throw new Error('audio was not fetched');
+    let settled = settle(reduce, ...reduce(booted.state, failed(audio.token)));
+    // alt-audio would follow the remaining variant onto the ac-3 group.
+    settled = settle(
+      reduce,
+      ...reduce(settled.state, { type: 'SELECT_TRACK', trackId: 'ac3:English' }),
+    );
+    const ac3 = fetches(settled.effects, 'hls:pl:').find((f) => f.url.endsWith('audio-ac3.m3u8'));
+    if (ac3 === undefined) throw new Error('the ac-3 audio was not fetched');
+    settled = settle(reduce, ...reduce(settled.state, failed(ac3.token)));
     expect(settled.state.lifecycle.phase).toBe('error');
     const [, fx] = reduce(settled.state, { type: 'TICK', token: 'kernel:retry' });
     expect(fx.filter((e) => e.kind === 'fetch' || e.kind === 'schedule')).toEqual([]);
+  });
+
+  it('a failed playlist names its rendition, so steering can count it', () => {
+    const booted = boot();
+    for (const fetch of fetches(booted.effects, 'hls:pl:')) {
+      expect(fetch.renditionId).toBeDefined();
+    }
   });
 });
 
@@ -418,6 +447,44 @@ describe('live reload failures are bounded', () => {
     expect(state.lifecycle.phase).toBe('error');
     const [, after] = reduce(state, { type: 'TICK', token: 'hls-live:reload' });
     expect(after.filter((e) => e.kind === 'fetch' || e.kind === 'schedule')).toEqual([]);
+  });
+
+  it('hls-live abandons a variant whose reloads keep failing and reloads another', () => {
+    const reduce = compose(hlsCmaf, hlsLive);
+    const master = [
+      '#EXTM3U',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1000000,CODECS="avc1.4d401f,mp4a.40.2"',
+      'low.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=3000000,CODECS="avc1.4d401f,mp4a.40.2"',
+      'high.m3u8',
+    ].join('\n');
+    let state = initialState();
+    [state] = reduce(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = reduce(state, { type: 'LOAD', url: 'https://live.example/master.m3u8' });
+    const token = [...state.scheduling.inflight.keys()][0] as string;
+    let settled = settle(reduce, ...reduce(state, loaded('manifest', bytes(master), token)));
+    for (const fetch of fetches(settled.effects, 'hls:pl:')) {
+      settled = settle(
+        reduce,
+        ...reduce(settled.state, loaded(fetch.token, bytes(livePlaylist(5)))),
+      );
+    }
+    state = settled.state;
+    expect(state.quality.active).toBe('v-1000000');
+    for (let round = 1; round <= 4; round += 1) {
+      [state] = reduce(state, { type: 'TICK', token: 'hls-live:reload' });
+      ({ state } = settle(reduce, ...reduce(state, failed('hls:live:refresh:v-1000000'))));
+    }
+    expect(state.lifecycle.phase).toBe('ready');
+    expect(state.quality.constraints.get('hls-live:unavailable')?.excludeIds).toEqual([
+      'v-1000000',
+    ]);
+    // The next tick reloads the variant playing now.
+    const [ticked, fx] = reduce(state, { type: 'TICK', token: 'hls-live:reload' });
+    expect(ticked.quality.active).toBe('v-3000000');
+    expect(fetches(fx, 'hls:live:refresh:').map((f) => f.token)).toEqual([
+      'hls:live:refresh:v-3000000',
+    ]);
   });
 
   it('dash-live retries a failed MPD reload on the update period, then fails the load', () => {

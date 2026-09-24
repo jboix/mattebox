@@ -9,6 +9,7 @@ import type { ContentType } from '../types/ir.js';
 import type { SliceReducer } from '../types/kernel.js';
 import type { AbrChooser, SwitchPolicy } from '../types/quality.js';
 import type {
+  MediaTimeProbe,
   StageContext,
   Teardown,
   TransformStep,
@@ -23,8 +24,12 @@ export interface HookRegistry {
   switchPolicy?: SwitchPolicy | null;
   /** Reads a SourceBuffer type from init bytes, for renditions the manifest left codec-less. */
   typeProbe?: TypeProbe | null;
+  /** Reads the decode time media bytes start at; the segment preparer consults it after the transforms. */
+  timeProbe?: MediaTimeProbe | null;
   /** The composition's manifest MIME types; static, set by the composition root. */
   readonly manifestTypes?: ReadonlySet<string>;
+  /** Whether the browser decodes a full MSE type; static, set by the composition root. */
+  readonly decodable?: (type: string) => boolean;
 }
 
 export interface ContextDeps {
@@ -65,6 +70,7 @@ export function createStageContext(deps: ContextDeps): { ctx: StageContext; tear
   let registeredChooser = false;
   let registeredPolicy = false;
   let registeredProbe = false;
+  let registeredTimeProbe = false;
 
   const ctx: StageContext = {
     element: deps.element,
@@ -119,6 +125,13 @@ export function createStageContext(deps: ContextDeps): { ctx: StageContext; tear
       deps.hooks.typeProbe = probe;
       registeredProbe = true;
     },
+    registerTimeProbe(probe) {
+      if (deps.hooks.timeProbe != null) {
+        throw new Error('a time probe is already registered');
+      }
+      deps.hooks.timeProbe = probe;
+      registeredTimeProbe = true;
+    },
     reduce(slice, reducer) {
       deps.slices.push([slice, reducer as SliceReducer]);
     },
@@ -149,6 +162,7 @@ export function createStageContext(deps: ContextDeps): { ctx: StageContext; tear
       if (registeredChooser) deps.hooks.abr = null;
       if (registeredPolicy) deps.hooks.switchPolicy = null;
       if (registeredProbe) deps.hooks.typeProbe = null;
+      if (registeredTimeProbe) deps.hooks.timeProbe = null;
     },
   };
 }

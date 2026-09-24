@@ -72,6 +72,7 @@ function composeWithAbr(options?: Parameters<typeof abr>[0]) {
     },
     registerSwitchPolicy: () => undefined,
     registerTypeProbe: () => undefined,
+    registerTimeProbe: () => undefined,
     reduce: (name, reducer) => slices.push([name, reducer as SliceReducer]),
     dispatch: () => undefined,
     emit: () => undefined,

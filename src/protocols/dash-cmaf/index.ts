@@ -300,7 +300,14 @@ const reduceDash: SliceReducer<DashSlice> = (slice, msg, kernel) => {
     if (sidx === null) continue;
     const token = `${INDEX_TOKEN}${rendition.id}`;
     pending[token] = rendition.id;
-    effects.push({ kind: 'fetch', token, url: sidx.url, range: sidx.indexRange });
+    // The rendition rides along so a failure counts toward steering failover.
+    effects.push({
+      kind: 'fetch',
+      token,
+      url: sidx.url,
+      range: sidx.indexRange,
+      renditionId: rendition.id,
+    });
   }
   return [{ ...next, pending, seen: key }, effects];
 };

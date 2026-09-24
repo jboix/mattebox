@@ -304,7 +304,7 @@ describe('discontinuities and periods through one path', () => {
     });
     expect(fx.slice(0, 2)).toMatchObject([
       { kind: 'setTimestampOffset', sbId: 'sb:video', offset: 4 },
-      { kind: 'append', sbId: 'sb:video', data: bytes, start: 4 },
+      { kind: 'append', sbId: 'sb:video', data: bytes },
     ]);
   });
 
@@ -338,7 +338,7 @@ describe('discontinuities and periods through one path', () => {
     // Byte-identical to the discontinuity case: one code path.
     expect(fx.slice(0, 2)).toMatchObject([
       { kind: 'setTimestampOffset', sbId: 'sb:video', offset: 4 },
-      { kind: 'append', sbId: 'sb:video', data: bytes, start: 4 },
+      { kind: 'append', sbId: 'sb:video', data: bytes },
     ]);
   });
 });

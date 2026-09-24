@@ -17,6 +17,16 @@ export type Teardown = () => void;
 /** Reads a full SourceBuffer type, `video/mp4; codecs="..."`, from init segment bytes; null when it cannot. */
 export type TypeProbe = (bytes: Uint8Array) => string | null;
 
+/**
+ * Reads the decode time a media segment's bytes start at, in seconds of
+ * the media clock, as the SourceBuffer will see them: the kernel calls it
+ * after the transform pipeline, so a decrypted or transmuxed segment is
+ * read in its final form. Null when the bytes carry no readable clock. The
+ * kernel also hands it every init segment, so a probe can learn track
+ * timescales from the moov before the first media segment arrives.
+ */
+export type MediaTimeProbe = (bytes: Uint8Array, meta: SegmentMeta) => number | null;
+
 /** The mutable outgoing-request view request hooks receive; url, headers, and timeout are writable. */
 export interface TransportRequestDraftView {
   url: string;
@@ -127,6 +137,15 @@ export interface StageContext {
    * probe reads. One per composition; codec-probe provides it.
    */
   registerTypeProbe(probe: TypeProbe): void;
+  /**
+   * Registers the reader of a media segment's start decode time, consulted
+   * on every media segment after the transform pipeline. The kernel settles
+   * each timeline epoch's timestampOffset from the first reading, the
+   * segment's presentation start minus its decode time, the way
+   * videojs-http-streaming derives one offset per timeline from the main
+   * loader's first segment. One per composition; cmaf-timing provides it.
+   */
+  registerTimeProbe(probe: MediaTimeProbe): void;
   /** Contributes a named state slice. The reducer receives only that slice plus a read-only kernel view. */
   reduce<S>(slice: string, reducer: SliceReducer<S>): void;
   dispatch(cmd: Command): void;

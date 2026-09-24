@@ -27,8 +27,9 @@ export interface TimelineEpoch {
   /** Where this epoch starts in presentation time, in seconds. */
   readonly presentationStart: number;
   /**
-   * Where the media timestamps start inside the segments, in seconds.
-   * Zero until real tfdt values arrive; reconcileTfdt corrects it.
+   * Where the media timestamps start inside the segments, in seconds, as
+   * the manifest predicts it. The bytes' own decode time overrides the
+   * prediction once a segment lands: see `reconciledOffset`.
    */
   readonly mediaStart: number;
 }
@@ -116,16 +117,27 @@ export function presentationToMedia(presentationTime: number, epoch: TimelineEpo
 }
 
 /**
- * Corrects an epoch with a real baseMediaDecodeTime once mp4-box can read
- * tfdt (Stage 07). Interface only for now: manifests promise timing, the
- * bytes tell the truth.
+ * The name every track of a period shares for one epoch: the period alone
+ * for the epoch that opens it, the period and the discontinuity's
+ * presentation start after that. Sequence numbers are no part of it,
+ * because each rendition numbers its own playlist (RFC 8216 §6.2.2 aligns
+ * discontinuities across renditions in time, not in sequence). The start
+ * is rounded to the second, since each playlist sums its own durations.
  */
-export function reconcileTfdt(
-  epoch: TimelineEpoch,
-  baseMediaDecodeTime: number,
-  timescale: number,
-): TimelineEpoch {
-  return { ...epoch, mediaStart: baseMediaDecodeTime / timescale };
+export function epochKey(epochs: readonly TimelineEpoch[], epoch: TimelineEpoch): string {
+  const opening = epochs[0] === epoch;
+  return opening ? epoch.periodId : `${epoch.periodId}:${Math.round(epoch.presentationStart)}`;
+}
+
+/**
+ * The timestampOffset that lands a segment at its presentation start,
+ * given the decode time its bytes report. Manifests promise timing; the
+ * bytes tell the truth, so this replaces the epoch prediction the moment
+ * a segment lands. Same arithmetic as videojs-http-streaming's segment
+ * loader, which subtracts the probed start from the segment's start.
+ */
+export function reconciledOffset(segmentStart: number, mediaStart: number): number {
+  return segmentStart - mediaStart;
 }
 
 /** Materializes one segment from an indexed form. Null outside the window. */

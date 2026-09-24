@@ -253,7 +253,7 @@ describe('segment completion', () => {
       rtt: 100,
       size: 100_000,
     });
-    expect(fx[0]).toMatchObject({ kind: 'append', sbId: 'sb-v', data: bytes, seq: 0 });
+    expect(fx[0]).toMatchObject({ kind: 'append', sbId: 'sb-v', data: bytes });
     expect(next.buffers.get('sb-v')?.pendingAppends).toBe(1);
     // Completion drives the loop; the next fetch may already be in flight.
     expect(next.stats.throughputEwma).toBe(8_000_000);

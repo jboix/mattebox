@@ -143,9 +143,9 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
     contentSteering(),
     codecSwitch(),
     altAudio(),
-    // Part of every preset's base: live CMAF whose tfdt carries a broadcast
-    // clock needs it, VOD is untouched, so the suite runs the normalized
-    // append path the presets ship.
+    // Part of every preset's base: it reads each segment's decode time so
+    // the kernel lands it at its manifest time, whatever clock the packager
+    // wrote, and the transmuxer requires it.
     cmafTiming(),
     // Also in every preset's base: the codec probe types a buffer whose
     // playlist declares no codecs, and the caption scan walks every fMP4

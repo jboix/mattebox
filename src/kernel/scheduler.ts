@@ -12,7 +12,13 @@
 import type { Period, Rendition, TimeRange, TimeRangesSnapshot, TrackId } from '../types/ir.js';
 import type { InflightRequest, SbId } from '../types/kernel.js';
 import type { Effect } from '../types/messages.js';
-import { buildEpochs, epochForSeq, segmentAtTime, timestampOffsetFor } from './timeline.js';
+import {
+  buildEpochs,
+  epochForSeq,
+  epochKey,
+  segmentAtTime,
+  timestampOffsetFor,
+} from './timeline.js';
 
 export interface ScheduleTrackInput {
   readonly trackId: TrackId;
@@ -43,10 +49,20 @@ export interface ScheduleInput {
    */
   readonly gapToleranceSeconds?: number;
   /**
-   * A transform rewrites each segment's decode time to its presentation
-   * start, so every append takes a zero timestampOffset. See KernelConfig.
+   * Whether the composition reads decode times from media bytes (a time
+   * probe is registered). Then the first segment to land in an epoch
+   * settles its offset for every buffer, and the lead track should be that
+   * segment: a companion track holds its media fetch while the lead has one
+   * pending in an unsettled epoch. videojs-http-streaming's audio loader
+   * waits for the main loader's timeline change the same way.
    */
-  readonly mediaTimeNormalized?: boolean;
+  readonly reconciles?: boolean;
+  /** The buffer whose bytes settle an epoch first: video when present, else audio. */
+  readonly leadSbId?: SbId;
+  /** The epochs already settled, by name. */
+  readonly reconciled?: ReadonlyMap<string, number>;
+  /** True while the lead track has an init or media request in flight, or one about to be issued. */
+  readonly leadPending?: boolean;
 }
 
 export interface ScheduleResult {
@@ -174,6 +190,19 @@ export function schedule(input: ScheduleInput): ScheduleResult {
 
     const epochs = buildEpochs([{ period: track.period, rendition: track.rendition }]);
     const epoch = epochForSeq(epochs, segment.seq);
+    const key = epoch === null ? undefined : epochKey(epochs, epoch);
+    if (
+      input.reconciles === true &&
+      key !== undefined &&
+      track.sbId !== undefined &&
+      track.sbId !== input.leadSbId &&
+      input.reconciled?.has(key) !== true &&
+      (input.leadPending === true || requests.some((r) => r.sbId === input.leadSbId))
+    ) {
+      // The lead's segment settles this epoch; the next driving fact
+      // reschedules this track once it has.
+      continue;
+    }
 
     tokenSeq += 1;
     const token = `t${tokenSeq}:${track.trackId}:${segment.seq}`;
@@ -192,11 +221,8 @@ export function schedule(input: ScheduleInput): ScheduleResult {
       segmentStart: segment.start,
       segmentDuration: segment.duration,
       ...(track.sbId !== undefined ? { sbId: track.sbId } : {}),
-      ...(input.mediaTimeNormalized === true
-        ? { timestampOffset: 0 }
-        : epoch !== null
-          ? { timestampOffset: timestampOffsetFor(epoch) }
-          : {}),
+      ...(epoch !== null ? { timestampOffset: timestampOffsetFor(epoch) } : {}),
+      ...(key !== undefined ? { epoch: key } : {}),
     });
   }
 

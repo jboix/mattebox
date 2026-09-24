@@ -20,6 +20,7 @@ function compose(...stages: Stage[]) {
       registerChooser: () => undefined,
       registerSwitchPolicy: () => undefined,
       registerTypeProbe: () => undefined,
+      registerTimeProbe: () => undefined,
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
       request: async () => new Response(),

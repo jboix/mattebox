@@ -64,7 +64,11 @@ export function packAudio(data: Uint8Array, presentationStart: number): Uint8Arr
 export default function packedAudio(): Stage {
   return {
     name: 'packed-audio',
-    provides: ['packed-audio', 'media-transform', 'media-time-normalized'],
+    provides: ['packed-audio', 'media-transform'],
+    // The wrapped segment carries its playlist start as its decode time;
+    // the probe reads it back so the kernel applies no offset (ts-transmux
+    // explains the alternative).
+    requires: ['media-time-probe'],
     install(ctx) {
       ctx.registerTransform({
         name: 'packed-audio',

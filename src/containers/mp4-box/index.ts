@@ -266,44 +266,35 @@ export function trackTimescales(init: Uint8Array): Map<number, number> {
 }
 
 /**
- * Rewrites every traf's tfdt baseMediaDecodeTime in place so the segment's
- * media clock equals its presentation start. A CMAF live segment carries the
- * real broadcast clock (a huge value); appended with a zero timestampOffset it
- * would land far off the playhead. Normalizing it to `presentationStart` makes
- * the segment land exactly where the manifest places it, the same alignment a
- * TS transmux gives for free. Returns the number of tfdt boxes rewritten.
+ * The earliest tfdt baseMediaDecodeTime across the segment's track
+ * fragments, in seconds of each track's own timescale, or null when no
+ * fragment carries a readable one. A segment holds one fragment per track
+ * or many (Apple packages about one per second inside a ten-second
+ * segment); the earliest is where the bytes start, whatever clock the
+ * packager wrote. A fragment whose track has no known timescale is
+ * skipped rather than guessed. The same reading mux.js's `startTime` takes
+ * for videojs-http-streaming.
  */
-export function normalizeTfdt(
+export function earliestDecodeTime(
   segment: Uint8Array,
-  presentationStart: number,
   timescales: ReadonlyMap<number, number>,
-  fallbackTimescale: number,
-): number {
-  let rewritten = 0;
+): number | null {
+  let earliest: number | null = null;
   for (const traf of findBoxes(segment, 'moof/traf')) {
     const tfdt = findBox(traf.payload, 'tfdt');
-    if (tfdt === null) continue;
     const tfhd = findBox(traf.payload, 'tfhd');
     // tfhd FullBox: version(1) flags(3), then track_ID(4).
-    const trackId =
-      tfhd !== null && tfhd.payload.byteLength >= 8
-        ? new DataView(
-            tfhd.payload.buffer,
-            tfhd.payload.byteOffset,
-            tfhd.payload.byteLength,
-          ).getUint32(4)
-        : null;
-    const timescale = (trackId !== null ? timescales.get(trackId) : undefined) ?? fallbackTimescale;
-    if (timescale <= 0) continue;
-    const target = Math.round(presentationStart * timescale);
-    const body = tfdt.payload;
-    const view = new DataView(body.buffer, body.byteOffset, body.byteLength);
-    if (body[0] === 1) {
-      if (body.byteLength >= 12) view.setBigUint64(4, BigInt(target));
-    } else {
-      if (body.byteLength >= 8) view.setUint32(4, target);
-    }
-    rewritten += 1;
+    if (tfdt === null || tfhd === null || tfhd.payload.byteLength < 8) continue;
+    const trackId = new DataView(
+      tfhd.payload.buffer,
+      tfhd.payload.byteOffset,
+      tfhd.payload.byteLength,
+    ).getUint32(4);
+    const timescale = timescales.get(trackId);
+    const parsed = parseTfdt(tfdt.payload);
+    if (timescale === undefined || timescale <= 0 || parsed === null) continue;
+    const seconds = parsed.baseMediaDecodeTime / timescale;
+    if (earliest === null || seconds < earliest) earliest = seconds;
   }
-  return rewritten;
+  return earliest;
 }

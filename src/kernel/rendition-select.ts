@@ -13,6 +13,7 @@ import type {
   ContentType,
   Coupling,
   Period,
+  Presentation,
   Rendition,
   RenditionId,
   TimeRangesSnapshot,
@@ -162,6 +163,34 @@ export function ladderNeighbours(
     active,
     ...(at + 1 < ladder.length ? [ladder[at + 1] as Rendition] : []),
   ];
+}
+
+/**
+ * `dead` plus the video variants that require an audio group none of whose
+ * renditions is left. A variant names its audio by group, and the group
+ * carries the audio playlist and codec, so a group that cannot play takes
+ * its variants with it, the way videojs-http-streaming excludes them.
+ * Another track in the group (another language) keeps it alive.
+ */
+export function withDeadGroups(presentation: Presentation, dead: ReadonlySet<string>): Set<string> {
+  const out = new Set(dead);
+  const known = new Set<string>();
+  const alive = new Set<string>();
+  for (const period of presentation.periods) {
+    for (const track of period.tracks) {
+      if (track.contentType !== 'audio') continue;
+      const colon = track.id.indexOf(':');
+      const group = colon === -1 ? track.id : track.id.slice(0, colon);
+      known.add(group);
+      if (track.renditions.some((r) => !dead.has(r.id))) alive.add(group);
+    }
+  }
+  for (const { renditionId, requires } of presentation.couplings) {
+    if (requires.audio !== undefined && known.has(requires.audio) && !alive.has(requires.audio)) {
+      out.add(renditionId);
+    }
+  }
+  return out;
 }
 
 /** The strict arbitration order from docs/08. Never deviate; never return zero renditions. */

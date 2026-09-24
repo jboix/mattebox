@@ -100,9 +100,10 @@ The adapters expect CMAF (fragmented MP4), which is what MSE accepts
 directly.
 
 Legacy HLS with MPEG-TS segments or raw AAC segments needs the container
-stages from [chapter 08](08-legacy-transport-streams.md). Live CMAF whose
-`tfdt` carries a broadcast clock needs `cmaf-timing`, which
-[chapter 04](04-live-streaming.md) explains.
+stages from [chapter 08](08-legacy-transport-streams.md). CMAF whose
+`tfdt` does not start at zero, a live broadcast clock or a VOD encoder
+offset, needs `cmaf-timing`, which [chapter 04](04-live-streaming.md)
+explains.
 
 ## Tracks and renditions
 

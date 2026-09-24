@@ -3,9 +3,10 @@ import type { Period, Rendition } from '../../../src/index.js';
 import {
   buildEpochs,
   epochForSeq,
+  epochKey,
   mediaToPresentation,
   presentationToMedia,
-  reconcileTfdt,
+  reconciledOffset,
   seekableWindow,
   segmentAt,
   segmentAtTime,
@@ -97,10 +98,27 @@ describe('media and presentation time mapping', () => {
     expect(presentationToMedia(mediaToPresentation(7.5, epoch), epoch)).toBe(7.5);
   });
 
-  it('reconcileTfdt corrects the media start from a real baseMediaDecodeTime', () => {
-    const corrected = reconcileTfdt(epoch, 90_000, 30_000);
-    expect(corrected.mediaStart).toBe(3);
-    expect(timestampOffsetFor(corrected)).toBe(7);
+  it('reconciledOffset lands a segment at its playlist start whatever its decode time', () => {
+    // Apple packages a VOD title with its media clock starting near ten
+    // seconds: the first segment's playlist start is zero, its tfdt 9.958.
+    expect(reconciledOffset(0, 9.958)).toBeCloseTo(-9.958, 9);
+    // A live segment whose tfdt carries the broadcast clock.
+    expect(reconciledOffset(7188, 89_418_813_200_000 / 50_000)).toBeCloseTo(
+      7188 - 1_788_376_264,
+      6,
+    );
+    // Media already on the presentation clock needs no offset.
+    expect(reconciledOffset(12, 12)).toBe(0);
+  });
+
+  it('epochKey names the opening epoch by period and a discontinuity by its rounded start', () => {
+    const opening = { periodId: 'p0', firstSeq: 0, presentationStart: 0, mediaStart: 0 };
+    const video = { periodId: 'p0', firstSeq: 7, presentationStart: 20.04, mediaStart: 0 };
+    // The audio playlist numbers its own sequences and sums its own durations.
+    const audio = { periodId: 'p0', firstSeq: 11, presentationStart: 19.98, mediaStart: 0 };
+    expect(epochKey([opening, video], opening)).toBe('p0');
+    expect(epochKey([opening, video], video)).toBe('p0:20');
+    expect(epochKey([opening, audio], audio)).toBe('p0:20');
   });
 });
 

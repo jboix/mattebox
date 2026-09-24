@@ -23,6 +23,7 @@ import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
 import { parseMediaPlaylist, refreshFor } from '../hls-cmaf/parse.js';
+import { RELOAD_FAILED, unavailableMessages } from '../hls-cmaf/unavailable.js';
 import { registerLiveNamespace } from '../live-shared.js';
 
 const REFRESH_TOKEN = 'hls:live:refresh';
@@ -33,8 +34,6 @@ interface ReloadTarget {
   readonly renditionId: string;
   /** Another rung of the video ladder, reloaded at a slower cadence. */
   readonly ladder: boolean;
-  /** Playback cannot go on without it: the window rendition, an audio companion. */
-  readonly critical: boolean;
 }
 
 interface HlsLiveSlice {
@@ -88,9 +87,9 @@ const INITIAL: HlsLiveSlice = {
  * Failed reloads of one playlist in a row before the loop gives up on it.
  * Each reload already carries the transport's own retries, so this is
  * several rounds of a playlist that does not answer: an expired token, a
- * stream that ended without ENDLIST. A critical playlist then fails the
- * load; any other stops reloading. Retrying forever only keeps the
- * network busy for a stream that cannot play.
+ * stream that ended without ENDLIST. The playlist is then abandoned and
+ * playback moves off it. Retrying forever only keeps the network busy for
+ * a stream that cannot play.
  */
 const FAILURE_LIMIT = 4;
 
@@ -113,6 +112,16 @@ const LADDER_EVERY = 3;
  */
 function refreshToken(renditionId: string): string {
   return `${REFRESH_TOKEN}:${renditionId}`;
+}
+
+/** A reload of one playlist. The rendition rides along so a failure counts toward steering failover. */
+function reload(target: { readonly renditionId: string; readonly url: string }): Effect {
+  return {
+    kind: 'fetch',
+    token: refreshToken(target.renditionId),
+    url: target.url,
+    renditionId: target.renditionId,
+  };
 }
 
 function renditionOfToken(token: string): string | null {
@@ -150,11 +159,11 @@ function companionTargets(
   const urls = new Set<string>();
   if (window?.playlistUrl !== undefined) urls.add(window.playlistUrl);
   const out: ReloadTarget[] = [];
-  const add = (rendition: Rendition, ladder: boolean, critical: boolean) => {
+  const add = (rendition: Rendition, ladder: boolean) => {
     const url = rendition.playlistUrl;
     if (url === undefined || urls.has(url) || abandoned.includes(rendition.id)) return;
     urls.add(url);
-    out.push({ url, renditionId: rendition.id, ladder, critical });
+    out.push({ url, renditionId: rendition.id, ladder });
   };
   for (const contentType of ['video', 'audio', 'text'] as const) {
     const trackId = kernel.tracks.active.get(contentType);
@@ -163,7 +172,7 @@ function companionTargets(
       for (const track of period.tracks) {
         if (track.id !== trackId) continue;
         if (contentType !== 'video') {
-          for (const rendition of track.renditions) add(rendition, false, contentType === 'audio');
+          for (const rendition of track.renditions) add(rendition, false);
           continue;
         }
         if (window === null) continue;
@@ -172,7 +181,7 @@ function companionTargets(
           window.id,
           kernel.quality.constraints,
         );
-        for (const rendition of neighbours) add(rendition, true, false);
+        for (const rendition of neighbours) add(rendition, true);
       }
     }
   }
@@ -204,6 +213,7 @@ function tick(delaySeconds: number): Effect {
 function windowRendition(
   presentation: Presentation,
   kernel: Readonly<KernelState>,
+  abandoned: readonly string[],
 ): Rendition | null {
   let fallback: Rendition | null = null;
   for (const contentType of ['video', 'audio'] as const) {
@@ -212,6 +222,7 @@ function windowRendition(
         if (track.contentType !== contentType) continue;
         for (const rendition of track.renditions) {
           if (!Array.isArray(rendition.segments) || rendition.segments.length === 0) continue;
+          if (abandoned.includes(rendition.id)) continue;
           if (rendition.id === kernel.quality.active) return rendition;
           fallback = fallback ?? rendition;
         }
@@ -284,49 +295,56 @@ function renditionIdsAt(presentation: Presentation, url: string): readonly strin
  * A reload that failed, or answered with a playlist that does not parse.
  * The target tries again soon rather than let the loop die, and every
  * other playlist waits for the next tick, up to FAILURE_LIMIT times in a
- * row. Then a critical playlist fails the load and any other stops
- * reloading.
+ * row. Then the playlist is abandoned: its renditions are excluded, so
+ * arbitration moves to another variant (or, for an audio group, to a
+ * variant on another group), and the next tick reloads whatever the window
+ * rendition is then. The load fails only when nothing is left to move to.
  */
 function reloadFailed(
   state: HlsLiveSlice,
+  kernel: Readonly<KernelState>,
   renditionId: string,
   error: MatteboxError,
 ): [HlsLiveSlice, Effect[]] {
   const count = (state.failures[renditionId] ?? 0) + 1;
   const failures = { ...state.failures, [renditionId]: count };
   const isTarget = state.target !== null && renditionId === state.target.renditionId;
-  const companion = state.companions.find((c) => c.renditionId === renditionId);
-  if (count >= FAILURE_LIMIT) {
-    if (isTarget || companion?.critical === true) {
-      return [
-        { ...state, failures, inflight: null },
-        [
-          feed({
-            type: 'MANIFEST_FAILED',
-            error: {
-              category: 'manifest',
-              code: 'MANIFEST_REFRESH_FAILED',
-              fatal: true,
-              recoverable: false,
-              context: { cause: error.code, renditionId, attempts: count },
-            },
-          }),
-        ],
-      ];
-    }
-    return [
-      {
-        ...state,
-        failures,
-        abandoned: [...state.abandoned, renditionId],
-        companions: state.companions.filter((c) => c.renditionId !== renditionId),
-      },
-      [],
-    ];
+  if (count < FAILURE_LIMIT) {
+    if (!isTarget) return [{ ...state, failures }, []];
+    if (state.tickPending) return [{ ...state, failures, inflight: null }, []];
+    return [{ ...state, failures, inflight: null, tickPending: true }, [tick(2)]];
   }
-  if (!isTarget) return [{ ...state, failures }, []];
-  if (state.tickPending) return [{ ...state, failures, inflight: null }, []];
-  return [{ ...state, failures, inflight: null, tickPending: true }, [tick(2)]];
+  const presentation = kernel.presentation;
+  const url =
+    presentation === null ? null : playlistUrlFor(presentation, renditionId, state.target);
+  const sharing =
+    presentation !== null &&
+    url !== null &&
+    findRendition(presentation, renditionId)?.playlistUrl !== undefined
+      ? renditionIdsAt(presentation, url)
+      : [renditionId];
+  const abandoned = [...new Set([...state.abandoned, ...sharing])];
+  const messages = unavailableMessages(kernel, RELOAD_FAILED, abandoned, {
+    category: 'manifest',
+    code: 'MANIFEST_REFRESH_FAILED',
+    fatal: true,
+    recoverable: false,
+    context: { cause: error.code, renditionId, attempts: count },
+  });
+  const next: HlsLiveSlice = {
+    ...state,
+    failures,
+    abandoned,
+    companions: state.companions.filter((c) => !abandoned.includes(c.renditionId)),
+    inflight: isTarget ? null : state.inflight,
+  };
+  const effects = messages.map(feed);
+  const failed = messages.some((m) => m.type === 'MANIFEST_FAILED');
+  // The loop goes on with a new target; the tick picks it.
+  if (isTarget && !failed && !state.tickPending) {
+    return [{ ...next, tickPending: true }, [...effects, tick(2)]];
+  }
+  return [next, effects];
 }
 
 const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
@@ -351,15 +369,9 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
     // Every active playlist is stale, the ladder included: reload them all
     // now, and hold the window until the target lands so the kernel never
     // schedules against the old one. The target's answer restarts the tick.
-    const effects: Effect[] = [
-      { kind: 'fetch', token: refreshToken(state.target.renditionId), url: state.target.url },
-    ];
+    const effects: Effect[] = [reload(state.target)];
     for (const companion of state.companions) {
-      effects.push({
-        kind: 'fetch',
-        token: refreshToken(companion.renditionId),
-        url: companion.url,
-      });
+      effects.push(reload(companion));
     }
     return [{ ...resumed, inflight: state.target.renditionId, awaitingTarget: true }, effects];
   }
@@ -375,14 +387,14 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
     if (!presentation.isLive) {
       return [{ ...state, target: null, companions: [], inflight: null }, []];
     }
-    const rendition = windowRendition(presentation, kernel);
+    const rendition = windowRendition(presentation, kernel, state.abandoned);
     const effects: Effect[] = [];
     // The reload target: the rendition's own playlist when it has one, the
     // manifest itself for a bare media-playlist source.
     const url = rendition?.playlistUrl ?? state.manifestUrl;
     const target =
       url !== null && rendition !== null
-        ? { url, renditionId: rendition.id, ladder: false, critical: true }
+        ? { url, renditionId: rendition.id, ladder: false }
         : state.target;
     const companions = companionTargets(presentation, kernel, rendition, state.abandoned);
     const switched =
@@ -394,7 +406,7 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
       // startup. Reload it now and hold the window until it lands. A reload
       // of that very rendition already in flight serves the same purpose.
       if (inflight !== target.renditionId) {
-        effects.push({ kind: 'fetch', token: refreshToken(target.renditionId), url: target.url });
+        effects.push(reload(target));
         inflight = target.renditionId;
       }
       awaitingTarget = true;
@@ -416,34 +428,42 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
     if (state.suspended || state.target === null || kernel.presentation?.isLive !== true) {
       return [{ ...state, tickPending: false, inflight: null }, []];
     }
+    let target: ReloadTarget | null = state.target;
+    let awaitingTarget = state.awaitingTarget;
+    if (state.abandoned.includes(target.renditionId)) {
+      // The target was given up. Arbitration already moved off it; reload
+      // the rendition playing now and hold the window until it answers.
+      const rendition = windowRendition(kernel.presentation, kernel, state.abandoned);
+      target =
+        rendition?.playlistUrl !== undefined
+          ? { url: rendition.playlistUrl, renditionId: rendition.id, ladder: false }
+          : null;
+      if (target === null) return [{ ...state, tickPending: false, inflight: null }, []];
+      awaitingTarget = true;
+    }
     const effects: Effect[] = [];
     let inflight = state.inflight;
     // One target reload at a time: a second in flight would answer twice
     // and every answer schedules the next tick, forking the loop.
-    if (inflight !== state.target.renditionId) {
-      effects.push({
-        kind: 'fetch',
-        token: refreshToken(state.target.renditionId),
-        url: state.target.url,
-      });
-      inflight = state.target.renditionId;
+    if (inflight !== target.renditionId) {
+      effects.push(reload(target));
+      inflight = target.renditionId;
     }
     for (const companion of state.companions) {
       if (companion.ladder && state.round % LADDER_EVERY !== 0) continue;
-      effects.push({
-        kind: 'fetch',
-        token: refreshToken(companion.renditionId),
-        url: companion.url,
-      });
+      effects.push(reload(companion));
     }
     // The target's answer schedules the next tick.
-    return [{ ...state, round: state.round + 1, tickPending: false, inflight }, effects];
+    return [
+      { ...state, target, awaitingTarget, round: state.round + 1, tickPending: false, inflight },
+      effects,
+    ];
   }
 
   if (msg.type === 'SEGMENT_FAILED') {
     const renditionId = renditionOfToken(msg.trackId);
     if (renditionId === null) return [state, []];
-    return reloadFailed(state, renditionId, msg.error);
+    return reloadFailed(state, kernel, renditionId, msg.error);
   }
 
   if (msg.type === 'SEGMENT_LOADED') {
@@ -457,6 +477,7 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
     if (media.playlist === null) {
       return reloadFailed(
         state,
+        kernel,
         renditionId,
         media.error ?? {
           category: 'manifest',

@@ -100,9 +100,13 @@ const reduceAltAudio: SliceReducer<AltAudioSlice> = (slice, msg, kernel) => {
     return [state, []];
   }
 
-  // A manifest landing or a video rendition change may require a different
-  // audio group. Reconcile the active audio track to it.
-  if (msg.type === 'MANIFEST_LOADED' || msg.type === 'SEGMENT_LOADED') {
+  // A manifest or playlist landing, or a video rendition change, may require
+  // a different audio group. Reconcile the active audio track to it.
+  if (
+    msg.type === 'MANIFEST_LOADED' ||
+    msg.type === 'PLAYLIST_REFRESHED' ||
+    msg.type === 'SEGMENT_LOADED'
+  ) {
     const group = requiredGroup(kernel);
     if (group === null) return [state, []];
     const active = kernel.tracks.active.get('audio');

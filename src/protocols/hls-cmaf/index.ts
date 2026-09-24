@@ -13,11 +13,12 @@
 import { normalizeMimeType } from '../../kernel/mime.js';
 import { ladderNeighbours } from '../../kernel/rendition-select.js';
 import type { MatteboxError } from '../../types/error.js';
-import type { Presentation, Rendition, Track } from '../../types/ir.js';
+import type { Presentation, Rendition } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
 import { parse, parseMediaPlaylist, refreshFor } from './parse.js';
+import { LOAD_FAILED, unavailableMessages } from './unavailable.js';
 
 const PLAYLIST_TOKEN = 'hls:pl:';
 
@@ -53,9 +54,6 @@ const INITIAL: HlsSlice = {
   seen: '',
 };
 
-/** The constraint source that excludes renditions whose playlist failed. */
-const UNAVAILABLE = 'hls:unavailable';
-
 /**
  * Whether this adapter owns the manifest bytes. An explicit mimeType
  * decides alone: a foreign type declines without reading, an own type
@@ -68,15 +66,6 @@ function claims(state: HlsSlice, text: string): boolean {
   return text.trimStart().startsWith('#EXTM3U');
 }
 
-function findTrackOf(presentation: Presentation, renditionId: string): Track | null {
-  for (const period of presentation.periods) {
-    for (const track of period.tracks) {
-      if (track.renditions.some((r) => r.id === renditionId)) return track;
-    }
-  }
-  return null;
-}
-
 /**
  * The playlist URLs the selection needs and this slice has not asked for:
  * the playing video rendition and its ladder neighbours, and every
@@ -84,11 +73,11 @@ function findTrackOf(presentation: Presentation, renditionId: string): Track | n
  * audio-only ladder is short). Fetching the whole ladder up front costs one
  * request per variant, hundreds on a large multivariant playlist.
  */
-function neededPlaylists(state: HlsSlice, kernel: Readonly<KernelState>): readonly string[] {
+function neededPlaylists(state: HlsSlice, kernel: Readonly<KernelState>): readonly Rendition[] {
   const presentation = kernel.presentation;
   if (presentation === null) return [];
   const asked = new Set(Object.values(state.pending));
-  const needed: string[] = [];
+  const needed: Rendition[] = [];
   for (const contentType of ['video', 'audio', 'text'] as const) {
     const trackId = kernel.tracks.active.get(contentType);
     if (trackId === undefined) continue;
@@ -102,8 +91,8 @@ function neededPlaylists(state: HlsSlice, kernel: Readonly<KernelState>): readon
         for (const rendition of candidates) {
           const url = rendition.playlistUrl;
           if (url === undefined || url in state.answered || asked.has(url)) continue;
-          if (needed.includes(url)) continue;
-          needed.push(url);
+          if (needed.some((r) => r.playlistUrl === url)) continue;
+          needed.push(rendition);
         }
       }
     }
@@ -146,23 +135,12 @@ function unavailable(
   const next = { ...state, answered };
   const presentation = kernel.presentation;
   if (presentation === null) return [next, []];
-  const failed = (r: Rendition) => r.playlistUrl !== undefined && answered[r.playlistUrl] === false;
-  const hit = renditionsAt(presentation, url);
-  for (const rendition of hit) {
-    const track = findTrackOf(presentation, rendition.id);
-    const media = track?.contentType === 'video' || track?.contentType === 'audio';
-    if (track !== null && media && track.renditions.every(failed)) {
-      return [next, [feed({ type: 'MANIFEST_FAILED', error: { ...error, fatal: true } })]];
-    }
+  const failed: string[] = [];
+  for (const [failedUrl, ok] of Object.entries(answered)) {
+    if (!ok)
+      for (const rendition of renditionsAt(presentation, failedUrl)) failed.push(rendition.id);
   }
-  const excludeIds: string[] = [];
-  for (const period of presentation.periods) {
-    for (const track of period.tracks) {
-      for (const rendition of track.renditions)
-        if (failed(rendition)) excludeIds.push(rendition.id);
-    }
-  }
-  return [next, [feed({ type: 'CONSTRAIN', source: UNAVAILABLE, constraint: { excludeIds } })]];
+  return [next, unavailableMessages(kernel, LOAD_FAILED, failed, error).map(feed)];
 }
 
 const reduceHls: SliceReducer<HlsSlice> = (slice, msg, kernel) => {
@@ -274,10 +252,12 @@ const reduceHls: SliceReducer<HlsSlice> = (slice, msg, kernel) => {
   if (key === state.seen && msg.type !== 'RESUME') return [next, effects];
   next = { ...next, seen: key };
   const pending = { ...next.pending };
-  for (const url of neededPlaylists(next, kernel)) {
+  for (const rendition of neededPlaylists(next, kernel)) {
+    const url = rendition.playlistUrl as string;
     const token = `${PLAYLIST_TOKEN}${url}`;
     pending[token] = url;
-    effects.push({ kind: 'fetch', token, url });
+    // The rendition rides along so a failure counts toward steering failover.
+    effects.push({ kind: 'fetch', token, url, renditionId: rendition.id });
   }
   return [{ ...next, pending }, effects];
 };

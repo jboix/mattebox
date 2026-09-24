@@ -72,10 +72,15 @@ Use it to show a clock on the scrub bar or to seek to a broadcast time.
 
 ## The cmaf-timing stage
 
-Some live CMAF packagers write the wall clock into each segment's `tfdt`,
-so the segments land far past the playhead. The `cmaf-timing` stage
-rewrites the decode time to the start time from the manifest. VOD content
-is untouched.
+Packagers write whatever clock they like into each segment's `tfdt`: a
+live packager writes the wall clock, and some VOD packagers start the
+media clock seconds after zero. Without correction the segments land away
+from the playhead. The `cmaf-timing` stage reads where each segment's
+media clock starts, and the kernel sets the SourceBuffer `timestampOffset`
+that lands the segment at its manifest time. It sets one offset per
+timeline, from the first video segment, and applies it to audio too, so
+the tracks keep the alignment their shared clock gives them. The bytes are
+never rewritten.
 
 ```ts
 import cmafTiming from 'mattebox/stages/cmaf-timing';
@@ -83,9 +88,9 @@ import cmafTiming from 'mattebox/stages/cmaf-timing';
 const engine = mattebox({ stages: [dashCmaf(), dashLive(), cmafTiming()] });
 ```
 
-Every preset includes it. The symptom without it is a live stream that
-buffers but never plays, and the manifest gives no hint. Load it in any
-hand-built live stack too.
+Every preset includes it. The symptom without it is a stream that buffers
+but never plays, or plays a few seconds and stalls, and the manifest gives
+no hint. Load it in any hand-built stack.
 
 ## The recovery stage
 
