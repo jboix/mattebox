@@ -24,6 +24,8 @@ export interface ScheduleTrackInput {
   readonly sbId?: SbId;
   /** This track's requests already in flight. */
   readonly inflight: readonly InflightRequest[];
+  /** The media segments the track's buffer received since the last seek, when the buffer knows. */
+  readonly appended?: ReadonlyArray<{ readonly renditionId: string; readonly seq: number }>;
 }
 
 export interface ScheduleInput {
@@ -101,6 +103,12 @@ function coveringSegment(
   );
 }
 
+/** Whether the track's buffer received `seq` of the track's rendition since the last seek. */
+function received(track: ScheduleTrackInput, seq: number): boolean {
+  const id = track.rendition.id;
+  return track.appended?.some((entry) => entry.seq === seq && entry.renditionId === id) === true;
+}
+
 export function schedule(input: ScheduleInput): ScheduleResult {
   const tolerance = input.gapToleranceSeconds ?? DEFAULT_GAP_TOLERANCE;
   const effects: Effect[] = [];
@@ -131,7 +139,21 @@ export function schedule(input: ScheduleInput): ScheduleResult {
     // and the hole itself is recovery's to jump.
     let frontier = bufferedEnd;
     while (segment !== null) {
-      const covering = coveringSegment(track.ranges, segment, tolerance);
+      let covering = coveringSegment(track.ranges, segment, tolerance);
+      if (covering === null && received(track, segment.seq)) {
+        // The buffer received this very segment and shows no usable range
+        // for it: a packager cut it so far off the GOP grid that MSE kept
+        // a sliver or nothing. Fetching it again returns the same bytes
+        // and the same sliver, would trip the repeat breaker, and would
+        // re-append over the frames that followed it, which MSE then drops
+        // back to their next keyframe. The walk moves past it, to whatever
+        // it did leave; the hole is recovery's.
+        const { start, duration } = segment;
+        const left = track.ranges.find(
+          (range) => range.start >= start && range.start < start + duration,
+        );
+        covering = { start, end: left?.end ?? start + duration };
+      }
       if (covering === null) break;
       frontier = Math.max(frontier, covering.end);
       if (frontier - input.currentTime >= input.bufferGoal) {

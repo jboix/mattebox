@@ -135,6 +135,40 @@ describe('a segment whose first keyframe sits past its midpoint', () => {
     const result = schedule(input({ tracks: [track({ ranges: [{ start: 3.9, end: 4 }] })] }));
     expect(result.requests.map((r) => r.seq)).toEqual([0]);
   });
+
+  // Real case: an RTS VOD asset whose segment 4 (6-8 s) carries its first
+  // keyframe at 7.76 s, one hundredth past the tail probe, so MSE keeps
+  // 7.76-8.12 of it. The buffer knows it received the segment, and a
+  // second fetch of the same bytes leaves the same sliver.
+  it('a segment the buffer already received is not fetched again, whatever it left', () => {
+    const appended = [{ renditionId: 'v-1', seq: 0 }];
+    const sliver = schedule(
+      input({ tracks: [track({ ranges: [{ start: 3.9, end: 4 }], appended })] }),
+    );
+    expect(sliver.requests.map((r) => r.seq)).toEqual([1]);
+    const nothing = schedule(input({ tracks: [track({ ranges: [], appended })] }));
+    expect(nothing.requests.map((r) => r.seq)).toEqual([1]);
+    // Another rendition's segment 0 is a different segment.
+    const other = schedule(
+      input({ tracks: [track({ ranges: [], appended: [{ renditionId: 'v-9', seq: 0 }] })] }),
+    );
+    expect(other.requests.map((r) => r.seq)).toEqual([0]);
+    // Every segment received since the seek stays skipped, not only the last.
+    const two = schedule(
+      input({
+        tracks: [
+          track({
+            ranges: [{ start: 3.9, end: 4 }],
+            appended: [
+              { renditionId: 'v-1', seq: 0 },
+              { renditionId: 'v-1', seq: 1 },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(two.requests.map((r) => r.seq)).toEqual([2]);
+  });
 });
 
 describe('buffer goal', () => {

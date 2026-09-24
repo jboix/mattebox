@@ -51,6 +51,7 @@ Place this at the repository root. It applies to every stage.
 Documentation, comments, commit messages, and user-facing strings use direct language.
 
 - Write plain declarative sentences. State the fact, then at most one sentence of why.
+- Write subject, verb, object. Address the reader as "you" and say what they can do: "You add the stages you need, and the rest stays out of your bundle", never "A small kernel plus stages, the unused ones never bundled". This applies to every text, the README included.
 - No em-dashes. Use commas, colons, parentheses, periods.
 - No rambling, aphorisms, or clever turns. No "X is what makes Y"; write the fact or "Y because X".
 - No idioms or unusual verbs. Name things for what they are. No cute jargon.
@@ -68,7 +69,7 @@ pnpm depcruise src
 pnpm knip
 pnpm vitest run --project=node
 pnpm vitest run --project=browser     # from Stage 03 onward
-pnpm build && ./scripts/check-emit.sh && ./scripts/side-effect-audit.sh
+pnpm build && pnpm run check:emit && pnpm run check:side-effects
 pnpm size-limit
 pnpm run check:size-chart              # after pnpm run size-chart, when bundle sizes changed
 ```

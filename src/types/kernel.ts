@@ -123,7 +123,28 @@ export interface BufferState {
    * fetches the init first whenever this differs from the target.
    */
   readonly initFor?: RenditionId;
+  /**
+   * The media segments appended to this buffer since the last seek, newest
+   * last, at most APPENDED_MEMORY of them. A segment the buffer received
+   * and still shows no usable range for cannot be helped by a second
+   * fetch, which would also re-append over frames that followed it: the
+   * scheduler moves past it. Forgotten on a seek and on a buffer error.
+   * A segment is forgotten when the buffer loses content inside its span,
+   * because a flush or an eviction took what it left and a fetch restores it.
+   */
+  readonly appended?: readonly AppendedSegment[];
 }
+
+/** One media segment a buffer received, with the span it was appended at. */
+export interface AppendedSegment {
+  readonly renditionId: RenditionId;
+  readonly seq: number;
+  readonly start: number;
+  readonly end: number;
+}
+
+/** How many appended segments a buffer remembers: the recent past of one buffer goal, at most. */
+export const APPENDED_MEMORY = 32;
 
 export interface QualityState {
   /**

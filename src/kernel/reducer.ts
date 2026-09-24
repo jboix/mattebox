@@ -10,6 +10,8 @@
 import type { MatteboxError } from '../types/error.js';
 import type { Presentation, Rendition, RenditionId, Track } from '../types/ir.js';
 import type {
+  AppendedSegment,
+  BufferState,
   InflightRequest,
   KernelConfig,
   KernelState,
@@ -17,6 +19,7 @@ import type {
   SbId,
   SliceReducer,
 } from '../types/kernel.js';
+import { APPENDED_MEMORY } from '../types/kernel.js';
 import type { Command, Effect, Fact, Message, Serializable } from '../types/messages.js';
 import { normalizeMimeType } from './mime.js';
 import type { AbrChooser, SwitchPolicy } from './rendition-select.js';
@@ -213,6 +216,67 @@ function mergeCoverage(
   }
   merged.push(pending);
   return merged.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * The spans `before` holds and `after` does not. Browsers round the ranges
+ * they report, so a loss narrower than the gap tolerance is that rounding.
+ */
+function lostSpans(
+  before: readonly { readonly start: number; readonly end: number }[],
+  after: readonly { readonly start: number; readonly end: number }[],
+): readonly { readonly start: number; readonly end: number }[] {
+  const held = [...after].sort((a, b) => a.start - b.start);
+  const lost: Array<{ start: number; end: number }> = [];
+  for (const range of before) {
+    let cursor = range.start;
+    for (const kept of held) {
+      if (kept.end <= cursor) continue;
+      if (kept.start >= range.end) break;
+      if (kept.start - cursor >= GAP_TOLERANCE) lost.push({ start: cursor, end: kept.start });
+      cursor = kept.end;
+    }
+    if (range.end - cursor >= GAP_TOLERANCE) lost.push({ start: cursor, end: range.end });
+  }
+  return lost;
+}
+
+/** The buffers without what they remember receiving: one buffer, or all of them. */
+function forgetAppended(
+  buffers: ReadonlyMap<SbId, BufferState>,
+  only?: SbId,
+): ReadonlyMap<SbId, BufferState> {
+  const next = new Map(buffers);
+  for (const [sbId, buffer] of buffers) {
+    if (buffer.appended === undefined || (only !== undefined && sbId !== only)) continue;
+    const { appended: _appended, ...rest } = buffer;
+    next.set(sbId, rest);
+  }
+  return next;
+}
+
+/**
+ * The buffers after the flushes among `effects`. A flush is an unbounded
+ * remove, and it forgets every segment that ends past its start: the next
+ * append there starts a new run, so a segment that left nothing the first
+ * time can land whole the second time. Lost content cannot say this, a
+ * segment that left nothing has none to lose. A bounded remove is eviction
+ * and reports through its updateend.
+ */
+function forgetFlushed(
+  buffers: ReadonlyMap<SbId, BufferState>,
+  effects: readonly Effect[],
+): ReadonlyMap<SbId, BufferState> {
+  let next = buffers;
+  for (const effect of effects) {
+    if (effect.kind !== 'remove' || effect.end !== Number.POSITIVE_INFINITY) continue;
+    const buffer = next.get(effect.sbId);
+    if (buffer?.appended === undefined) continue;
+    const appended = buffer.appended.filter((seg) => seg.end <= effect.start);
+    if (appended.length === buffer.appended.length) continue;
+    next = new Map(next).set(effect.sbId, { ...buffer, appended });
+  }
+  return next;
 }
 
 function findTrack(presentation: Presentation | null, trackId: string): Track | null {
@@ -923,7 +987,30 @@ function reduceFact(
         const buffer = buffers.get(matched.sbId);
         if (buffer !== undefined) {
           const nextBuffers = new Map(buffers);
-          nextBuffers.set(matched.sbId, { ...buffer, pendingAppends: buffer.pendingAppends + 1 });
+          // What the buffer receives, so the scheduler never asks for it
+          // twice. Media only, and with the span it lands at, so a removal
+          // there can forget it.
+          let appended = buffer.appended;
+          const { renditionId, seq, segmentStart } = matched;
+          if (seq >= 0 && renditionId !== undefined && segmentStart !== undefined) {
+            const entry: AppendedSegment = {
+              renditionId,
+              seq,
+              start: segmentStart,
+              end: segmentStart + (matched.segmentDuration ?? 0),
+            };
+            appended = [
+              ...(appended ?? [])
+                .filter((seg) => seg.seq !== seq || seg.renditionId !== renditionId)
+                .slice(1 - APPENDED_MEMORY),
+              entry,
+            ];
+          }
+          nextBuffers.set(matched.sbId, {
+            ...buffer,
+            pendingAppends: buffer.pendingAppends + 1,
+            ...(appended !== undefined ? { appended } : {}),
+          });
           buffers = nextBuffers;
         }
         if (
@@ -1067,10 +1154,25 @@ function reduceFact(
         // The buffer was removed by a concurrent detach. Absorb and ignore.
         return [state, []];
       }
+      // Content the buffer lost takes the memory of its segments with it.
+      // Every removal reports here: a switch's flush, the evictor dropping
+      // forward buffer under quota, the browser's own eviction during an
+      // append. Those segments are gone and a fetch restores them, where a
+      // segment that never left a usable range stays remembered.
+      let appended = buffer.appended;
+      if (appended !== undefined && msg.ranges !== undefined) {
+        const lost = lostSpans(buffer.ranges, msg.ranges);
+        if (lost.length > 0) {
+          appended = appended.filter(
+            (seg) => !lost.some((span) => span.start <= seg.end && span.end >= seg.start),
+          );
+        }
+      }
       const buffers = new Map(state.buffers);
       buffers.set(msg.sbId, {
         ...buffer,
         ...(msg.ranges !== undefined ? { ranges: msg.ranges } : {}),
+        ...(appended !== undefined ? { appended } : {}),
         pendingAppends: Math.max(0, buffer.pendingAppends - 1),
       });
       // A successful append proves the buffer works: the breaker resets.
@@ -1098,8 +1200,27 @@ function reduceFact(
         state.scheduling,
         withoutPendingInit(state.scheduling.pendingInit, msg.sbId),
       );
+      // The buffer did not keep what it was handed, or never got it: a
+      // failed append, or a transform that threw before the append. The
+      // parser also starts over (MSE append error algorithm, reset parser
+      // state), so what the buffer received before says nothing about the
+      // next append. The failed segment is fetched again, and the breaker
+      // above counts it.
+      let buffers = forgetAppended(state.buffers, msg.sbId);
       const fatal = msg.error.fatal || count >= cfg.bufferErrorLimit;
       const phase = fatal ? 'error' : state.lifecycle.phase;
+      // A transform that threw never reached the buffer, so no updateend
+      // reports for that append: this fact does. Without it the track waits
+      // on the append and never schedules again. A parser error is followed
+      // by its updateend (MSE append error algorithm), which reports.
+      const neverAppended = msg.error.code === 'MEDIA_CONTAINER_INVALID';
+      const waiting = buffers.get(msg.sbId);
+      if (neverAppended && waiting !== undefined && waiting.pendingAppends > 0) {
+        buffers = new Map(buffers).set(msg.sbId, {
+          ...waiting,
+          pendingAppends: waiting.pendingAppends - 1,
+        });
+      }
       const effects: Effect[] = [
         {
           kind: 'emit',
@@ -1114,6 +1235,17 @@ function reduceFact(
           },
         },
       ];
+      if (neverAppended && !fatal) {
+        // Nothing else re-drives: the refetch waits the same backoff a
+        // failed fetch does, so recovery can change the decision first.
+        effects.push({
+          kind: 'schedule',
+          token: 'kernel:retry',
+          delayMs: cfg.baseRetryDelayMs,
+          // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
+          then: { type: 'TICK', token: 'kernel:retry' },
+        });
+      }
       let inflight: ReadonlyMap<string, InflightRequest> = state.scheduling.inflight;
       if (fatal) {
         // Stop the world for this buffer: whatever is in flight will only
@@ -1130,6 +1262,7 @@ function reduceFact(
       return [
         {
           ...state,
+          buffers,
           bufferErrors,
           lifecycle: { phase },
           scheduling: { ...scheduling, inflight },
@@ -1158,10 +1291,13 @@ function reduceFact(
     case 'SEEKING': {
       // Seeking out of the ended phase resumes an ordinary ready state.
       const phase = state.lifecycle.phase === 'ended' ? 'ready' : state.lifecycle.phase;
+      // A seek starts the decisions over: what the buffers last received
+      // no longer says anything about what the playhead needs.
       return [
         {
           ...state,
           lifecycle: { phase },
+          buffers: forgetAppended(state.buffers),
           playback: { ...state.playback, currentTime: msg.to, seeking: true },
         },
         [],
@@ -1392,6 +1528,7 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
       }
       continue;
     }
+    const appended = state.buffers.get(sbId)?.appended;
     tracks.push({
       trackId,
       period: found.period,
@@ -1399,6 +1536,7 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
       ranges: state.buffers.get(sbId)?.ranges ?? [],
       sbId,
       inflight,
+      ...(appended !== undefined ? { appended } : {}),
     });
   }
 
@@ -1660,6 +1798,9 @@ export function createReducer(
       next = failed;
       effects = [...effects, ...failEffects];
     }
+    // After the slices: a stage flushes too, recovery for one.
+    const buffers = forgetFlushed(next.buffers, effects);
+    if (buffers !== next.buffers) next = { ...next, buffers };
     return [next, effects];
   };
 }
