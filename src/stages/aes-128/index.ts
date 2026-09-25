@@ -7,6 +7,7 @@
  * number. SAMPLE-AES is not this: it decrypts inside the elementary stream
  * and stays deferred.
  */
+import { findRendition } from '../../kernel/presentation.js';
 import type { Segment, SegmentKey } from '../../types/ir.js';
 import type { KernelState } from '../../types/kernel.js';
 import type { Stage } from '../../types/stage.js';
@@ -33,16 +34,9 @@ function findSegment(
   renditionId: string,
   seq: number,
 ): Segment | null {
-  if (state.presentation === null || renditionId === '') return null;
-  for (const period of state.presentation.periods) {
-    for (const track of period.tracks) {
-      for (const rendition of track.renditions) {
-        if (rendition.id !== renditionId || !Array.isArray(rendition.segments)) continue;
-        return rendition.segments.find((segment) => segment.seq === seq) ?? null;
-      }
-    }
-  }
-  return null;
+  const segments = findRendition(state.presentation, renditionId)?.rendition.segments;
+  if (!Array.isArray(segments)) return null;
+  return (segments as readonly Segment[]).find((segment) => segment.seq === seq) ?? null;
 }
 
 export default function aes128(): Stage {

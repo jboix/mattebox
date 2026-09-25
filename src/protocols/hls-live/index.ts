@@ -16,7 +16,9 @@
  * a minute in.
  */
 
-import { ladderNeighbours } from '../../kernel/rendition-select.js';
+import { scheduled, tickAfter } from '../../kernel/effects.js';
+import { findRendition } from '../../kernel/presentation.js';
+import { activeRenditions } from '../../kernel/rendition-select.js';
 import type { MatteboxError } from '../../types/error.js';
 import type { Presentation, Rendition } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
@@ -128,17 +130,6 @@ function renditionOfToken(token: string): string | null {
   return token.startsWith(`${REFRESH_TOKEN}:`) ? token.slice(REFRESH_TOKEN.length + 1) : null;
 }
 
-function findRendition(presentation: Presentation, renditionId: string): Rendition | null {
-  for (const period of presentation.periods) {
-    for (const track of period.tracks) {
-      for (const rendition of track.renditions) {
-        if (rendition.id === renditionId) return rendition;
-      }
-    }
-  }
-  return null;
-}
-
 /**
  * The active tracks' playlists other than the window rendition's: the audio
  * group rendition, a segmented subtitle playlist, and the video rungs next
@@ -151,7 +142,6 @@ function findRendition(presentation: Presentation, renditionId: string): Renditi
  * shared by several renditions reloads once.
  */
 function companionTargets(
-  presentation: Presentation,
   kernel: Readonly<KernelState>,
   window: Rendition | null,
   abandoned: readonly string[],
@@ -165,43 +155,24 @@ function companionTargets(
     urls.add(url);
     out.push({ url, renditionId: rendition.id, ladder });
   };
-  for (const contentType of ['video', 'audio', 'text', 'image'] as const) {
-    const trackId = kernel.tracks.active.get(contentType);
-    if (trackId === undefined) continue;
-    for (const period of presentation.periods) {
-      for (const track of period.tracks) {
-        if (track.id !== trackId) continue;
-        if (contentType !== 'video') {
-          for (const rendition of track.renditions) add(rendition, false);
-          continue;
-        }
-        if (window === null) continue;
-        const neighbours = ladderNeighbours(
-          track.renditions,
-          window.id,
-          kernel.quality.constraints,
-        );
-        for (const rendition of neighbours) add(rendition, true);
-      }
-    }
+  // Without a window rendition there is no ladder position to reload around.
+  const types =
+    window === null
+      ? (['audio', 'text', 'image'] as const)
+      : (['video', 'audio', 'text', 'image'] as const);
+  for (const { contentType, rendition } of activeRenditions(kernel, types, window?.id ?? null)) {
+    add(rendition, contentType === 'video');
   }
   return out;
 }
 
 /** Loops a message back into the bus through a zero-delay schedule effect. */
 function feed(message: Message): Effect {
-  // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-  return { kind: 'schedule', token: 'hls-live:loopback', delayMs: 0, then: message };
+  return scheduled('hls-live:loopback', message);
 }
 
 function tick(delaySeconds: number): Effect {
-  return {
-    kind: 'schedule',
-    token: TICK_TOKEN,
-    delayMs: Math.max(500, delaySeconds * 1000),
-    // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-    then: { type: 'TICK', token: TICK_TOKEN },
-  };
+  return tickAfter(TICK_TOKEN, Math.max(500, delaySeconds * 1000));
 }
 
 /**
@@ -271,7 +242,7 @@ function playlistUrlFor(
   renditionId: string,
   target: ReloadTarget | null,
 ): string | null {
-  const rendition = findRendition(presentation, renditionId);
+  const rendition = findRendition(presentation, renditionId)?.rendition;
   if (rendition?.playlistUrl !== undefined) return rendition.playlistUrl;
   // A bare media-playlist source: the rendition has no playlist of its own
   // and the manifest itself is reloaded as the target.
@@ -320,7 +291,7 @@ function reloadFailed(
   const sharing =
     presentation !== null &&
     url !== null &&
-    findRendition(presentation, renditionId)?.playlistUrl !== undefined
+    findRendition(presentation, renditionId)?.rendition.playlistUrl !== undefined
       ? renditionIdsAt(presentation, url)
       : [renditionId];
   const abandoned = [...new Set([...state.abandoned, ...sharing])];
@@ -396,7 +367,7 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
       url !== null && rendition !== null
         ? { url, renditionId: rendition.id, ladder: false }
         : state.target;
-    const companions = companionTargets(presentation, kernel, rendition, state.abandoned);
+    const companions = companionTargets(kernel, rendition, state.abandoned);
     const switched =
       state.target !== null && target !== null && target.renditionId !== state.target.renditionId;
     let awaitingTarget = state.awaitingTarget;
@@ -475,17 +446,7 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
     const text = new TextDecoder().decode(msg.bytes);
     const media = parseMediaPlaylist(text, url);
     if (media.playlist === null) {
-      return reloadFailed(
-        state,
-        kernel,
-        renditionId,
-        media.error ?? {
-          category: 'manifest',
-          code: 'MANIFEST_PARSE_FAILED',
-          fatal: false,
-          recoverable: false,
-        },
-      );
+      return reloadFailed(state, kernel, renditionId, media.error);
     }
     const failures = { ...state.failures };
     delete failures[renditionId];
@@ -496,7 +457,7 @@ const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
     // so a companion and the target answering together both keep theirs.
     // Every rendition reading this playlist takes the same window.
     const sharing =
-      findRendition(kernel.presentation, renditionId)?.playlistUrl === undefined
+      findRendition(kernel.presentation, renditionId)?.rendition.playlistUrl === undefined
         ? [renditionId]
         : renditionIdsAt(kernel.presentation, url);
     const effects: Effect[] = [];

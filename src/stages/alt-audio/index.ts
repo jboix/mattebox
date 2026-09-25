@@ -14,6 +14,9 @@
  * A user language choice is remembered and re-applied on top of every
  * group switch, so `alt-audio` never fights `engine.tracks.select`.
  */
+
+import { scheduled } from '../../kernel/effects.js';
+import { groupOf } from '../../kernel/rendition-select.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
@@ -38,10 +41,9 @@ function audioTracks(kernel: Readonly<KernelState>): readonly AudioTrackInfo[] {
   for (const period of kernel.presentation?.periods ?? []) {
     for (const track of period.tracks) {
       if (track.contentType !== 'audio') continue;
-      const colon = track.id.indexOf(':');
       out.push({
         id: track.id,
-        group: colon === -1 ? track.id : track.id.slice(0, colon),
+        group: groupOf(track.id),
         lang: track.lang ?? null,
         isDefault: track.role === 'main',
       });
@@ -75,15 +77,9 @@ function pickInGroup(
 
 /** Loops a command back into the bus through a zero-delay schedule effect. */
 function select(trackId: string): Effect {
-  return {
-    kind: 'schedule',
-    token: 'alt-audio:select',
-    delayMs: 0,
-    // The group follows a video switch the viewer may not even notice: the
-    // old group plays out to a boundary ahead, so audio never runs dry.
-    // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-    then: { type: 'SELECT_TRACK', trackId, apply: 'soon' },
-  };
+  // The group follows a video switch the viewer may not even notice: the
+  // old group plays out to a boundary ahead, so audio never runs dry.
+  return scheduled('alt-audio:select', { type: 'SELECT_TRACK', trackId, apply: 'soon' });
 }
 
 const reduceAltAudio: SliceReducer<AltAudioSlice> = (slice, msg, kernel) => {

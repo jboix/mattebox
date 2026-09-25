@@ -1,13 +1,14 @@
 /**
  * WebVTT into cue descriptors. Pure, plain-VTT only: the HLS X-TIMESTAMP-MAP
  * header is a segmented-delivery concern that text-webvtt-segmented rewrites
- * away as a byte transform before this parser ever sees the text.
+ * away as a byte transform before this parser ever sees the text. Subtitles,
+ * thumbnail tracks, and chapters all read cues through this one parser.
  *
  * Malformed cues are skipped, never thrown: one bad cue must not cost the
  * segment. Every cue carries a deterministic id so re-delivered segments
  * dedup at the sink.
  */
-import type { CueDescriptor } from '../../types/messages.js';
+import type { CueDescriptor } from '../types/messages.js';
 
 /** `HH:MM:SS.mmm` or `MM:SS.mmm` to seconds, or null. */
 export function parseTimestamp(text: string): number | null {

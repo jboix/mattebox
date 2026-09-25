@@ -7,6 +7,7 @@
  * the rejection. A fact is never rejected: facts that make no sense in the
  * current state are absorbed and ignored, because the world already moved.
  */
+
 import type { MatteboxError } from '../types/error.js';
 import type { Presentation, Rendition, RenditionId, Track } from '../types/ir.js';
 import type {
@@ -22,10 +23,13 @@ import type {
 import { APPENDED_MEMORY } from '../types/kernel.js';
 import type { Command, Effect, Fact, Message, Serializable } from '../types/messages.js';
 import type { MediaTimeProbe } from '../types/stage.js';
-import { normalizeMimeType } from './mime.js';
+import { tickAfter } from './effects.js';
+import { normalizeMimeType, typeString } from './mime.js';
+import { findRendition, findTrackSite } from './presentation.js';
 import { applyRefresh } from './refresh.js';
 import type { AbrChooser, SwitchPolicy } from './rendition-select.js';
 import {
+  availableGroups,
   canSwitchTo,
   codecFamily,
   createArbiter,
@@ -190,20 +194,6 @@ function ewma(previous: number, sample: number, alpha: number): number {
   return previous === 0 ? sample : alpha * sample + (1 - alpha) * previous;
 }
 
-/** Companion groups present, as `contentType:groupId`, for the coupling filter. */
-function availableGroups(state: KernelState): ReadonlySet<string> {
-  const groups = new Set<string>();
-  for (const period of state.presentation?.periods ?? []) {
-    for (const track of period.tracks) {
-      if (track.contentType !== 'audio' && track.contentType !== 'text') continue;
-      const colon = track.id.indexOf(':');
-      const group = colon === -1 ? track.id : track.id.slice(0, colon);
-      groups.add(`${track.contentType}:${group}`);
-    }
-  }
-  return groups;
-}
-
 /** Merges one span into a sorted coverage list, coalescing overlaps. */
 function mergeCoverage(
   coverage: readonly { readonly start: number; readonly end: number }[],
@@ -287,31 +277,7 @@ function forgetFlushed(
 }
 
 function findTrack(presentation: Presentation | null, trackId: string): Track | null {
-  if (presentation === null) return null;
-  for (const period of presentation.periods) {
-    for (const track of period.tracks) {
-      if (track.id === trackId) return track;
-    }
-  }
-  return null;
-}
-
-function findTrackSite(
-  presentation: Presentation,
-  trackId: string,
-): { track: Track; period: Presentation['periods'][number] } | null {
-  for (const period of presentation.periods) {
-    for (const track of period.tracks) {
-      if (track.id === trackId) return { track, period };
-    }
-  }
-  return null;
-}
-
-interface RenditionSite {
-  readonly rendition: Rendition;
-  readonly track: Track;
-  readonly period: Presentation['periods'][number];
+  return findTrackSite(presentation, trackId)?.track ?? null;
 }
 
 /**
@@ -331,21 +297,6 @@ function segmentedAt(
     (rendition) =>
       rendition !== undefined && segmentAtTime(rendition.segments, time, periodStart) !== null,
   );
-}
-
-function findRendition(
-  presentation: Presentation | null,
-  renditionId: string,
-): RenditionSite | null {
-  if (presentation === null) return null;
-  for (const period of presentation.periods) {
-    for (const track of period.tracks) {
-      for (const rendition of track.renditions) {
-        if (rendition.id === renditionId) return { rendition, track, period };
-      }
-    }
-  }
-  return null;
 }
 
 /**
@@ -539,7 +490,7 @@ function reduceCommand(
       // playback until the new track's first segment lands. The element is
       // not nudged for audio: a video decoder holds stale frames, an audio
       // one does not.
-      const site = state.presentation === null ? null : findTrackSite(state.presentation, track.id);
+      const site = findTrackSite(state.presentation, track.id);
       const previousTrack = previous === undefined ? null : findTrack(state.presentation, previous);
       const flushRendition =
         site === null
@@ -758,7 +709,7 @@ function undecodable(
     for (const track of period.tracks) {
       if (track.contentType !== 'video' && track.contentType !== 'audio') continue;
       for (const r of track.renditions) {
-        if (r.codecs !== null && !decodable(`${r.mimeType}; codecs="${r.codecs}"`)) out.add(r.id);
+        if (r.codecs !== null && !decodable(typeString(r.mimeType, r.codecs))) out.add(r.id);
       }
     }
   }
@@ -1000,7 +951,7 @@ function reduceFact(
             const targetCodecs =
               targetSite === null || declared === null
                 ? buffer.codecs
-                : `${targetSite.rendition.mimeType}; codecs="${declared}"`;
+                : typeString(targetSite.rendition.mimeType, declared);
             const familyChanged =
               declared !== null &&
               codecFamily(declared) !== codecFamily(bufferCodecString(buffer.codecs));
@@ -1229,13 +1180,7 @@ function reduceFact(
       // giving exclusion and skip time to change the decision. Without
       // recovery, the same segment retries until the breaker ends it.
       if (!isCueTrack) {
-        failEffects.push({
-          kind: 'schedule',
-          token: 'kernel:retry',
-          delayMs: cfg.baseRetryDelayMs,
-          // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-          then: { type: 'TICK', token: 'kernel:retry' },
-        });
+        failEffects.push(tickAfter('kernel:retry', cfg.baseRetryDelayMs));
       }
       return [{ ...state, cues, scheduling: { ...state.scheduling, inflight } }, failEffects];
     }
@@ -1349,13 +1294,7 @@ function reduceFact(
       if (neverAppended && !fatal) {
         // Nothing else re-drives: the refetch waits the same backoff a
         // failed fetch does, so recovery can change the decision first.
-        effects.push({
-          kind: 'schedule',
-          token: 'kernel:retry',
-          delayMs: cfg.baseRetryDelayMs,
-          // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-          then: { type: 'TICK', token: 'kernel:retry' },
-        });
+        effects.push(tickAfter('kernel:retry', cfg.baseRetryDelayMs));
       }
       let inflight: ReadonlyMap<string, InflightRequest> = state.scheduling.inflight;
       if (fatal) {
@@ -1631,10 +1570,7 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
     // fetch is in flight the SOURCEBUFFER_CREATED fact is on its way, so
     // re-requesting every tick would spam the trace.
     if (!state.buffers.has(sbId) && inflight.length === 0) {
-      const codecs =
-        rendition.codecs === null
-          ? rendition.mimeType
-          : `${rendition.mimeType}; codecs="${rendition.codecs}"`;
+      const codecs = typeString(rendition.mimeType, rendition.codecs);
       effects.push({ kind: 'createSourceBuffer', sbId, codecs });
     }
     // Init before media, always: while the buffer's init is not this

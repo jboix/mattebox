@@ -4,6 +4,7 @@
  * caller's stages; mattebox.from() finds an engine from its element. One
  * name for both, so the ESM import and the CDN global read the same.
  */
+
 import { createBus } from './kernel/bus.js';
 import type { HookRegistry } from './kernel/context.js';
 import { createEffectRunner } from './kernel/effects.js';
@@ -12,8 +13,9 @@ import { compose } from './kernel/loader.js';
 import { normalizeMimeType } from './kernel/mime.js';
 import { createMseController, decodable } from './kernel/mse.js';
 import { createSegmentPreparer } from './kernel/prepare.js';
+import { findTrackSite } from './kernel/presentation.js';
 import { createReducer, initialState, resolveConfig } from './kernel/reducer.js';
-import { createArbiter } from './kernel/rendition-select.js';
+import { availableGroups, createArbiter } from './kernel/rendition-select.js';
 import { createMseSink } from './kernel/sinks/mse-sink.js';
 import type { CueSink } from './kernel/sinks/text-track-sink.js';
 import { createTrackRegistry } from './kernel/track-registry.js';
@@ -148,12 +150,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
   }
 
   function contentTypeOfTrack(trackId: string): ContentType | null {
-    for (const period of bus.getState().presentation?.periods ?? []) {
-      for (const track of period.tracks) {
-        if (track.id === trackId) return track.contentType;
-      }
-    }
-    return null;
+    return findTrackSite(bus.getState().presentation, trackId)?.track.contentType ?? null;
   }
 
   runner.register('emitCues', (effect) => {
@@ -254,19 +251,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
         current: state.quality.active,
         couplings: state.presentation?.couplings ?? [],
         activeTracks: state.tracks.active,
-        availableGroups: (() => {
-          const groups = new Set<string>();
-          for (const period of state.presentation?.periods ?? []) {
-            for (const track of period.tracks) {
-              if (track.contentType !== 'audio' && track.contentType !== 'text') continue;
-              const colon = track.id.indexOf(':');
-              groups.add(
-                `${track.contentType}:${colon === -1 ? track.id : track.id.slice(0, colon)}`,
-              );
-            }
-          }
-          return groups;
-        })(),
+        availableGroups: availableGroups(state),
         telemetry: {
           throughputEwma: state.stats.throughputEwma,
           throughputFastEwma: state.stats.throughputFastEwma,

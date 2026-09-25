@@ -11,11 +11,13 @@
  * scheduler expects it. Sample durations still come from the PES timeline.
  */
 
-import { parseAdts } from '../adts.js';
+import { adtsFragment, parseAdts } from '../adts.js';
 import type { CcPacket } from '../captions.js';
 import {
   type AudioTrackConfig,
+  concat,
   type Sample,
+  sequenceNumberFor,
   type TrackConfig,
   type TrackFragment,
   type VideoTrackConfig,
@@ -58,18 +60,6 @@ export interface TransmuxResult {
   readonly captions: readonly CcPacket[];
   /** True when the input carried an audio stream the `tracks` selection left out. */
   readonly droppedAudio: boolean;
-}
-
-function concat(parts: readonly Uint8Array[]): Uint8Array {
-  let length = 0;
-  for (const part of parts) length += part.byteLength;
-  const out = new Uint8Array(length);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.byteLength;
-  }
-  return out;
 }
 
 interface VideoResult {
@@ -218,24 +208,9 @@ function buildAudio(
   presentationStart: number,
 ): AudioResult | null {
   if (packets.length === 0) return null;
-  const adts = parseAdts(concat(packets.map((p) => p.data)));
+  const adts = parseAdts(concat(...packets.map((p) => p.data)));
   if (adts.frames.length === 0) return null;
-  const base = Math.round(presentationStart * adts.sampleRate);
-  const samples: Sample[] = adts.frames.map((frame) => ({
-    data: frame.data,
-    duration: 1024,
-    cts: 0,
-    isKeyframe: true,
-  }));
-  const config: AudioTrackConfig = {
-    id: AUDIO_TRACK_ID,
-    kind: 'audio',
-    timescale: adts.sampleRate,
-    audioObjectType: adts.audioObjectType,
-    samplingFrequencyIndex: adts.samplingFrequencyIndex,
-    channelConfig: adts.channelConfig,
-  };
-  return { config, fragment: { trackId: AUDIO_TRACK_ID, baseMediaDecodeTime: base, samples } };
+  return adtsFragment(adts, AUDIO_TRACK_ID, presentationStart);
 }
 
 export function transmux(
@@ -271,13 +246,10 @@ export function transmux(
     configs.push(audio.config);
     fragments.push(audio.fragment);
   }
-  // The mfhd sequence number derives from the presentation start so it is
-  // deterministic per segment and rises across a presentation.
-  const sequenceNumber = Math.max(1, Math.round(presentationStart) + 1);
   const init = writeInitSegment(configs);
-  const media = writeMediaSegment(sequenceNumber, fragments);
+  const media = writeMediaSegment(sequenceNumberFor(presentationStart), fragments);
   return {
-    bytes: concat([init, media]),
+    bytes: concat(init, media),
     notTransportStream: false,
     empty: false,
     captions: video?.captions ?? [],

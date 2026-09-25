@@ -9,6 +9,8 @@
  * reproduces every decision. The emergency path lives in a slice reducer
  * for the same reason.
  */
+import { scheduled } from '../../kernel/effects.js';
+import { findRendition } from '../../kernel/presentation.js';
 import { canSwitchTo } from '../../kernel/rendition-select.js';
 import type { Rendition } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
@@ -93,20 +95,14 @@ const INITIAL: AbrSlice = { emergencyCap: null };
 
 /** Loops a command back into the bus through a zero-delay schedule effect. */
 function feed(message: Message): Effect {
-  // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-  return { kind: 'schedule', token: 'abr:emergency', delayMs: 0, then: message };
+  return scheduled('abr:emergency', message);
 }
 
 function activeBitrate(kernel: Readonly<KernelState>): number | null {
-  if (kernel.presentation === null || kernel.quality.active === null) return null;
-  for (const period of kernel.presentation.periods) {
-    for (const track of period.tracks) {
-      for (const rendition of track.renditions) {
-        if (rendition.id === kernel.quality.active) return rendition.bitrate;
-      }
-    }
-  }
-  return null;
+  const active = kernel.quality.active;
+  return active === null
+    ? null
+    : (findRendition(kernel.presentation, active)?.rendition.bitrate ?? null);
 }
 
 /** The track ABR steers: video where there is one, else audio. */

@@ -19,8 +19,11 @@ export interface CcTriple {
   readonly b: number;
 }
 
-/** Strips emulation-prevention bytes (00 00 03 -> 00 00) so payload sizes read true. */
-function toRbsp(nal: Uint8Array, start: number): Uint8Array {
+/**
+ * Strips emulation-prevention bytes (00 00 03 -> 00 00) from a NAL unit
+ * past its `start`-byte header, so payload sizes and bit reads come out true.
+ */
+export function toRbsp(nal: Uint8Array, start = 1): Uint8Array {
   const out = new Uint8Array(nal.byteLength - start);
   let count = 0;
   let zeros = 0;

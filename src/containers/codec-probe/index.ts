@@ -4,9 +4,18 @@
  * strings; when the manifest and the probe disagree, the probe wins,
  * because the probe read the actual bytes the decoder will see.
  */
+import { typeString } from '../../kernel/mime.js';
 import type { MatteboxError } from '../../types/error.js';
 import type { BoxRef } from '../mp4-box/index.js';
-import { findBoxes, fullBox, walkBoxes } from '../mp4-box/index.js';
+import {
+  findBoxes,
+  fourcc,
+  fullBox,
+  sampleEntries,
+  VISUAL_ENTRY_HEADER,
+  viewOf,
+  walkBoxes,
+} from '../mp4-box/index.js';
 
 export interface ProbedTrack {
   /** The stsd sample entry fourcc, such as 'avc1' or 'mp4a'. */
@@ -27,8 +36,7 @@ export interface ProbeResult {
 const VIDEO_FORMATS = new Set(['avc1', 'avc3', 'hvc1', 'hev1', 'vp09', 'av01']);
 const AUDIO_FORMATS = new Set(['mp4a', 'Opus', 'opus', 'ac-3', 'ec-3']);
 
-/** Sample entry fixed-part sizes before the codec config child boxes. */
-const VISUAL_ENTRY_HEADER = 8 + 70;
+/** AudioSampleEntry fixed part (8 + 20 bytes) before its codec config child boxes. */
 const AUDIO_ENTRY_HEADER = 8 + 20;
 
 function hex(byte: number): string {
@@ -40,17 +48,11 @@ function childBox(entry: Uint8Array, fixedOffset: number, type: string): Uint8Ar
   // versioned entry shifts them; scan forward conservatively.
   for (const offset of [fixedOffset, fixedOffset + 16]) {
     let at = offset;
-    const view = new DataView(entry.buffer, entry.byteOffset, entry.byteLength);
+    const view = viewOf(entry);
     while (at + 8 <= entry.byteLength) {
       const size = view.getUint32(at);
       if (size < 8 || at + size > entry.byteLength) break;
-      const name = String.fromCharCode(
-        entry[at + 4] ?? 0,
-        entry[at + 5] ?? 0,
-        entry[at + 6] ?? 0,
-        entry[at + 7] ?? 0,
-      );
-      if (name === type) return entry.subarray(at + 8, at + size);
+      if (fourcc(entry, at + 4) === type) return entry.subarray(at + 8, at + size);
       at += size;
     }
   }
@@ -212,31 +214,14 @@ export function probeInitSegment(init: Uint8Array): ProbeResult {
   const tracks: ProbedTrack[] = [];
   const stsds: readonly BoxRef[] = findBoxes(init, 'moov/trak/mdia/minf/stbl/stsd');
   for (const stsd of stsds) {
-    const header = fullBox(stsd.payload);
-    if (header === null || header.body.byteLength < 4) continue;
-    const view = new DataView(header.body.buffer, header.body.byteOffset, header.body.byteLength);
-    const count = view.getUint32(0);
-    let at = 4;
-    for (let i = 0; i < count && at + 8 <= header.body.byteLength; i += 1) {
-      const size = view.getUint32(at);
-      if (size < 8 || at + size > header.body.byteLength) break;
-      const format = String.fromCharCode(
-        header.body[at + 4] ?? 0,
-        header.body[at + 5] ?? 0,
-        header.body[at + 6] ?? 0,
-        header.body[at + 7] ?? 0,
-      );
-      tracks.push(deriveTrack(format, header.body.subarray(at + 8, at + size)));
-      at += size;
-    }
+    for (const entry of sampleEntries(stsd.payload))
+      tracks.push(deriveTrack(entry.format, entry.body));
   }
 
   const codecs = tracks.map((t) => t.codec).filter((c): c is string => c !== null);
   const hasVideo = tracks.some((t) => t.kind === 'video');
   const mimeType =
-    codecs.length === 0
-      ? null
-      : `${hasVideo ? 'video' : 'audio'}/mp4; codecs="${codecs.join(',')}"`;
+    codecs.length === 0 ? null : typeString(hasVideo ? 'video/mp4' : 'audio/mp4', codecs.join(','));
   return { tracks, codecs, mimeType, error: null };
 }
 

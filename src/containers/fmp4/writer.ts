@@ -105,7 +105,8 @@ function u64(value: number): Uint8Array {
   return concat(u32(Math.floor(value / 0x1_0000_0000)), u32(value >>> 0));
 }
 
-function concat(...parts: readonly Uint8Array[]): Uint8Array {
+/** The parts joined into one buffer. */
+export function concat(...parts: readonly Uint8Array[]): Uint8Array {
   let length = 0;
   for (const part of parts) length += part.byteLength;
   const out = new Uint8Array(length);
@@ -318,6 +319,14 @@ function mvex(configs: readonly TrackConfig[]): Uint8Array {
 }
 
 /** The init segment: ftyp then a moov describing every track. */
+/**
+ * The mfhd sequence number for a segment starting at `presentationStart`
+ * seconds: deterministic per segment and rising across a presentation.
+ */
+export function sequenceNumberFor(presentationStart: number): number {
+  return Math.max(1, Math.round(presentationStart) + 1);
+}
+
 export function writeInitSegment(configs: readonly TrackConfig[]): Uint8Array {
   let maxId = 0;
   for (const config of configs) maxId = Math.max(maxId, config.id);

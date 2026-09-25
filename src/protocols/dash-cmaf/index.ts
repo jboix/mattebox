@@ -12,19 +12,17 @@
  * resolved segments back as a PLAYLIST_REFRESHED the kernel merges.
  */
 
+import { scheduled } from '../../kernel/effects.js';
 import { normalizeMimeType } from '../../kernel/mime.js';
-import { ladderNeighbours } from '../../kernel/rendition-select.js';
+import { findRendition } from '../../kernel/presentation.js';
+import { activeRenditions } from '../../kernel/rendition-select.js';
+import { isUnresolved } from '../../kernel/timeline.js';
 import type { MatteboxError } from '../../types/error.js';
-import type {
-  Presentation,
-  Rendition,
-  SegmentAddressing,
-  SidxSegments,
-  Track,
-} from '../../types/ir.js';
+import type { Rendition, SegmentAddressing, SidxSegments } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
+import { manifestFact } from '../adapter-shared.js';
 import { parse, sidxToSegments } from './parse.js';
 
 const INDEX_TOKEN = 'dash:idx:';
@@ -34,11 +32,8 @@ const MANIFEST_TYPES: readonly string[] = ['application/dash+xml'];
 
 /** Unresolved on-demand addressing, or null for an explicit list or template. */
 function asSidx(addressing: SegmentAddressing | undefined): SidxSegments | null {
-  if (addressing === undefined || Array.isArray(addressing)) return null;
-  const candidate = addressing as IndexedOrSidx;
-  return candidate.kind === 'sidx' ? (candidate as SidxSegments) : null;
+  return addressing !== undefined && isUnresolved(addressing) ? addressing : null;
 }
-type IndexedOrSidx = { readonly kind: string };
 
 interface DashSlice {
   readonly manifestUrl: string | null;
@@ -71,26 +66,6 @@ function claims(state: DashSlice, text: string): boolean {
   return text.trimStart().startsWith('<');
 }
 
-function findRendition(presentation: Presentation, renditionId: string): Rendition | null {
-  for (const period of presentation.periods) {
-    for (const track of period.tracks) {
-      for (const rendition of track.renditions) {
-        if (rendition.id === renditionId) return rendition;
-      }
-    }
-  }
-  return null;
-}
-
-function findTrackOf(presentation: Presentation, renditionId: string): Track | null {
-  for (const period of presentation.periods) {
-    for (const track of period.tracks) {
-      if (track.renditions.some((r) => r.id === renditionId)) return track;
-    }
-  }
-  return null;
-}
-
 /**
  * The renditions whose sidx index the selection needs and this slice has
  * not asked for: the playing video rendition and its ladder neighbours, and
@@ -102,35 +77,20 @@ function findTrackOf(presentation: Presentation, renditionId: string): Track | n
  * it happens, while the buffer plays.
  */
 function neededIndexes(state: DashSlice, kernel: Readonly<KernelState>): readonly Rendition[] {
-  const presentation = kernel.presentation;
-  if (presentation === null) return [];
   const asked = new Set(Object.values(state.pending));
   const needed: Rendition[] = [];
-  for (const contentType of ['video', 'audio', 'text'] as const) {
-    const trackId = kernel.tracks.active.get(contentType);
-    if (trackId === undefined) continue;
-    for (const period of presentation.periods) {
-      for (const track of period.tracks) {
-        if (track.id !== trackId) continue;
-        const candidates =
-          contentType === 'video'
-            ? ladderNeighbours(track.renditions, kernel.quality.active, kernel.quality.constraints)
-            : track.renditions;
-        for (const rendition of candidates) {
-          if (asSidx(rendition.segments) === null) continue;
-          if (asked.has(rendition.id) || rendition.id in state.failed) continue;
-          needed.push(rendition);
-        }
-      }
-    }
+  const types = ['video', 'audio', 'text'] as const;
+  for (const { rendition } of activeRenditions(kernel, types, kernel.quality.active)) {
+    if (asSidx(rendition.segments) === null) continue;
+    if (asked.has(rendition.id) || rendition.id in state.failed) continue;
+    needed.push(rendition);
   }
   return needed;
 }
 
 /** Loops a message back into the bus through a zero-delay schedule effect. */
 function feed(message: Message): Effect {
-  // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-  return { kind: 'schedule', token: 'dash:loopback', delayMs: 0, then: message };
+  return scheduled('dash:loopback', message);
 }
 
 /**
@@ -149,7 +109,7 @@ function unavailable(
   const next = { ...state, failed };
   const presentation = kernel.presentation;
   if (presentation === null) return [next, []];
-  const track = findTrackOf(presentation, renditionId);
+  const track = findRendition(presentation, renditionId)?.track ?? null;
   const media = track?.contentType === 'video' || track?.contentType === 'audio';
   if (track !== null && media && track.renditions.every((r) => r.id in failed)) {
     return [next, [feed({ type: 'MANIFEST_FAILED', error: { ...error, fatal: true } })]];
@@ -184,27 +144,8 @@ const reduceDash: SliceReducer<DashSlice> = (slice, msg, kernel) => {
   }
 
   if (msg.type === 'SEGMENT_LOADED' && msg.trackId === 'manifest' && state.manifestUrl !== null) {
-    const text = new TextDecoder().decode(msg.bytes);
-    // Declining returns no effect; the kernel reports bytes nobody claims.
-    if (!claims(state, text)) return [state, []];
-    const result = parse(text, state.manifestUrl);
-    if (result.presentation === null) {
-      return [
-        state,
-        [
-          feed({
-            type: 'MANIFEST_FAILED',
-            error: result.error ?? {
-              category: 'manifest',
-              code: 'MANIFEST_PARSE_FAILED',
-              fatal: true,
-              recoverable: false,
-            },
-          }),
-        ],
-      ];
-    }
-    return [state, [feed({ type: 'MANIFEST_LOADED', presentation: result.presentation })]];
+    const fact = manifestFact(msg.bytes, state.manifestUrl, (text) => claims(state, text), parse);
+    return [state, fact === null ? [] : [feed(fact)]];
   }
 
   let next = state;
@@ -227,7 +168,7 @@ const reduceDash: SliceReducer<DashSlice> = (slice, msg, kernel) => {
     const sidx =
       kernel.presentation === null
         ? null
-        : asSidx(findRendition(kernel.presentation, renditionId)?.segments);
+        : asSidx(findRendition(kernel.presentation, renditionId)?.rendition.segments);
     const segments = sidx === null ? [] : sidxToSegments(new Uint8Array(msg.bytes), sidx);
     if (sidx !== null && segments.length > 0) {
       // Stays pending until the merge lands.

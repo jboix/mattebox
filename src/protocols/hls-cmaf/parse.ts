@@ -25,14 +25,13 @@ import type {
   TileGrid,
   Track,
 } from '../../types/ir.js';
+import type { ParseResult } from '../adapter-shared.js';
+import { manifestError, resolve } from '../adapter-shared.js';
 import { dimensions } from '../dimensions.js';
 import type { TagLine } from './lexer.js';
 import { lex } from './lexer.js';
 
-export interface ParseResult {
-  readonly presentation: Presentation | null;
-  readonly error: MatteboxError | null;
-}
+export type { ParseResult } from '../adapter-shared.js';
 
 export interface MediaPlaylist {
   readonly segments: readonly Segment[];
@@ -48,28 +47,10 @@ export interface MediaPlaylist {
   readonly tiles?: TileGrid;
 }
 
-export interface MediaPlaylistResult {
-  readonly playlist: MediaPlaylist | null;
-  readonly error: MatteboxError | null;
-}
-
-function manifestError(reason: string): MatteboxError {
-  return {
-    category: 'manifest',
-    code: 'MANIFEST_PARSE_FAILED',
-    fatal: true,
-    recoverable: false,
-    context: { reason },
-  };
-}
-
-function resolve(uri: string, baseUrl: string): string {
-  try {
-    return new URL(uri, baseUrl).href;
-  } catch {
-    return uri;
-  }
-}
+/** A media playlist parse either yields the playlist or says why not. */
+export type MediaPlaylistResult =
+  | { readonly playlist: MediaPlaylist; readonly error: null }
+  | { readonly playlist: null; readonly error: MatteboxError };
 
 /** n@o or n (continuing after the previous range). RFC 8216 §4.3.2.2. */
 function parseByteRange(value: string, previousEnd: number | null): ByteRange | null {

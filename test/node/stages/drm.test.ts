@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createReducer, initialState } from '../../../src/kernel/reducer.js';
 import {
   keySystemHandlers,
@@ -6,12 +6,14 @@ import {
   registerKeySystem,
 } from '../../../src/stages/drm-shared.js';
 import { unwrapPlayReadyResponse } from '../../../src/stages/eme-cenc/index.js';
+import emeCore from '../../../src/stages/eme-core/index.js';
 import {
   buildSpcRequest,
   contentIdFromSkd,
   parseCkcResponse,
 } from '../../../src/stages/eme-fairplay/index.js';
 import type { Presentation } from '../../../src/types/ir.js';
+import type { StageContext } from '../../../src/types/stage.js';
 
 function bytes(text: string): ArrayBuffer {
   return new TextEncoder().encode(text).buffer as ArrayBuffer;
@@ -179,5 +181,65 @@ describe('the manifest DRM route', () => {
     };
     const [, fx] = reduce(state, { type: 'MANIFEST_LOADED', presentation: unprotected });
     expect(fx.some((e) => e.kind === 'emit' && e.event === 'presentation:protection')).toBe(false);
+  });
+});
+
+describe('eme-core certificate fetch', () => {
+  it('an HTTP error is not handed to the CDM and names itself in the failure', async () => {
+    const SYSTEM_ID = '94ce86fb-07ff-4f43-adb8-93d2fa968ca2';
+    registerKeySystem({
+      keySystem: 'com.example.certificate-test',
+      systemIds: [SYSTEM_ID],
+      initDataTypes: ['sinf'],
+      buildLicenseRequest: (m) => m,
+      parseLicenseResponse: (r) => r,
+      fairplay: { certificateUrl: 'https://cdn.example/cert.der', contentId: () => '' },
+    });
+    const setServerCertificate = vi.fn(async () => true);
+    const original = navigator.requestMediaKeySystemAccess;
+    Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+      configurable: true,
+      value: async (keySystem: string) => {
+        if (keySystem !== 'com.example.certificate-test') throw new Error('unsupported');
+        return { createMediaKeys: async () => ({ setServerCertificate }) };
+      },
+    });
+    try {
+      const errors: unknown[] = [];
+      let onProtection: ((payload: unknown) => void) | null = null;
+      emeCore().install({
+        element: { addEventListener: () => undefined, removeEventListener: () => undefined },
+        registerNamespace: () => undefined,
+        request: async () => new Response('not found', { status: 404 }),
+        emit: (event: string, payload: unknown) => {
+          if (event === 'error') errors.push(payload);
+        },
+        on: (event: string, fn: (payload: unknown) => void) => {
+          if (event === 'presentation:protection') onProtection = fn;
+          return () => undefined;
+        },
+      } as unknown as StageContext);
+      (onProtection as unknown as (payload: unknown) => void)([
+        {
+          systemId: SYSTEM_ID,
+          scheme: null,
+          keyId: null,
+          licenseUrl: null,
+          initData: null,
+          initDataType: null,
+        },
+      ]);
+      await vi.waitFor(() => expect(errors).toHaveLength(1));
+      expect(setServerCertificate).not.toHaveBeenCalled();
+      expect(errors[0]).toMatchObject({
+        code: 'DRM_KEY_SYSTEM_UNAVAILABLE',
+        context: { message: expect.stringContaining('HTTP 404') },
+      });
+    } finally {
+      Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+        configurable: true,
+        value: original,
+      });
+    }
   });
 });

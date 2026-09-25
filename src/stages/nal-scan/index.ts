@@ -13,7 +13,17 @@
  */
 import type { CcPacket } from '../../containers/captions.js';
 import { captionsWanted, deliverCaptions } from '../../containers/captions.js';
-import { findBox, findBoxes, fullBox, parseTfdt } from '../../containers/mp4-box/index.js';
+import {
+  findBox,
+  findBoxes,
+  fourcc,
+  fullBox,
+  parseTfdt,
+  sampleEntries,
+  trackInfo,
+  VISUAL_ENTRY_HEADER,
+  viewOf,
+} from '../../containers/mp4-box/index.js';
 import { type CcTriple, ccTriplesFromSei } from '../../containers/sei.js';
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage } from '../../types/stage.js';
@@ -24,9 +34,6 @@ import type { Stage } from '../../types/stage.js';
  * its own captions.
  */
 const SCAN_ORDER = 50;
-
-/** SampleEntry (8 bytes) plus VisualSampleEntry (70 bytes). ISO/IEC 14496-12 §12.1.3. */
-const VISUAL_ENTRY_HEADER = 78;
 
 /** H.264 SEI. ITU-T H.264 Table 7-1. */
 const AVC_SEI = 6;
@@ -57,28 +64,6 @@ interface VideoTrack {
   readonly defaultSize: number;
 }
 
-function view(bytes: Uint8Array): DataView {
-  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-}
-
-function fourcc(bytes: Uint8Array, at: number): string {
-  return String.fromCharCode(
-    bytes[at] ?? 0,
-    bytes[at + 1] ?? 0,
-    bytes[at + 2] ?? 0,
-    bytes[at + 3] ?? 0,
-  );
-}
-
-/** The format and body of the first stsd sample entry. */
-function sampleEntry(stsd: Uint8Array): { format: string; body: Uint8Array } | null {
-  const body = fullBox(stsd)?.body;
-  if (body === undefined || body.byteLength < 12) return null;
-  const size = view(body).getUint32(4);
-  if (size < 8 || 4 + size > body.byteLength) return null;
-  return { format: fourcc(body, 8), body: body.subarray(12, 4 + size) };
-}
-
 /** The H.264 and HEVC tracks of an init segment, by track ID. Other codecs carry no SEI. */
 function videoTracks(init: Uint8Array): Map<number, VideoTrack> {
   const defaults = new Map<number, { duration: number; size: number }>();
@@ -86,17 +71,16 @@ function videoTracks(init: Uint8Array): Map<number, VideoTrack> {
   for (const trex of mvex === null ? [] : findBoxes(mvex.payload, 'trex')) {
     const body = fullBox(trex.payload)?.body;
     if (body === undefined || body.byteLength < 16) continue;
-    const v = view(body);
+    const v = viewOf(body);
     defaults.set(v.getUint32(0), { duration: v.getUint32(8), size: v.getUint32(12) });
   }
 
   const tracks = new Map<number, VideoTrack>();
   for (const trak of findBoxes(init, 'moov/trak')) {
-    const tkhd = findBox(trak.payload, 'tkhd');
-    const mdhd = findBox(trak.payload, 'mdia/mdhd');
+    const info = trackInfo(trak.payload);
     const stsd = findBox(trak.payload, 'mdia/minf/stbl/stsd');
-    const entry = stsd === null ? null : sampleEntry(stsd.payload);
-    if (tkhd === null || mdhd === null || entry === null) continue;
+    const entry = stsd === null ? undefined : sampleEntries(stsd.payload)[0];
+    if (info === null || entry === undefined) continue;
     if (entry.body.byteLength < VISUAL_ENTRY_HEADER) continue;
     const children = entry.body.subarray(VISUAL_ENTRY_HEADER);
 
@@ -120,11 +104,7 @@ function videoTracks(init: Uint8Array): Map<number, VideoTrack> {
         ? ((config.payload[lengthAt] as number) & 0x03) + 1
         : 4;
 
-    const trackAt = tkhd.payload[0] === 1 ? 20 : 12;
-    const scaleAt = mdhd.payload[0] === 1 ? 20 : 12;
-    if (tkhd.payload.byteLength < trackAt + 4 || mdhd.payload.byteLength < scaleAt + 4) continue;
-    const trackId = view(tkhd.payload).getUint32(trackAt);
-    const timescale = view(mdhd.payload).getUint32(scaleAt);
+    const { trackId, timescale } = info;
     if (timescale === 0) continue;
     const fallback = defaults.get(trackId);
     tracks.set(trackId, {
@@ -180,7 +160,7 @@ function captionPackets(
       const tfhdBox = findBox(traf.payload, 'tfhd');
       const tfhd = tfhdBox === null ? null : fullBox(tfhdBox.payload);
       if (tfhd === null || tfhd.body.byteLength < 4) continue;
-      const tfhdView = view(tfhd.body);
+      const tfhdView = viewOf(tfhd.body);
       const trackId = tfhdView.getUint32(0);
       const track = tracks.get(trackId);
       let at = 4;
@@ -208,7 +188,7 @@ function captionPackets(
       for (const trunBox of findBoxes(traf.payload, 'trun')) {
         const trun = fullBox(trunBox.payload);
         if (trun === null || trun.body.byteLength < 4) continue;
-        const trunView = view(trun.body);
+        const trunView = viewOf(trun.body);
         const count = trunView.getUint32(0);
         let p = 4;
         if (trun.flags & TRUN_DATA_OFFSET) {

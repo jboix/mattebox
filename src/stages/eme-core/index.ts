@@ -15,6 +15,7 @@
  * Widevine, PlayReady, and FairPlay arrive as handlers eme-cenc and
  * eme-fairplay register through drm-shared.
  */
+import { bytesToBase64 } from '../../kernel/base64.js';
 import type { ProtectionScheme } from '../../types/ir.js';
 import type { Stage } from '../../types/stage.js';
 import type { KeySystemHandler } from '../drm-shared.js';
@@ -47,12 +48,6 @@ declare module '../../index.js' {
 }
 
 const CLEARKEY = 'org.w3.clearkey';
-
-function bytesToBase64Url(bytes: Uint8Array): string {
-  let binary = '';
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
 
 /** A ClearKey handler: the license is a JSON the app answers from its keys. */
 function clearKeyHandler(clearKeys: Readonly<Record<string, string>>): KeySystemHandler {
@@ -159,6 +154,7 @@ export default function emeCore(options: EmeOptions = {}): Stage {
           preferredSystemIds.length > 0
             ? ordered.filter((h) => h.systemIds.some((id) => preferredSystemIds.includes(id)))
             : ordered;
+        let lastError: unknown;
         for (const candidate of candidates.length > 0 ? candidates : ordered) {
           try {
             const access = await navigator.requestMediaKeySystemAccess(
@@ -168,10 +164,11 @@ export default function emeCore(options: EmeOptions = {}): Stage {
             const keys = await access.createMediaKeys();
             if (disposed) return false;
             if (candidate.fairplay?.certificateUrl !== undefined) {
-              const cert = await ctx
-                .request(candidate.fairplay.certificateUrl, {})
-                .then((r) => r.arrayBuffer());
-              await keys.setServerCertificate(cert);
+              const url = candidate.fairplay.certificateUrl;
+              const response = await ctx.request(url, {});
+              // An error page is not a certificate; the CDM would reject it with no reason.
+              if (!response.ok) throw new Error(`certificate ${url}: HTTP ${response.status}`);
+              await keys.setServerCertificate(await response.arrayBuffer());
             }
             await element.setMediaKeys(keys);
             mediaKeys = keys;
@@ -179,18 +176,19 @@ export default function emeCore(options: EmeOptions = {}): Stage {
             handler = candidate;
             ctx.emit('drm:keysystem', { keySystem });
             return true;
-          } catch {
-            // Try the next candidate.
+          } catch (err) {
+            // Try the next candidate; the last reason goes out with the failure.
+            lastError = err;
           }
         }
-        fail('DRM_KEY_SYSTEM_UNAVAILABLE', false);
+        fail('DRM_KEY_SYSTEM_UNAVAILABLE', false, lastError);
         return false;
       }
 
       /** Opens a session for one init data blob, deduped by key id. */
       async function openSession(initDataType: string, initData: ArrayBuffer): Promise<void> {
         if (mediaKeys === null || handler === null || disposed) return;
-        const fingerprint = `${initDataType}:${bytesToBase64Url(new Uint8Array(initData))}`;
+        const fingerprint = `${initDataType}:${bytesToBase64(new Uint8Array(initData), true)}`;
         if (initDataSeen.has(fingerprint)) return;
         initDataSeen.add(fingerprint);
         let session: MediaKeySession;
@@ -249,7 +247,7 @@ export default function emeCore(options: EmeOptions = {}): Stage {
 
       function onKeyStatus(session: MediaKeySession): void {
         session.keyStatuses.forEach((status, keyIdBuffer) => {
-          const keyId = bytesToBase64Url(new Uint8Array(keyIdBuffer as ArrayBuffer));
+          const keyId = bytesToBase64(new Uint8Array(keyIdBuffer as ArrayBuffer), true);
           statuses.set(keyId, status);
           sessionsByKey.set(keyId, session);
           ctx.emit('drm:keystatus', { keyId, status });

@@ -13,6 +13,11 @@ export function normalizeMimeType(value: string): string {
   return (semicolon === -1 ? value : value.slice(0, semicolon)).trim().toLowerCase();
 }
 
+/** The full MSE type for a MIME type and its codecs: `video/mp4; codecs="avc1.42c01e"`, or the bare MIME type. */
+export function typeString(mimeType: string, codecs: string | null): string {
+  return codecs === null ? mimeType : `${mimeType}; codecs="${codecs}"`;
+}
+
 /** True for a capability string that names a manifest format: a MIME type, the only capability strings containing '/'. */
 export function isManifestType(capability: string): boolean {
   return capability.includes('/');

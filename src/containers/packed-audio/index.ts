@@ -8,13 +8,8 @@
  */
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage } from '../../types/stage.js';
-import { parseAdts, SAMPLES_PER_FRAME } from '../adts.js';
-import {
-  type AudioTrackConfig,
-  type Sample,
-  writeInitSegment,
-  writeMediaSegment,
-} from '../fmp4/writer.js';
+import { adtsFragment, parseAdts } from '../adts.js';
+import { concat, sequenceNumberFor, writeInitSegment, writeMediaSegment } from '../fmp4/writer.js';
 import { id3TagLength } from '../id3.js';
 
 const AUDIO_TRACK_ID = 1;
@@ -35,30 +30,11 @@ export function packAudio(data: Uint8Array, presentationStart: number): Uint8Arr
   const offset = id3TagLength(data, 0);
   const adts = parseAdts(data.subarray(offset));
   if (adts.frames.length === 0) return null;
-  const config: AudioTrackConfig = {
-    id: AUDIO_TRACK_ID,
-    kind: 'audio',
-    timescale: adts.sampleRate,
-    audioObjectType: adts.audioObjectType,
-    samplingFrequencyIndex: adts.samplingFrequencyIndex,
-    channelConfig: adts.channelConfig,
-  };
-  const samples: Sample[] = adts.frames.map((frame) => ({
-    data: frame.data,
-    duration: SAMPLES_PER_FRAME,
-    cts: 0,
-    isKeyframe: true,
-  }));
-  const base = Math.round(presentationStart * adts.sampleRate);
-  const sequenceNumber = Math.max(1, Math.round(presentationStart) + 1);
-  const init = writeInitSegment([config]);
-  const media = writeMediaSegment(sequenceNumber, [
-    { trackId: AUDIO_TRACK_ID, baseMediaDecodeTime: base, samples },
-  ]);
-  const out = new Uint8Array(init.byteLength + media.byteLength);
-  out.set(init, 0);
-  out.set(media, init.byteLength);
-  return out;
+  const { config, fragment } = adtsFragment(adts, AUDIO_TRACK_ID, presentationStart);
+  return concat(
+    writeInitSegment([config]),
+    writeMediaSegment(sequenceNumberFor(presentationStart), [fragment]),
+  );
 }
 
 export default function packedAudio(): Stage {

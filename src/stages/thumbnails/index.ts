@@ -14,10 +14,12 @@
  * media playlist; images load only when the app asks through `image()`,
  * through the transport seam, so request hooks (auth, cmcd, steering) apply.
  */
-import { segmentAt, segmentAtTime } from '../../kernel/timeline.js';
-import type { IndexedSegments, Period, Rendition, Segment, Track } from '../../types/ir.js';
+
+import { parseVtt } from '../../containers/webvtt.js';
+import { scheduled } from '../../kernel/effects.js';
+import { isIndexed, segmentAt, segmentAtTime } from '../../kernel/timeline.js';
+import type { Period, Rendition, Segment, Track } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
-import type { Effect } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
 
 /** One thumbnail: the tile's image URL and its rectangle within the sprite. */
@@ -34,35 +36,23 @@ export interface Thumbnail {
 /** Sprite sheets kept as object URLs; each holds tens of tiles. */
 const IMAGE_CACHE_SIZE = 16;
 
-function timestamp(text: string): number {
-  const parts = text.trim().split(':').map(Number);
-  const [h, m, s] = parts.length === 3 ? parts : [0, ...parts];
-  return (h ?? 0) * 3600 + (m ?? 0) * 60 + (s ?? 0);
-}
-
 /** Parses a WebVTT thumbnail track into tiles, resolving URLs against a base. */
 export function parseThumbnailTrack(text: string, baseUrl: string): Thumbnail[] {
   const thumbnails: Thumbnail[] = [];
-  const blocks = text.replace(/\r/g, '').split('\n\n');
-  for (const block of blocks) {
-    const lines = block.split('\n').filter((line) => line !== '');
-    const timing = lines.find((line) => line.includes('-->'));
-    const target = lines.find((line) => !line.includes('-->') && line !== 'WEBVTT' && line !== '');
-    if (timing === undefined || target === undefined) continue;
-    const [from, to] = timing.split('-->');
-    const start = timestamp(from ?? '');
-    const end = timestamp(to ?? '');
-    const [rawUrl, fragment] = target.split('#');
-    const url = new URL(rawUrl ?? '', baseUrl).href;
-    let [x, y, width, height] = [0, 0, 0, 0];
+  for (const cue of parseVtt(text).cues) {
+    // The cue text is the image URL, with an #xywh media fragment for a sprite tile.
+    const [rawUrl, fragment] = (cue.text ?? '').trim().split('#');
+    if (rawUrl === undefined || rawUrl === '') continue;
     const xywh = /xywh=(?:pixel:)?(\d+),(\d+),(\d+),(\d+)/.exec(fragment ?? '');
-    if (xywh !== null) {
-      x = Number(xywh[1]);
-      y = Number(xywh[2]);
-      width = Number(xywh[3]);
-      height = Number(xywh[4]);
-    }
-    thumbnails.push({ url, start, end, x, y, width, height });
+    thumbnails.push({
+      url: new URL(rawUrl, baseUrl).href,
+      start: cue.start,
+      end: cue.end,
+      x: Number(xywh?.[1] ?? 0),
+      y: Number(xywh?.[2] ?? 0),
+      width: Number(xywh?.[3] ?? 0),
+      height: Number(xywh?.[4] ?? 0),
+    });
   }
   return thumbnails;
 }
@@ -145,11 +135,10 @@ function allTiles(source: ImageSource): Thumbnail[] {
   const segments: Segment[] = [];
   if (Array.isArray(addressing)) {
     segments.push(...(addressing as readonly Segment[]));
-  } else if ((addressing as { kind: string }).kind === 'indexed') {
-    const indexed = addressing as IndexedSegments;
-    if (indexed.endSeq === null) return [];
-    for (let seq = indexed.startSeq; seq <= indexed.endSeq; seq += 1) {
-      const segment = segmentAt(indexed, seq, source.period.start);
+  } else if (isIndexed(addressing)) {
+    if (addressing.endSeq === null) return [];
+    for (let seq = addressing.startSeq; seq <= addressing.endSeq; seq += 1) {
+      const segment = segmentAt(addressing, seq, source.period.start);
       if (segment !== null) segments.push(segment);
     }
   }
@@ -170,14 +159,7 @@ const reduceThumbnails: SliceReducer<null> = (_slice, msg, kernel) => {
   for (const period of msg.presentation.periods) {
     const track = period.tracks.find((t) => t.contentType === 'image');
     if (track === undefined) continue;
-    const effect: Effect = {
-      kind: 'schedule',
-      token: 'thumbnails:select',
-      delayMs: 0,
-      // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-      then: { type: 'SELECT_TRACK', trackId: track.id },
-    };
-    return [null, [effect]];
+    return [null, [scheduled('thumbnails:select', { type: 'SELECT_TRACK', trackId: track.id })]];
   }
   return [null, []];
 };

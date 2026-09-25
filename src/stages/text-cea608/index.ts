@@ -9,7 +9,9 @@
  * the browser like any text track. The track is created on the first cue and
  * left off by default; the viewer or the app turns it on.
  */
+
 import { registerCaptionConsumer } from '../../containers/captions.js';
+import { adoptTextTrack, emptyTextTrack } from '../../kernel/sinks/text-track-sink.js';
 import type { Stage } from '../../types/stage.js';
 import { Cea608Decoder } from './decode.js';
 
@@ -29,29 +31,9 @@ export default function textCea608(): Stage {
       let track: TextTrack | null = null;
 
       /** Empties the track. `cues` reads null while disabled; hidden makes them removable. */
-      function empty(target: TextTrack): void {
-        target.mode = 'hidden';
-        const { cues } = target;
-        if (cues === null) return;
-        for (let i = cues.length - 1; i >= 0; i -= 1) {
-          const cue = cues[i];
-          if (cue !== undefined) target.removeCue(cue);
-        }
-      }
-
       function ensureTrack(): TextTrack {
         if (track === null) {
-          // The element cannot drop a TextTrack, so a previous attach on the
-          // same element (a rebuild) left one behind: adopt it, emptied,
-          // rather than add a duplicate to the browser's caption menu.
-          for (const existing of element.textTracks) {
-            if (existing.kind === 'captions' && existing.label === 'CC1') {
-              track = existing;
-              empty(track);
-              break;
-            }
-          }
-          track ??= element.addTextTrack('captions', 'CC1', 'en');
+          track = adoptTextTrack(element, 'captions', 'CC1', 'en');
           // Present but not rendered until the viewer selects it.
           track.mode = 'hidden';
         }
@@ -78,7 +60,7 @@ export default function textCea608(): Stage {
       return () => {
         unregister();
         if (track !== null) {
-          empty(track);
+          emptyTextTrack(track);
           track.mode = 'disabled';
           track = null;
         }

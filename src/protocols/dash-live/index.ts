@@ -6,6 +6,7 @@
  * UTCTiming corrects the client clock: a few seconds of drift silently
  * breaks live playback, which is why the fetch is worth its round trip.
  */
+import { scheduled, tickAfter } from '../../kernel/effects.js';
 import type { Presentation } from '../../types/ir.js';
 import type { SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
@@ -94,29 +95,16 @@ function drivesWindow(
 
 /** Loops a message back into the bus through a zero-delay schedule effect. */
 function feed(message: Message): Effect {
-  // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-  return { kind: 'schedule', token: 'dash-live:loopback', delayMs: 0, then: message };
+  return scheduled('dash-live:loopback', message);
 }
 
 function tick(delaySeconds: number): Effect {
-  return {
-    kind: 'schedule',
-    token: TICK_TOKEN,
-    delayMs: Math.max(500, delaySeconds * 1000),
-    // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-    then: { type: 'TICK', token: TICK_TOKEN },
-  };
+  return tickAfter(TICK_TOKEN, Math.max(500, delaySeconds * 1000));
 }
 
 /** The one-second clock loop that slides the window while playback stalls. */
 function clockTick(): Effect {
-  return {
-    kind: 'schedule',
-    token: CLOCK_TOKEN,
-    delayMs: 1000,
-    // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-    then: { type: 'TICK', token: CLOCK_TOKEN },
-  };
+  return tickAfter(CLOCK_TOKEN, 1000);
 }
 
 /**
@@ -270,11 +258,7 @@ const reduceDashLive: SliceReducer<DashLiveSlice> = (slice, msg, kernel) => {
     if (state.manifestUrl === null) return [state, []];
     const result = parse(new TextDecoder().decode(msg.bytes), state.manifestUrl);
     if (result.presentation === null) {
-      return reloadFailed(
-        state,
-        kernel.presentation,
-        result.error?.code ?? 'MANIFEST_PARSE_FAILED',
-      );
+      return reloadFailed(state, kernel.presentation, result.error.code);
     }
     const effects: Effect[] = [];
     let next: DashLiveSlice = { ...state, failures: 0 };

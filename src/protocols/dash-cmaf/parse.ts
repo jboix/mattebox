@@ -15,7 +15,7 @@
  * time, so a long window never becomes an array.
  */
 import { findBox, parseSidx } from '../../containers/mp4-box/index.js';
-import type { MatteboxError } from '../../types/error.js';
+import { base64ToBytes } from '../../kernel/base64.js';
 import type {
   ByteRange,
   ContentType,
@@ -30,30 +30,11 @@ import type {
   TileGrid,
   Track,
 } from '../../types/ir.js';
+import type { ParseResult } from '../adapter-shared.js';
+import { manifestError, resolve } from '../adapter-shared.js';
 import { dimensions } from '../dimensions.js';
 
-export interface ParseResult {
-  readonly presentation: Presentation | null;
-  readonly error: MatteboxError | null;
-}
-
-function manifestError(reason: string): MatteboxError {
-  return {
-    category: 'manifest',
-    code: 'MANIFEST_PARSE_FAILED',
-    fatal: true,
-    recoverable: false,
-    context: { reason },
-  };
-}
-
-function resolve(uri: string, baseUrl: string): string {
-  try {
-    return new URL(uri, baseUrl).href;
-  } catch {
-    return uri;
-  }
-}
+export type { ParseResult } from '../adapter-shared.js';
 
 /** ISO 8601 duration to seconds. Date parts use nominal day lengths. */
 export function parseDuration(value: string | null): number | null {
@@ -120,17 +101,6 @@ function applyBaseUrl(element: Element, base: string): string {
   return text !== undefined && text !== '' ? resolve(text, base) : base;
 }
 
-function base64ToArrayBuffer(text: string): ArrayBuffer | null {
-  try {
-    const binary = atob(text.replace(/\s+/g, ''));
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    return bytes.buffer;
-  } catch {
-    return null;
-  }
-}
-
 const MP4_PROTECTION = 'urn:mpeg:dash:mp4protection:2011';
 const UUID_URN = /^urn:uuid:([0-9a-f-]{36})$/i;
 
@@ -155,7 +125,8 @@ function parseProtection(elements: readonly Element[]): readonly ProtectionSchem
     const uuid = UUID_URN.exec(schemeIdUri);
     if (uuid === null) continue;
     const pssh = children(element, 'pssh')[0]?.textContent?.trim();
-    const initData = pssh !== undefined && pssh !== '' ? base64ToArrayBuffer(pssh) : null;
+    const initData =
+      pssh !== undefined && pssh !== '' ? (base64ToBytes(pssh)?.buffer ?? null) : null;
     schemes.push({
       systemId: (uuid[1] as string).toLowerCase(),
       scheme: commonScheme,

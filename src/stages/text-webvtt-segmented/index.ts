@@ -6,17 +6,11 @@
  * text-webvtt never learns HLS exists. The offset is per segment, not per
  * playlist; that is the bug this design makes unrepresentable.
  */
+import { parseTimestamp } from '../../containers/webvtt.js';
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage } from '../../types/stage.js';
 
 const MPEGTS_TIMESCALE = 90_000;
-
-function timestampToSeconds(text: string): number {
-  const [rest, millis] = text.split('.');
-  const parts = (rest ?? '').split(':').map(Number);
-  const [h, m, s] = parts.length === 3 ? parts : [0, ...parts];
-  return (h ?? 0) * 3600 + (m ?? 0) * 60 + (s ?? 0) + Number(millis ?? 0) / 1000;
-}
 
 function secondsToTimestamp(seconds: number): string {
   const clamped = Math.max(0, seconds);
@@ -36,7 +30,7 @@ export function shiftTimestampMap(text: string): string {
   let mpegts = 0;
   for (const part of (header[1] as string).split(',')) {
     const [key, value] = splitOnce(part.trim());
-    if (key === 'LOCAL') local = timestampToSeconds(value);
+    if (key === 'LOCAL') local = parseTimestamp(value) ?? 0;
     if (key === 'MPEGTS') mpegts = Number(value);
   }
   const offset = mpegts / MPEGTS_TIMESCALE - local;
@@ -44,8 +38,8 @@ export function shiftTimestampMap(text: string): string {
   return stripped.replace(
     /((?:\d+:)?[0-5]\d:[0-5]\d\.\d{3})(\s+-->\s+)((?:\d+:)?[0-5]\d:[0-5]\d\.\d{3})/g,
     (_, start: string, arrow: string, end: string) =>
-      `${secondsToTimestamp(timestampToSeconds(start) + offset)}${arrow}${secondsToTimestamp(
-        timestampToSeconds(end) + offset,
+      `${secondsToTimestamp((parseTimestamp(start) ?? 0) + offset)}${arrow}${secondsToTimestamp(
+        (parseTimestamp(end) ?? 0) + offset,
       )}`,
   );
 }

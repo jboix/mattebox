@@ -5,6 +5,7 @@
  * skd/pssh the hls parser stores, select the branch; the shaping here is
  * the request body and the response unwrap each server expects.
  */
+import { base64ToBytes } from '../../kernel/base64.js';
 import type { Stage } from '../../types/stage.js';
 import { registerKeySystem } from '../drm-shared.js';
 
@@ -17,10 +18,7 @@ export function unwrapPlayReadyResponse(response: ArrayBuffer): ArrayBuffer | Ui
   if (!text.includes('<License>')) return response;
   const match = /<License>([\s\S]*?)<\/License>/.exec(text);
   if (match === null) return response;
-  const binary = atob((match[1] as string).trim());
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  return base64ToBytes(match[1] as string) ?? response;
 }
 
 export default function emeCenc(): Stage {

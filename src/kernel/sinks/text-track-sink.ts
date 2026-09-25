@@ -96,6 +96,37 @@ function mergeRange(coverage: TimeRange[], added: TimeRange): TimeRange[] {
   return merged.sort((a, b) => a.start - b.start);
 }
 
+/** Empties a native track. `cues` reads null while disabled; hidden makes them removable. */
+export function emptyTextTrack(textTrack: TextTrack): void {
+  textTrack.mode = 'hidden';
+  const { cues } = textTrack;
+  if (cues === null) return;
+  for (let i = cues.length - 1; i >= 0; i -= 1) {
+    const cue = cues[i];
+    if (cue !== undefined) textTrack.removeCue(cue);
+  }
+}
+
+/**
+ * A native track of this kind and label on the element, emptied, or a new
+ * one. The element has no removeTextTrack, so a previous attach on the same
+ * element (a rebuild, an element swap back) leaves its tracks behind;
+ * adopting one keeps the browser's caption menu free of duplicates.
+ */
+export function adoptTextTrack(
+  element: HTMLMediaElement,
+  kind: TextTrackKind,
+  label: string,
+  lang?: string,
+): TextTrack {
+  for (const existing of element.textTracks) {
+    if (existing.kind !== kind || existing.label !== label) continue;
+    emptyTextTrack(existing);
+    return existing;
+  }
+  return element.addTextTrack(kind, label, lang);
+}
+
 export function createCueSink<C extends CueContentType>(
   contentType: C,
   kind: TextTrackKind,
@@ -103,37 +134,10 @@ export function createCueSink<C extends CueContentType>(
 ): CueSink<C> {
   const tracks = new Map<TrackId, TrackEntry>();
 
-  /**
-   * A native track for the id. The element has no removeTextTrack, so a
-   * previous attach on the same element (a rebuild, an element swap back)
-   * leaves its tracks behind; one with our kind and label is adopted and
-   * emptied rather than duplicated in the browser's caption menu.
-   */
-  /** Empties a native track. `cues` reads null while disabled; hidden makes them removable. */
-  function empty(textTrack: TextTrack): void {
-    textTrack.mode = 'hidden';
-    const { cues } = textTrack;
-    if (cues !== null) {
-      for (let i = cues.length - 1; i >= 0; i -= 1) {
-        const cue = cues[i];
-        if (cue !== undefined) textTrack.removeCue(cue);
-      }
-    }
-  }
-
-  function adopt(label: string): TextTrack {
-    for (const existing of deps.element.textTracks) {
-      if (existing.kind !== kind || existing.label !== label) continue;
-      empty(existing);
-      return existing;
-    }
-    return deps.element.addTextTrack(kind, label);
-  }
-
   function retire(trackId: TrackId): void {
     const entry = tracks.get(trackId);
     if (entry === undefined) return;
-    empty(entry.textTrack);
+    emptyTextTrack(entry.textTrack);
     entry.textTrack.mode = 'disabled';
     tracks.delete(trackId);
   }
@@ -141,7 +145,11 @@ export function createCueSink<C extends CueContentType>(
   function ensure(trackId: TrackId): TrackEntry {
     let entry = tracks.get(trackId);
     if (entry === undefined) {
-      const textTrack = adopt(`${deps.label ?? 'mattebox'}:${trackId}`);
+      const textTrack = adoptTextTrack(
+        deps.element,
+        kind,
+        `${deps.label ?? 'mattebox'}:${trackId}`,
+      );
       textTrack.mode = 'hidden';
       entry = { textTrack, coverage: [], ids: new Set() };
       tracks.set(trackId, entry);

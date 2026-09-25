@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Effect, Serializable } from '../../../src/index.js';
-import { createEffectRunner } from '../../../src/kernel/effects.js';
+import { createEffectRunner, scheduled, tickAfter } from '../../../src/kernel/effects.js';
 
 describe('effect runner', () => {
   it('dispatches each effect to the handler registered for its kind', () => {
@@ -122,5 +122,21 @@ describe('effect runner', () => {
     // Idempotent: nothing left to cancel.
     runner.cancelAll();
     expect(cancelled).toEqual(['b', 'c']);
+  });
+});
+
+describe('schedule builders', () => {
+  it('scheduled loops a message back at once unless given a delay', () => {
+    const message = { type: 'RELEASE_PIN' } as const;
+    const effect = scheduled('x:loopback', message);
+    expect(effect).toMatchObject({ kind: 'schedule', token: 'x:loopback', delayMs: 0 });
+    expect(effect.kind === 'schedule' && effect.then).toEqual(message);
+    expect(scheduled('x:later', message, 250)).toMatchObject({ delayMs: 250 });
+  });
+
+  it('tickAfter sends a TICK under its own token', () => {
+    const effect = tickAfter('x:tick', 1000);
+    expect(effect).toMatchObject({ kind: 'schedule', token: 'x:tick', delayMs: 1000 });
+    expect(effect.kind === 'schedule' && effect.then).toEqual({ type: 'TICK', token: 'x:tick' });
   });
 });
