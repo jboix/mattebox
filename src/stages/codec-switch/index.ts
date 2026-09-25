@@ -13,17 +13,11 @@
  * lies; until a runtime call site exists this policy reasons over the IR's
  * declared strings, which is already a real improvement.
  */
+import { typeString } from '../../kernel/mime.js';
 import { canSwitchTo } from '../../kernel/rendition-select.js';
 import type { Rendition } from '../../types/ir.js';
 import type { SwitchVerdict } from '../../types/quality.js';
 import type { Stage } from '../../types/stage.js';
-
-/** A full MSE type string for a rendition, mime plus codecs. */
-function typeString(rendition: Rendition): string {
-  return rendition.codecs === null
-    ? rendition.mimeType
-    : `${rendition.mimeType}; codecs="${rendition.codecs}"`;
-}
 
 /** Whether the runtime can bridge two types without tearing the buffer down. */
 function changeTypeSupported(target: Rendition): boolean {
@@ -38,7 +32,7 @@ function changeTypeSupported(target: Rendition): boolean {
   ) {
     return false;
   }
-  return MediaSourceCtor.isTypeSupported(typeString(target));
+  return MediaSourceCtor.isTypeSupported(typeString(target.mimeType, target.codecs));
 }
 
 export function createPolicy(): (current: Rendition | null, target: Rendition) => SwitchVerdict {

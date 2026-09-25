@@ -7,7 +7,21 @@
  * handler may return a cancel function; it is stored under the effect's
  * token, and an abort effect (or an explicit cancel call) invokes it.
  */
-import type { Effect, Serializable } from '../types/messages.js';
+import type { Effect, Message, Serializable } from '../types/messages.js';
+
+/**
+ * A schedule effect: `then` re-enters the bus after `delayMs`, or at once.
+ * The token names the timer, so an abort under it cancels the timer; each
+ * caller keeps its own token.
+ */
+export function scheduled(token: string, then: Message, delayMs = 0): Effect {
+  return { kind: 'schedule', token, delayMs, then };
+}
+
+/** A TICK under `token` after `delayMs`; the slice that owns the token matches it. */
+export function tickAfter(token: string, delayMs: number): Effect {
+  return scheduled(token, { type: 'TICK', token }, delayMs);
+}
 
 export type EffectOf<K extends Effect['kind']> = Extract<Effect, { kind: K }>;
 

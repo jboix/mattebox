@@ -39,7 +39,7 @@ export interface PeriodRendition {
   readonly rendition: Rendition;
 }
 
-function isIndexed(addressing: SegmentAddressing): addressing is IndexedSegments {
+export function isIndexed(addressing: SegmentAddressing): addressing is IndexedSegments {
   return !Array.isArray(addressing) && (addressing as IndexedSegments).kind === 'indexed';
 }
 
@@ -48,7 +48,7 @@ function isIndexed(addressing: SegmentAddressing): addressing is IndexedSegments
  * carries no resolvable segments. Once the adapter parses the index it swaps
  * this for an explicit array, so every consumer treats it as empty until then.
  */
-function isUnresolved(addressing: SegmentAddressing): boolean {
+export function isUnresolved(addressing: SegmentAddressing): addressing is SidxSegments {
   return !Array.isArray(addressing) && (addressing as SidxSegments).kind === 'sidx';
 }
 

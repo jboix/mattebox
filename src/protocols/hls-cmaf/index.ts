@@ -10,13 +10,15 @@
  * fetch under `hls:pl:` tokens the transport correlates back by token.
  */
 
+import { scheduled } from '../../kernel/effects.js';
 import { normalizeMimeType } from '../../kernel/mime.js';
-import { ladderNeighbours } from '../../kernel/rendition-select.js';
+import { activeRenditions } from '../../kernel/rendition-select.js';
 import type { MatteboxError } from '../../types/error.js';
 import type { Presentation, Rendition } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
+import { manifestFact } from '../adapter-shared.js';
 import { parse, parseMediaPlaylist, refreshFor } from './parse.js';
 import { LOAD_FAILED, unavailableMessages } from './unavailable.js';
 
@@ -74,29 +76,15 @@ function claims(state: HlsSlice, text: string): boolean {
  * request per variant, hundreds on a large multivariant playlist.
  */
 function neededPlaylists(state: HlsSlice, kernel: Readonly<KernelState>): readonly Rendition[] {
-  const presentation = kernel.presentation;
-  if (presentation === null) return [];
   const asked = new Set(Object.values(state.pending));
   const needed: Rendition[] = [];
   // An image track is active only when the thumbnails stage selected it.
-  for (const contentType of ['video', 'audio', 'text', 'image'] as const) {
-    const trackId = kernel.tracks.active.get(contentType);
-    if (trackId === undefined) continue;
-    for (const period of presentation.periods) {
-      for (const track of period.tracks) {
-        if (track.id !== trackId) continue;
-        const candidates =
-          contentType === 'video'
-            ? ladderNeighbours(track.renditions, kernel.quality.active, kernel.quality.constraints)
-            : track.renditions;
-        for (const rendition of candidates) {
-          const url = rendition.playlistUrl;
-          if (url === undefined || url in state.answered || asked.has(url)) continue;
-          if (needed.some((r) => r.playlistUrl === url)) continue;
-          needed.push(rendition);
-        }
-      }
-    }
+  const types = ['video', 'audio', 'text', 'image'] as const;
+  for (const { rendition } of activeRenditions(kernel, types, kernel.quality.active)) {
+    const url = rendition.playlistUrl;
+    if (url === undefined || url in state.answered || asked.has(url)) continue;
+    if (needed.some((r) => r.playlistUrl === url)) continue;
+    needed.push(rendition);
   }
   return needed;
 }
@@ -116,8 +104,7 @@ function renditionsAt(presentation: Presentation, url: string): readonly Renditi
 
 /** Loops a message back into the bus through a zero-delay schedule effect. */
 function feed(message: Message): Effect {
-  // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-  return { kind: 'schedule', token: 'hls:loopback', delayMs: 0, then: message };
+  return scheduled('hls:loopback', message);
 }
 
 /**
@@ -162,27 +149,8 @@ const reduceHls: SliceReducer<HlsSlice> = (slice, msg, kernel) => {
   }
 
   if (msg.type === 'SEGMENT_LOADED' && msg.trackId === 'manifest' && state.manifestUrl !== null) {
-    const text = new TextDecoder().decode(msg.bytes);
-    // Declining returns no effect; the kernel reports bytes nobody claims.
-    if (!claims(state, text)) return [state, []];
-    const result = parse(text, state.manifestUrl);
-    if (result.presentation === null) {
-      return [
-        state,
-        [
-          feed({
-            type: 'MANIFEST_FAILED',
-            error: result.error ?? {
-              category: 'manifest',
-              code: 'MANIFEST_PARSE_FAILED',
-              fatal: true,
-              recoverable: false,
-            },
-          }),
-        ],
-      ];
-    }
-    return [state, [feed({ type: 'MANIFEST_LOADED', presentation: result.presentation })]];
+    const fact = manifestFact(msg.bytes, state.manifestUrl, (text) => claims(state, text), parse);
+    return [state, fact === null ? [] : [feed(fact)]];
   }
 
   let next = state;
@@ -199,12 +167,7 @@ const reduceHls: SliceReducer<HlsSlice> = (slice, msg, kernel) => {
     // same as one that does not parse.
     const error: MatteboxError | null =
       playlist === null
-        ? (media.error ?? {
-            category: 'manifest',
-            code: 'MANIFEST_PARSE_FAILED',
-            fatal: false,
-            recoverable: false,
-          })
+        ? media.error
         : playlist.endlist && playlist.segments.length === 0
           ? { category: 'manifest', code: 'MANIFEST_EMPTY', fatal: false, recoverable: false }
           : null;

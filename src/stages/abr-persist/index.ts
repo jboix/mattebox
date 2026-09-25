@@ -9,6 +9,7 @@
  * byte. Persisting crosses the pure boundary the only allowed way: the
  * slice emits an event effect and the install-time listener writes.
  */
+import { scheduled } from '../../kernel/effects.js';
 import type { SliceReducer } from '../../types/kernel.js';
 import type { Effect } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
@@ -41,13 +42,11 @@ export default function abrPersist(storage: AbrPersistStorage): Stage {
         const state = slice ?? INITIAL;
         if (msg.type === 'LOAD' && !state.seeded && remembered !== null && remembered > 0) {
           const effects: Effect[] = [
-            {
-              kind: 'schedule',
-              token: 'abr-persist:seed',
-              delayMs: 0,
-              // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-              then: { type: 'THROUGHPUT_SAMPLE', bps: remembered, trackId: 'abr-persist' },
-            },
+            scheduled('abr-persist:seed', {
+              type: 'THROUGHPUT_SAMPLE',
+              bps: remembered,
+              trackId: 'abr-persist',
+            }),
           ];
           return [{ ...state, seeded: true, lastSaved: remembered }, effects];
         }

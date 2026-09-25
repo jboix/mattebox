@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { parseTimestamp, parseVtt } from '../../../src/containers/webvtt.js';
 import { createReducer, initialState } from '../../../src/kernel/reducer.js';
-import { parseTimestamp, parseVtt } from '../../../src/stages/text-webvtt/parse.js';
 import { shiftTimestampMap } from '../../../src/stages/text-webvtt-segmented/index.js';
 import type { Presentation } from '../../../src/types/ir.js';
 import type { KernelState } from '../../../src/types/kernel.js';

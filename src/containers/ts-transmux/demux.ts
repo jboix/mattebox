@@ -11,6 +11,7 @@ const PACKET_SIZE = 188;
 const SYNC_BYTE = 0x47;
 
 /** MPEG-TS stream_type values this transmuxer routes. */
+import { concat } from '../fmp4/writer.js';
 export const STREAM_TYPE = {
   h264: 0x1b,
   aacAdts: 0x0f,
@@ -97,7 +98,7 @@ function readTimestamp(data: Uint8Array, offset: number): number {
 
 /** Parses one completed PES accumulator into a packet with timestamps. */
 function finishPes(acc: PesAccumulator): PesPacket | null {
-  const buf = concatChunks(acc.chunks, acc.length);
+  const buf = acc.chunks.length === 1 ? (acc.chunks[0] as Uint8Array) : concat(...acc.chunks);
   // PES start code 0x000001 then stream_id.
   if (buf.byteLength < 9 || buf[0] !== 0x00 || buf[1] !== 0x00 || buf[2] !== 0x01) return null;
   const headerDataLength = buf[8] ?? 0;
@@ -112,17 +113,6 @@ function finishPes(acc: PesAccumulator): PesPacket | null {
   const payloadStart = 9 + headerDataLength;
   const data = payloadStart <= buf.byteLength ? buf.subarray(payloadStart) : new Uint8Array(0);
   return { pid: acc.pid, streamType: acc.streamType, kind: acc.kind, pts, dts, data };
-}
-
-function concatChunks(chunks: readonly Uint8Array[], length: number): Uint8Array {
-  if (chunks.length === 1) return chunks[0] as Uint8Array;
-  const out = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out;
 }
 
 export function demux(data: Uint8Array): DemuxResult {

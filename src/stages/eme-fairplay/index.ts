@@ -5,6 +5,7 @@
  * comes from the skd:// URI the hls parser stored in licenseUrl. Registers
  * a handler; eme-core drives it, including the certificate fetch.
  */
+import { base64ToBytes, bytesToBase64 } from '../../kernel/base64.js';
 import type { Stage } from '../../types/stage.js';
 import { registerKeySystem } from '../drm-shared.js';
 
@@ -19,9 +20,7 @@ export function contentIdFromSkd(initData: ArrayBuffer): string {
 
 /** Wraps the SPC as the `spc=` form body Apple's key servers expect. */
 export function buildSpcRequest(message: ArrayBuffer): Uint8Array {
-  let binary = '';
-  for (const b of new Uint8Array(message)) binary += String.fromCharCode(b);
-  const spc = btoa(binary);
+  const spc = bytesToBase64(new Uint8Array(message));
   return new TextEncoder().encode(`spc=${encodeURIComponent(spc)}`);
 }
 
@@ -32,11 +31,9 @@ export function parseCkcResponse(response: ArrayBuffer): ArrayBuffer | Uint8Arra
   const b64 = /^ckc=(.+)$/.exec(text)?.[1] ?? (/^[A-Za-z0-9+/=]+$/.test(text) ? text : null);
   if (b64 === null) return response;
   try {
-    const binary = atob(decodeURIComponent(b64));
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    return bytes;
+    return base64ToBytes(decodeURIComponent(b64)) ?? response;
   } catch {
+    // A malformed percent escape: not a form body after all.
     return response;
   }
 }

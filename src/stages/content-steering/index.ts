@@ -7,6 +7,7 @@
  * rendition pathways apply through a 'steering' constraint, base pathways
  * through a transport request hook rewriting URL prefixes.
  */
+import { scheduled, tickAfter } from '../../kernel/effects.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
@@ -47,8 +48,7 @@ const INITIAL: SteeringSlice = {
 
 /** Loops a message back into the bus through a zero-delay schedule effect. */
 function feed(message: Message): Effect {
-  // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-  return { kind: 'schedule', token: 'steering:loopback', delayMs: 0, then: message };
+  return scheduled('steering:loopback', message);
 }
 
 function pathwaysOf(kernel: Readonly<KernelState>): readonly string[] {
@@ -155,13 +155,7 @@ const reduceSteering: SliceReducer<SteeringSlice> = (slice, msg, kernel) => {
       effects.push(...applyPathway(kernel, chosen));
     }
     if (!next.tickPending) {
-      effects.push({
-        kind: 'schedule',
-        token: RELOAD_TOKEN,
-        delayMs: (parsed.TTL ?? DEFAULT_TTL) * 1000,
-        // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-        then: { type: 'TICK', token: RELOAD_TOKEN },
-      });
+      effects.push(tickAfter(RELOAD_TOKEN, (parsed.TTL ?? DEFAULT_TTL) * 1000));
       next = { ...next, tickPending: true };
     }
     return [next, effects];

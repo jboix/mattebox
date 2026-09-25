@@ -10,12 +10,13 @@
  * one is `showing`, the rest `disabled`. A pick in that menu selects in the
  * engine, and switching captions off there deselects.
  */
+
+import { parseVtt } from '../../containers/webvtt.js';
 import { createTextTrackSink } from '../../kernel/sinks/text-track-sink.js';
 import type { Track } from '../../types/ir.js';
 import type { CueDescriptor } from '../../types/messages.js';
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage } from '../../types/stage.js';
-import { parseVtt } from './parse.js';
 
 function parseSegment(data: Uint8Array, _meta: SegmentMeta): readonly CueDescriptor[] {
   return parseVtt(new TextDecoder().decode(data)).cues;

@@ -7,6 +7,8 @@
  * length, so a truncated SPS yields zeroes rather than a runaway loop.
  */
 
+import { toRbsp } from '../sei.js';
+
 export const NAL_TYPE = {
   nonIdrSlice: 1,
   idrSlice: 5,
@@ -97,24 +99,6 @@ export function accessUnitFromNals(nals: readonly Uint8Array[]): AccessUnit {
     offset += 4 + nal.byteLength;
   }
   return { avcc, isKeyframe, sps, pps, sei };
-}
-
-/** Strips H.264 emulation-prevention bytes (00 00 03 -> 00 00) for RBSP reads. */
-function toRbsp(nal: Uint8Array): Uint8Array {
-  const out = new Uint8Array(nal.byteLength);
-  let count = 0;
-  let zeros = 0;
-  for (let i = 1; i < nal.byteLength; i += 1) {
-    const byte = nal[i] as number;
-    if (zeros >= 2 && byte === 0x03) {
-      zeros = 0;
-      continue;
-    }
-    out[count] = byte;
-    count += 1;
-    zeros = byte === 0 ? zeros + 1 : 0;
-  }
-  return out.subarray(0, count);
 }
 
 class BitReader {

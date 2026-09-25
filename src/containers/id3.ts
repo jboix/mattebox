@@ -6,6 +6,7 @@
  * malformed tag reports the length it could trust rather than overrunning.
  */
 import type { CueDescriptor, Serializable } from '../types/messages.js';
+import { fourcc } from './mp4-box/index.js';
 
 const HEADER_SIZE = 10;
 
@@ -57,12 +58,7 @@ export function parseId3Frames(data: Uint8Array, offset = 0): Id3Frame[] {
   let cursor = offset + HEADER_SIZE;
   const end = offset + total;
   while (cursor + 10 <= end) {
-    const id = String.fromCharCode(
-      data[cursor] ?? 0,
-      data[cursor + 1] ?? 0,
-      data[cursor + 2] ?? 0,
-      data[cursor + 3] ?? 0,
-    );
+    const id = fourcc(data, cursor);
     // A zero id is padding: the frames are done.
     if (data[cursor] === 0) break;
     const size = frameSize(data, cursor + 4, major);

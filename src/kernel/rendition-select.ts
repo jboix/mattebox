@@ -19,7 +19,7 @@ import type {
   TimeRangesSnapshot,
   TrackId,
 } from '../types/ir.js';
-import type { InflightRequest, SbId } from '../types/kernel.js';
+import type { InflightRequest, KernelState, SbId } from '../types/kernel.js';
 import type { Effect } from '../types/messages.js';
 import type {
   AbrChooser,
@@ -165,6 +165,54 @@ export function ladderNeighbours(
   ];
 }
 
+/** The group of an audio or text track, from the adapters' `group:name` id convention. */
+export function groupOf(trackId: string): string {
+  const colon = trackId.indexOf(':');
+  return colon === -1 ? trackId : trackId.slice(0, colon);
+}
+
+/** Companion groups present, as `contentType:groupId`, for the coupling filter. */
+export function availableGroups(kernel: Readonly<KernelState>): ReadonlySet<string> {
+  const groups = new Set<string>();
+  for (const period of kernel.presentation?.periods ?? []) {
+    for (const track of period.tracks) {
+      if (track.contentType === 'audio' || track.contentType === 'text') {
+        groups.add(`${track.contentType}:${groupOf(track.id)}`);
+      }
+    }
+  }
+  return groups;
+}
+
+/**
+ * The renditions of the active tracks an adapter resolves ahead of need,
+ * content type by content type in `types` order: for video the ladder
+ * neighbours of `videoId`, for the others every rendition of the active
+ * track. A track id repeated across periods yields each period's copy.
+ */
+export function activeRenditions(
+  kernel: Readonly<KernelState>,
+  types: readonly ContentType[],
+  videoId: RenditionId | null,
+): Array<{ readonly contentType: ContentType; readonly rendition: Rendition }> {
+  const out: Array<{ contentType: ContentType; rendition: Rendition }> = [];
+  for (const contentType of types) {
+    const trackId = kernel.tracks.active.get(contentType);
+    if (trackId === undefined) continue;
+    for (const period of kernel.presentation?.periods ?? []) {
+      for (const track of period.tracks) {
+        if (track.id !== trackId) continue;
+        const candidates =
+          contentType === 'video'
+            ? ladderNeighbours(track.renditions, videoId, kernel.quality.constraints)
+            : track.renditions;
+        for (const rendition of candidates) out.push({ contentType, rendition });
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * `dead` plus the video variants that require an audio group none of whose
  * renditions is left. A variant names its audio by group, and the group
@@ -179,8 +227,7 @@ export function withDeadGroups(presentation: Presentation, dead: ReadonlySet<str
   for (const period of presentation.periods) {
     for (const track of period.tracks) {
       if (track.contentType !== 'audio') continue;
-      const colon = track.id.indexOf(':');
-      const group = colon === -1 ? track.id : track.id.slice(0, colon);
+      const group = groupOf(track.id);
       known.add(group);
       if (track.renditions.some((r) => !dead.has(r.id))) alive.add(group);
     }

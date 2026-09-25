@@ -14,6 +14,9 @@
  * kernel's playback watchdog: wait once, nudge the playhead, flush the
  * buffers from the playhead and refetch, then skip past the segment.
  */
+import { scheduled, tickAfter } from '../../kernel/effects.js';
+import { findRendition, findTrackSite } from '../../kernel/presentation.js';
+import { segmentAtTime, segmentAt as timelineSegmentAt } from '../../kernel/timeline.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
@@ -69,8 +72,7 @@ const INITIAL: RecoverySlice = {
 
 /** Loops a message back into the bus through a zero-delay schedule effect. */
 function feed(message: Message): Effect {
-  // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-  return { kind: 'schedule', token: 'recovery:loopback', delayMs: 0, then: message };
+  return scheduled('recovery:loopback', message);
 }
 
 function constrainExcluded(excluded: readonly string[]): Effect {
@@ -80,32 +82,23 @@ function constrainExcluded(excluded: readonly string[]): Effect {
 }
 
 function isCueTrack(kernel: Readonly<KernelState>, trackId: string): boolean {
-  for (const period of kernel.presentation?.periods ?? []) {
-    for (const track of period.tracks) {
-      if (track.id === trackId) {
-        return track.contentType === 'text' || track.contentType === 'metadata';
-      }
-    }
-  }
-  return false;
+  const type = findTrackSite(kernel.presentation, trackId)?.track.contentType;
+  return type === 'text' || type === 'metadata';
 }
 
+/**
+ * The window of segment `seq` in the rendition that failed it. Read through
+ * the kernel's addressing, so a DASH template answers as a list does.
+ */
 function segmentWindow(
   kernel: Readonly<KernelState>,
+  renditionId: string,
   seq: number,
 ): { start: number; end: number } | null {
-  for (const period of kernel.presentation?.periods ?? []) {
-    for (const track of period.tracks) {
-      for (const rendition of track.renditions) {
-        if (!Array.isArray(rendition.segments)) continue;
-        const segment = rendition.segments.find((s) => s.seq === seq);
-        if (segment !== undefined) {
-          return { start: segment.start, end: segment.start + segment.duration };
-        }
-      }
-    }
-  }
-  return null;
+  const site = findRendition(kernel.presentation, renditionId);
+  if (site === null) return null;
+  const segment = timelineSegmentAt(site.rendition.segments, seq, site.period.start);
+  return segment === null ? null : { start: segment.start, end: segment.start + segment.duration };
 }
 
 /** The segment of the active video rendition that covers `time`. */
@@ -114,22 +107,11 @@ function segmentAt(
   time: number,
 ): { start: number; end: number } | null {
   const active = kernel.quality.active;
-  for (const period of kernel.presentation?.periods ?? []) {
-    for (const track of period.tracks) {
-      if (track.contentType !== 'video') continue;
-      for (const rendition of track.renditions) {
-        if (active !== null && rendition.id !== active) continue;
-        if (!Array.isArray(rendition.segments)) continue;
-        const segment = rendition.segments.find(
-          (s) => s.start <= time && time < s.start + s.duration,
-        );
-        if (segment !== undefined) {
-          return { start: segment.start, end: segment.start + segment.duration };
-        }
-      }
-    }
-  }
-  return null;
+  const site = active === null ? null : findRendition(kernel.presentation, active);
+  if (site === null || site.track.contentType !== 'video') return null;
+  const segment = segmentAtTime(site.rendition.segments, time, site.period.start);
+  if (segment === null || segment.start > time) return null;
+  return { start: segment.start, end: segment.start + segment.duration };
 }
 
 function createRecoveryReducer(options: RecoveryOptions): SliceReducer<RecoverySlice> {
@@ -163,7 +145,7 @@ function createRecoveryReducer(options: RecoveryOptions): SliceReducer<RecoveryS
         (seqFails[seqKey] as number) >= options.skipAfter &&
         state.skips < options.maxConsecutiveSkips
       ) {
-        const window = segmentWindow(kernel, msg.seq);
+        const window = segmentWindow(kernel, msg.renditionId, msg.seq);
         if (window !== null && kernel.playback.currentTime < window.end) {
           effects.push(
             { kind: 'emit', event: 'recovery:skip', payload: { seq: msg.seq, to: window.end } },
@@ -186,13 +168,7 @@ function createRecoveryReducer(options: RecoveryOptions): SliceReducer<RecoveryS
           constrainExcluded(excluded),
         );
         if (!readmitPending) {
-          effects.push({
-            kind: 'schedule',
-            token: READMIT_TOKEN,
-            delayMs: options.readmitAfterSeconds * 1000,
-            // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-            then: { type: 'TICK', token: READMIT_TOKEN },
-          });
+          effects.push(tickAfter(READMIT_TOKEN, options.readmitAfterSeconds * 1000));
           readmitPending = true;
         }
       }
@@ -224,13 +200,7 @@ function createRecoveryReducer(options: RecoveryOptions): SliceReducer<RecoveryS
       ];
       let readmitPending = false;
       if (rest.length > 0) {
-        effects.push({
-          kind: 'schedule',
-          token: READMIT_TOKEN,
-          delayMs: options.readmitAfterSeconds * 1000,
-          // biome-ignore lint/suspicious/noThenProperty: `then` is the schedule effect's field name from the message taxonomy
-          then: { type: 'TICK', token: READMIT_TOKEN },
-        });
+        effects.push(tickAfter(READMIT_TOKEN, options.readmitAfterSeconds * 1000));
         readmitPending = true;
       }
       return [{ ...state, excluded: rest, renditionFails, readmitPending }, effects];

@@ -13,7 +13,7 @@ import {
   refreshFor,
 } from '../../../src/protocols/hls-cmaf/parse.js';
 import type { Thumbnail, ThumbnailsApi } from '../../../src/stages/thumbnails/index.js';
-import thumbnails from '../../../src/stages/thumbnails/index.js';
+import thumbnails, { parseThumbnailTrack } from '../../../src/stages/thumbnails/index.js';
 import type { Presentation, Rendition, Track } from '../../../src/types/ir.js';
 import type { KernelState, SliceReducer } from '../../../src/types/kernel.js';
 import type { Effect, Message } from '../../../src/types/messages.js';
@@ -365,6 +365,28 @@ describe('manifest tiles', () => {
     expect(api.source).toBe('none');
     expect(api.at(1)).toBeNull();
     expect(api.all).toEqual([]);
+  });
+});
+
+describe('WebVTT thumbnail tracks', () => {
+  it('a cue id line is not taken for the image URL', () => {
+    const vtt = [
+      'WEBVTT',
+      '',
+      '1',
+      '00:00:00.000 --> 00:00:05.000',
+      'sprite.jpg#xywh=160,90,160,90',
+    ].join('\n');
+    const [tile] = parseThumbnailTrack(vtt, 'https://cdn.example/thumbs/track.vtt');
+    expect(tile).toEqual({
+      url: 'https://cdn.example/thumbs/sprite.jpg',
+      start: 0,
+      end: 5,
+      x: 160,
+      y: 90,
+      width: 160,
+      height: 90,
+    });
   });
 });
 

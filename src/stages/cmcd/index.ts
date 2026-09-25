@@ -9,6 +9,7 @@
  * bitrate, the measured throughput EWMA, and the buffer ahead of the playhead
  * from the media element. No new kernel state, no new effect.
  */
+import { findRendition } from '../../kernel/presentation.js';
 import type { Stage } from '../../types/stage.js';
 
 export interface CmcdOptions {
@@ -82,14 +83,8 @@ export default function cmcd(options: CmcdOptions = {}): Stage {
 
         // Encoded bitrate of the active rendition, in kbps.
         const activeId = state.quality.active;
-        if (activeId !== null && state.presentation !== null) {
-          for (const period of state.presentation.periods) {
-            for (const track of period.tracks) {
-              const rendition = track.renditions.find((r) => r.id === activeId);
-              if (rendition !== undefined) keys.br = Math.round(rendition.bitrate / 1000);
-            }
-          }
-        }
+        const active = activeId === null ? null : findRendition(state.presentation, activeId);
+        if (active !== null) keys.br = Math.round(active.rendition.bitrate / 1000);
 
         // Measured throughput EWMA, in kbps, rounded to the spec's 100 kbps.
         const mtp = state.stats.throughputEwma;

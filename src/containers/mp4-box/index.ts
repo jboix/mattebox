@@ -48,14 +48,23 @@ function malformed(reason: string, offset: number): MatteboxError {
   };
 }
 
-function fourcc(view: DataView, offset: number): string {
+/** A DataView over exactly these bytes, wherever they sit in their buffer. */
+export function viewOf(bytes: Uint8Array): DataView {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+}
+
+/** The four ASCII characters at `at`: a box type, a sample entry format, an ID3 frame id. */
+export function fourcc(bytes: Uint8Array, at: number): string {
   return String.fromCharCode(
-    view.getUint8(offset),
-    view.getUint8(offset + 1),
-    view.getUint8(offset + 2),
-    view.getUint8(offset + 3),
+    bytes[at] ?? 0,
+    bytes[at + 1] ?? 0,
+    bytes[at + 2] ?? 0,
+    bytes[at + 3] ?? 0,
   );
 }
+
+/** SampleEntry (8 bytes) plus VisualSampleEntry (70 bytes). ISO/IEC 14496-12 §12.1.3. */
+export const VISUAL_ENTRY_HEADER = 78;
 
 /**
  * Walks one level plus known containers, depth-first. The visitor sees
@@ -65,7 +74,7 @@ export function walkBoxes(
   data: Uint8Array,
   visit: (box: BoxRef) => boolean | undefined,
 ): WalkResult {
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const view = viewOf(data);
 
   function level(start: number, end: number, path: string): MatteboxError | null | 'stop' {
     let offset = start;
@@ -75,7 +84,7 @@ export function walkBoxes(
       }
       let size = view.getUint32(offset);
       let headerSize = 8;
-      const type = fourcc(view, offset + 4);
+      const type = fourcc(data, offset + 4);
       if (size === 1) {
         // 64-bit size follows the type.
         if (end - offset < 16) return malformed('truncated 64-bit size', offset);
@@ -166,7 +175,7 @@ export interface Tfdt {
 export function parseTfdt(payload: Uint8Array): Tfdt | null {
   const header = fullBox(payload);
   if (header === null) return null;
-  const view = new DataView(header.body.buffer, header.body.byteOffset, header.body.byteLength);
+  const view = viewOf(header.body);
   if (header.version === 1) {
     if (header.body.byteLength < 8) return null;
     return { version: 1, baseMediaDecodeTime: Number(view.getBigUint64(0)) };
@@ -195,7 +204,7 @@ export function parseSidx(payload: Uint8Array): Sidx | null {
   const header = fullBox(payload);
   if (header === null) return null;
   const body = header.body;
-  const view = new DataView(body.buffer, body.byteOffset, body.byteLength);
+  const view = viewOf(body);
   const wide = header.version === 1;
   const fixed = 8 + (wide ? 16 : 8) + 4;
   if (body.byteLength < fixed) return null;
@@ -237,30 +246,44 @@ export function parseSidx(payload: Uint8Array): Sidx | null {
  * with mdhd timescale). CMAF timing normalization needs it to convert a
  * baseMediaDecodeTime between timescale units and seconds.
  */
+/** A trak's track_ID (tkhd) and media timescale (mdhd), or null when either is unreadable. */
+export function trackInfo(trak: Uint8Array): { trackId: number; timescale: number } | null {
+  const tkhd = findBox(trak, 'tkhd');
+  const mdhd = findBox(trak, 'mdia/mdhd');
+  if (tkhd === null || mdhd === null) return null;
+  // FullBox: version(1) flags(3), then creation/modification times (4 or 8
+  // bytes each by version), then the field of interest.
+  const trackAt = tkhd.payload[0] === 1 ? 20 : 12;
+  const scaleAt = mdhd.payload[0] === 1 ? 20 : 12;
+  if (tkhd.payload.byteLength < trackAt + 4 || mdhd.payload.byteLength < scaleAt + 4) return null;
+  return {
+    trackId: viewOf(tkhd.payload).getUint32(trackAt),
+    timescale: viewOf(mdhd.payload).getUint32(scaleAt),
+  };
+}
+
+/** Every sample entry of an stsd payload: its format fourcc and the body after the 8-byte box header. */
+export function sampleEntries(stsd: Uint8Array): Array<{ format: string; body: Uint8Array }> {
+  const header = fullBox(stsd);
+  if (header === null || header.body.byteLength < 4) return [];
+  const body = header.body;
+  const view = viewOf(body);
+  const out: Array<{ format: string; body: Uint8Array }> = [];
+  let at = 4;
+  for (let i = 0; i < view.getUint32(0) && at + 8 <= body.byteLength; i += 1) {
+    const size = view.getUint32(at);
+    if (size < 8 || at + size > body.byteLength) break;
+    out.push({ format: fourcc(body, at + 4), body: body.subarray(at + 8, at + size) });
+    at += size;
+  }
+  return out;
+}
+
 export function trackTimescales(init: Uint8Array): Map<number, number> {
   const map = new Map<number, number>();
   for (const trak of findBoxes(init, 'moov/trak')) {
-    const tkhd = findBox(trak.payload, 'tkhd');
-    const mdhd = findBox(trak.payload, 'mdia/mdhd');
-    if (tkhd === null || mdhd === null) continue;
-    const tkView = new DataView(
-      tkhd.payload.buffer,
-      tkhd.payload.byteOffset,
-      tkhd.payload.byteLength,
-    );
-    const mdView = new DataView(
-      mdhd.payload.buffer,
-      mdhd.payload.byteOffset,
-      mdhd.payload.byteLength,
-    );
-    // FullBox: version(1) flags(3), then creation/modification times (4 or 8
-    // bytes each by version), then the field of interest.
-    const trackAt = tkhd.payload[0] === 1 ? 20 : 12;
-    const scaleAt = mdhd.payload[0] === 1 ? 20 : 12;
-    if (tkhd.payload.byteLength < trackAt + 4 || mdhd.payload.byteLength < scaleAt + 4) continue;
-    const trackId = tkView.getUint32(trackAt);
-    const timescale = mdView.getUint32(scaleAt);
-    if (timescale > 0) map.set(trackId, timescale);
+    const info = trackInfo(trak.payload);
+    if (info !== null && info.timescale > 0) map.set(info.trackId, info.timescale);
   }
   return map;
 }
@@ -285,11 +308,7 @@ export function earliestDecodeTime(
     const tfhd = findBox(traf.payload, 'tfhd');
     // tfhd FullBox: version(1) flags(3), then track_ID(4).
     if (tfdt === null || tfhd === null || tfhd.payload.byteLength < 8) continue;
-    const trackId = new DataView(
-      tfhd.payload.buffer,
-      tfhd.payload.byteOffset,
-      tfhd.payload.byteLength,
-    ).getUint32(4);
+    const trackId = viewOf(tfhd.payload).getUint32(4);
     const timescale = timescales.get(trackId);
     const parsed = parseTfdt(tfdt.payload);
     if (timescale === undefined || timescale <= 0 || parsed === null) continue;

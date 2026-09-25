@@ -5,6 +5,7 @@
  * esds, and the sample count for timing. This is the shared module both
  * import; neither imports the other.
  */
+import type { AudioTrackConfig, TrackFragment } from './fmp4/writer.js';
 
 /** The MPEG-4 sampling frequency table, indexed by samplingFrequencyIndex. */
 export const SAMPLE_RATES: readonly number[] = [
@@ -81,5 +82,37 @@ export function parseAdts(data: Uint8Array): AdtsResult {
     audioObjectType,
     samplingFrequencyIndex,
     channelConfig,
+  };
+}
+
+/**
+ * The fMP4 track config and fragment for parsed ADTS: one AAC sample per
+ * frame, timed in the sample rate, the base decode time anchored to the
+ * segment's presentation start.
+ */
+export function adtsFragment(
+  adts: AdtsResult,
+  trackId: number,
+  presentationStart: number,
+): { config: AudioTrackConfig; fragment: TrackFragment } {
+  return {
+    config: {
+      id: trackId,
+      kind: 'audio',
+      timescale: adts.sampleRate,
+      audioObjectType: adts.audioObjectType,
+      samplingFrequencyIndex: adts.samplingFrequencyIndex,
+      channelConfig: adts.channelConfig,
+    },
+    fragment: {
+      trackId,
+      baseMediaDecodeTime: Math.round(presentationStart * adts.sampleRate),
+      samples: adts.frames.map((frame) => ({
+        data: frame.data,
+        duration: SAMPLES_PER_FRAME,
+        cts: 0,
+        isKeyframe: true,
+      })),
+    },
   };
 }

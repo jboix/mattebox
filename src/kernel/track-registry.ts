@@ -4,10 +4,12 @@
  * selectable: that is how a deployment without text-webvtt degrades
  * gracefully instead of crashing.
  */
+
 import type { TracksApi } from '../types/facade.js';
 import type { ContentType, Track, TrackId } from '../types/ir.js';
 import type { KernelState } from '../types/kernel.js';
 import type { Command } from '../types/messages.js';
+import { findTrackSite } from './presentation.js';
 
 export interface TrackRegistryDeps {
   getState(): KernelState;
@@ -28,7 +30,7 @@ function allTracks(state: KernelState): readonly Track[] {
 
 export function createTrackRegistry(deps: TrackRegistryDeps): TrackRegistry {
   function find(trackId: TrackId): Track | null {
-    return allTracks(deps.getState()).find((track) => track.id === trackId) ?? null;
+    return findTrackSite(deps.getState().presentation, trackId)?.track ?? null;
   }
 
   return {

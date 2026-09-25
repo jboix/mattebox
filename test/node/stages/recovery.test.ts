@@ -190,6 +190,57 @@ describe('recovery: content holes', () => {
   });
 });
 
+/** The ladder with its video renditions on a DASH template: 4 s segments from number 0. */
+function templated(): KernelState {
+  const state = ready();
+  const presentation = state.presentation as Presentation;
+  const period = presentation.periods[0] as Presentation['periods'][number];
+  const track = period.tracks[0] as Presentation['periods'][number]['tracks'][number];
+  const renditions = track.renditions.map((r) => ({
+    ...r,
+    segments: {
+      kind: 'indexed' as const,
+      urlTemplate: `https://cdn.example/${r.id}/$Number$.m4s`,
+      startSeq: 0,
+      endSeq: 4,
+      timescale: 1,
+      segmentDuration: 4,
+      timeline: null,
+    },
+  }));
+  return {
+    ...state,
+    presentation: { ...presentation, periods: [{ ...period, tracks: [{ ...track, renditions }] }] },
+  };
+}
+
+describe('recovery on a DASH template', () => {
+  const reduce = compose(recovery());
+
+  it('a segment failing across renditions is seeked over', () => {
+    let settled = settle(reduce, ...reduce(templated(), fail(1, 'v-low')));
+    settled = settle(reduce, ...reduce(settled.state, fail(1, 'v-low')));
+    settled = settle(reduce, ...reduce(settled.state, fail(1, 'v-high')));
+    expect(settled.effects).toContainEqual(
+      expect.objectContaining({ kind: 'seekElement', to: 8.1 }),
+    );
+  });
+
+  it('the fourth stall at one spot skips the segment under the playhead', () => {
+    const state: KernelState = {
+      ...templated(),
+      playback: { currentTime: 6, buffered: [{ start: 0, end: 12 }], seeking: false },
+    };
+    let settled = { state, effects: [] as Effect[] };
+    for (let i = 0; i < 3; i += 1) {
+      settled = settle(reduce, ...reduce(settled.state, { type: 'STALLED', at: 6 }));
+    }
+    const fourth = settle(reduce, ...reduce(settled.state, { type: 'STALLED', at: 6 }));
+    const skip = fourth.effects.find((e) => e.kind === 'seekElement');
+    expect((skip as { to: number } | undefined)?.to ?? 0).toBeCloseTo(8.1);
+  });
+});
+
 describe('recovery: stalls', () => {
   const reduce = compose(recovery());
 
