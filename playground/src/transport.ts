@@ -43,6 +43,16 @@ interface LiveView {
 interface PdtView {
   toWallClock(presentationTime: number): number | null;
 }
+interface ChapterView {
+  readonly id: string;
+  readonly start: number;
+  readonly title: string;
+  readonly image?: { readonly url: string };
+}
+interface ChaptersView {
+  at(time: number): ChapterView | null;
+  readonly all: readonly ChapterView[];
+}
 /** The tile's width in the hover card; sprite tiles are scaled to it. */
 const THUMB_WIDTH = 160;
 
@@ -87,7 +97,9 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
         <input id="tpScrub" type="range" min="0" max="${STEPS}" value="0" step="1" aria-label="Seek" title="Seek bar across the seekable range. The darker band is media buffered ahead of the playhead; hover to read the time under the cursor.">
         <div id="tpBuffered" class="tp-buffered" aria-hidden="true"></div>
         <div id="tpHover" class="tp-hover" hidden>
+          <img id="tpChapterImage" class="tp-chapter-image" alt="" hidden>
           <div id="tpThumb" class="tp-thumb" hidden><div id="tpThumbTile" class="tp-thumb-tile"></div></div>
+          <span id="tpChapter" class="tp-chapter" hidden></span>
           <span id="tpHoverTime" class="tp-hover-time"></span>
         </div>
       </div>
@@ -105,6 +117,13 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
         <span class="tp-k">frame</span> <span id="tpFrame" class="tp-v">—</span>
       </span>
       <span id="tpScale" class="tp-stat tp-scale" title="How the frame relates to the viewport: a frame larger than the box is downscaled, a smaller one upscaled."></span>
+      <span class="tp-stat tp-chapters" id="tpChapters" hidden>
+        <span class="tp-k">chapter</span>
+        <details id="tpChapterMenu" class="tp-chapter-menu">
+          <summary class="tp-chapter-select" title="Chapters (engine.chapters): the one under the playhead. Open to jump to another."><span id="tpChapterNow">—</span></summary>
+          <ol id="tpChapterList" class="tp-chapter-list"></ol>
+        </details>
+      </span>
       <span class="tp-tracks" id="tpTracks" hidden>
         <label class="tp-stat" id="tpAudioWrap" hidden title="Audio track (engine.tracks.select). One entry per language; the engine keeps it within the audio group the video rendition requires.">
           <span class="tp-k">audio</span>
@@ -137,6 +156,8 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
   const buffered = host.querySelector('#tpBuffered') as HTMLElement;
   const hover = host.querySelector('#tpHover') as HTMLElement;
   const hoverTime = host.querySelector('#tpHoverTime') as HTMLElement;
+  const chapterTitle = host.querySelector('#tpChapter') as HTMLElement;
+  const chapterImage = host.querySelector('#tpChapterImage') as HTMLImageElement;
   const thumb = host.querySelector('#tpThumb') as HTMLElement;
   const thumbTile = host.querySelector('#tpThumbTile') as HTMLElement;
   const goLive = host.querySelector('#tpLive') as HTMLButtonElement;
@@ -149,6 +170,20 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
   const frame = host.querySelector('#tpFrame') as HTMLElement;
   const scale = host.querySelector('#tpScale') as HTMLElement;
   const tracksWrap = host.querySelector('#tpTracks') as HTMLElement;
+  const chaptersWrap = host.querySelector('#tpChapters') as HTMLElement;
+  const chapterMenu = host.querySelector('#tpChapterMenu') as HTMLDetailsElement;
+  // A menu closes on a click anywhere else, or on Escape, as a select does.
+  document.addEventListener('pointerdown', (event) => {
+    if (chapterMenu.open && !chapterMenu.contains(event.target as Node)) chapterMenu.open = false;
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && chapterMenu.open) {
+      chapterMenu.open = false;
+      (chapterMenu.querySelector('summary') as HTMLElement).focus();
+    }
+  });
+  const chapterNow = host.querySelector('#tpChapterNow') as HTMLElement;
+  const chapterList = host.querySelector('#tpChapterList') as HTMLElement;
   const audioWrap = host.querySelector('#tpAudioWrap') as HTMLElement;
   const audioSelect = host.querySelector('#tpAudio') as HTMLSelectElement;
   const textWrap = host.querySelector('#tpTextWrap') as HTMLElement;
@@ -170,9 +205,29 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
     return (engine as { thumbnails?: ThumbnailsView } | null)?.thumbnails ?? null;
   }
 
-  /** Puts the sprite tile for a time into the hover card, scaled to THUMB_WIDTH. */
+  function chaptersApi(): ChaptersView | null {
+    return (deps.engine() as { chapters?: ChaptersView } | null)?.chapters ?? null;
+  }
+
+  /**
+   * Fills the hover card for a time. The engine answers thumbnails and
+   * chapters separately; this card shows the sprite tile, the frame under
+   * the cursor, with the chapter title over it. A chapter image stands in
+   * only when the stream has no thumbnails; the chapter menu shows them all.
+   */
   function showThumb(time: number): void {
-    paintThumb(thumb, thumbTile, thumbnailsApi(), time, THUMB_WIDTH);
+    const chapter = chaptersApi()?.at(time) ?? null;
+    chapterTitle.hidden = chapter === null || chapter.title === '';
+    chapterTitle.textContent = chapter?.title ?? '';
+    const thumbnails = thumbnailsApi();
+    const image = thumbnails?.at(time) == null ? chapter?.image?.url : undefined;
+    chapterImage.hidden = image === undefined;
+    if (image !== undefined) {
+      if (chapterImage.src !== image) chapterImage.src = image;
+      thumb.hidden = true;
+      return;
+    }
+    paintThumb(thumb, thumbTile, thumbnails, time, THUMB_WIDTH);
   }
 
   /** The seekable span from the element, or the duration for a source that reports none. */
@@ -296,6 +351,52 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
     else engine.tracks.select(textSelect.value);
   });
 
+  // The chapter menu: every chapter with its image, title, and start time.
+  // Rebuilt only when the list changes, so an open menu stays put; the
+  // current entry is marked on every poll.
+  let chaptersSignature = '';
+  function renderChapters(): void {
+    const all = chaptersApi()?.all ?? [];
+    const signature = all.map((c) => `${c.id}@${c.start}`).join('|');
+    if (signature !== chaptersSignature) {
+      chaptersSignature = signature;
+      chapterList.replaceChildren(
+        ...all.map((chapter) => {
+          const item = document.createElement('li');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.dataset.start = String(chapter.start);
+          if (chapter.image !== undefined) {
+            const img = document.createElement('img');
+            img.src = chapter.image.url;
+            img.alt = '';
+            button.append(img);
+          }
+          const title = document.createElement('span');
+          title.className = 'tp-chapter-title';
+          title.textContent = chapter.title === '' ? 'Untitled' : chapter.title;
+          const time = document.createElement('span');
+          time.className = 'tp-chapter-time';
+          time.textContent = fmtPresentation(chapter.start);
+          button.append(title, time);
+          button.addEventListener('click', () => {
+            video.currentTime = chapter.start;
+            chapterMenu.open = false;
+          });
+          item.append(button);
+          return item;
+        }),
+      );
+      chaptersWrap.hidden = all.length === 0;
+    }
+    const current = chaptersApi()?.at(video.currentTime) ?? null;
+    chapterNow.textContent = current === null ? '—' : current.title || 'Untitled';
+    for (const button of chapterList.querySelectorAll<HTMLElement>('button')) {
+      const on = current !== null && Number(button.dataset.start) === current.start;
+      button.toggleAttribute('aria-current', on);
+    }
+  }
+
   // The selects rebuild only when their inputs change, so an open menu is
   // never torn down under the pointer by the half-second poll.
   let tracksSignature = '';
@@ -384,6 +485,7 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
       if (rate.value !== current && RATES.includes(video.playbackRate)) rate.value = current;
     }
     renderTracks();
+    renderChapters();
     play.textContent = video.paused ? '▶' : '❚❚';
     play.title = video.paused
       ? "Play: calls the video element's own play(); the engine follows the element"

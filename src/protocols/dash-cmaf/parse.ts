@@ -16,6 +16,7 @@
  */
 import { findBox, parseSidx } from '../../containers/mp4-box/index.js';
 import { base64ToBytes } from '../../kernel/base64.js';
+import { resolveUrl as resolve } from '../../kernel/url.js';
 import type {
   ByteRange,
   ContentType,
@@ -31,7 +32,7 @@ import type {
   Track,
 } from '../../types/ir.js';
 import type { ParseResult } from '../adapter-shared.js';
-import { manifestError, resolve } from '../adapter-shared.js';
+import { manifestError } from '../adapter-shared.js';
 import { dimensions } from '../dimensions.js';
 
 export type { ParseResult } from '../adapter-shared.js';

@@ -1,0 +1,16 @@
+#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-SESSION-DATA-ITUNES:DATA-ID="com.apple.hls.chapters",URI="https://vod-ap-amt.tv.apple.com/itunes-assets/HLSVideo123/v4/24/9a/91/249a9173-b495-ccfa-5677-40d371658147/chapters.plist"
+
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.format",VALUE="HD"
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.feature.adam-id",VALUE="1478593576"
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.title",VALUE="Sicario: Day of the Soldado",LANGUAGE="zh-tw"
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.poster",VALUE="https://is5-ssl.mzstatic.com/image/thumb/Video113/v4/4a/7f/cc/4a7fcc75-2b4e-64e9-e706-80f308fe19ae/pr_source.lsr/{w}x{h}mw.{f}",LANGUAGE="zh-tw"
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.genre",VALUE="劇情片",LANGUAGE="zh-tw"
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.release-date",VALUE="2018-11-01T07:00:00Z"
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.rating-tag",VALUE="第II類"
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.rating-system",VALUE="hk-movie"
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.rating-rank",VALUE="400"
+#EXT-X-STREAM-INF:BANDWIDTH=1240800,CODECS="avc1.42c01e",RESOLUTION=192x144
+media.m3u8

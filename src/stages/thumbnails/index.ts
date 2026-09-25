@@ -7,7 +7,8 @@
  *   are sprite sheets split by the rendition's tile grid. Tiles derive from
  *   the presentation the kernel holds, so live updates need no copy here.
  * - A WebVTT track the app loads, whose cues point at sprite tiles with an
- *   #xywh media fragment. It wins over the manifest once loaded.
+ *   #xywh media fragment. It wins over the manifest once loaded, until the
+ *   next LOAD, UNLOAD, or DETACH.
  *
  * The kernel never schedules an image track. On MANIFEST_LOADED this stage
  * selects the first image track, which is what makes hls-cmaf fetch its
@@ -18,6 +19,7 @@
 import { parseVtt } from '../../containers/webvtt.js';
 import { scheduled } from '../../kernel/effects.js';
 import { isIndexed, segmentAt, segmentAtTime } from '../../kernel/timeline.js';
+import { resolveUrl } from '../../kernel/url.js';
 import type { Period, Rendition, Segment, Track } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Stage } from '../../types/stage.js';
@@ -45,7 +47,7 @@ export function parseThumbnailTrack(text: string, baseUrl: string): Thumbnail[] 
     if (rawUrl === undefined || rawUrl === '') continue;
     const xywh = /xywh=(?:pixel:)?(\d+),(\d+),(\d+),(\d+)/.exec(fragment ?? '');
     thumbnails.push({
-      url: new URL(rawUrl, baseUrl).href,
+      url: resolveUrl(rawUrl, baseUrl),
       start: cue.start,
       end: cue.end,
       x: Number(xywh?.[1] ?? 0),
@@ -150,18 +152,27 @@ function allTiles(source: ImageSource): Thumbnail[] {
   return out;
 }
 
+interface ThumbnailsSlice {
+  /** Moves on every LOAD, UNLOAD, and DETACH; an app track from an earlier count no longer applies. */
+  readonly loads: number;
+}
+
 /**
  * Selects the first image track when a manifest loads and none is active.
  * Pure: the command loops back through a zero-delay schedule effect.
  */
-const reduceThumbnails: SliceReducer<null> = (_slice, msg, kernel) => {
-  if (msg.type !== 'MANIFEST_LOADED' || kernel.tracks.active.has('image')) return [null, []];
+const reduceThumbnails: SliceReducer<ThumbnailsSlice> = (slice, msg, kernel) => {
+  const state = slice ?? { loads: 0 };
+  if (msg.type === 'LOAD' || msg.type === 'UNLOAD' || msg.type === 'DETACH') {
+    return [{ loads: state.loads + 1 }, []];
+  }
+  if (msg.type !== 'MANIFEST_LOADED' || kernel.tracks.active.has('image')) return [state, []];
   for (const period of msg.presentation.periods) {
     const track = period.tracks.find((t) => t.contentType === 'image');
     if (track === undefined) continue;
-    return [null, [scheduled('thumbnails:select', { type: 'SELECT_TRACK', trackId: track.id })]];
+    return [state, [scheduled('thumbnails:select', { type: 'SELECT_TRACK', trackId: track.id })]];
   }
-  return [null, []];
+  return [state, []];
 };
 
 export interface ThumbnailsApi {
@@ -188,7 +199,12 @@ export default function thumbnails(): Stage {
     requires: ['transport'],
     install(ctx) {
       ctx.reduce('thumbnails', reduceThumbnails as SliceReducer);
-      let tiles: Thumbnail[] | null = null;
+      let track: { loads: number; tiles: Thumbnail[] } | null = null;
+      const loads = (): number =>
+        (ctx.getState().thumbnails as ThumbnailsSlice | undefined)?.loads ?? 0;
+      /** The app's tiles, when they belong to the source loaded now. */
+      const appTiles = (): Thumbnail[] | null =>
+        track !== null && track.loads === loads() ? track.tiles : null;
       // Insertion order is recency: a hit moves to the end, eviction takes the front.
       const images = new Map<string, Promise<string>>();
 
@@ -207,13 +223,19 @@ export default function thumbnails(): Stage {
 
       const api: ThumbnailsApi = {
         async load(url: string): Promise<number> {
+          const at = loads();
           const response = await ctx.request(url, { method: 'GET' });
           // An error page would parse as a track with no tiles and hide the failure.
           if (!response.ok) throw new TypeError(`thumbnail track ${url}: HTTP ${response.status}`);
-          tiles = parseThumbnailTrack(await response.text(), url);
-          return tiles.length;
+          // The response URL is absolute and follows redirects; a path-only
+          // `url` would leave the track's relative sprite URLs unresolvable.
+          const parsed = parseThumbnailTrack(await response.text(), response.url || url);
+          // Another source loaded while the track was on its way: it no longer applies.
+          if (at === loads()) track = { loads: at, tiles: parsed };
+          return parsed.length;
         },
         at(time: number): Thumbnail | null {
+          const tiles = appTiles();
           if (tiles !== null) {
             return tiles.find((tile) => time >= tile.start && time < tile.end) ?? null;
           }
@@ -243,12 +265,13 @@ export default function thumbnails(): Stage {
           return pending;
         },
         get all() {
+          const tiles = appTiles();
           if (tiles !== null) return tiles;
           const source = imageSource(ctx.getState());
           return source === null ? [] : allTiles(source);
         },
         get source() {
-          if (tiles !== null) return 'app';
+          if (appTiles() !== null) return 'app';
           return imageSource(ctx.getState()) === null ? 'none' : 'manifest';
         },
       };

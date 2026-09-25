@@ -176,5 +176,4 @@ A live channel with subtitles from one script tag, pinned and verified.
 </script>
 ```
 
-This is the last chapter. The [architecture document](../architecture.md)
-covers how the engine is built, for writing your own stage.
+Next: [15 Chapters](15-chapters.md).

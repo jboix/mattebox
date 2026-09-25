@@ -12,7 +12,8 @@ The stage reads tiles from two sources.
 | Manifest | An HLS `EXT-X-IMAGE-STREAM-INF` playlist or a DASH image AdaptationSet with a tile grid | By itself, when the source loads |
 | Track    | A WebVTT file whose cues point at sprite tiles with an `#xywh` fragment                 | `engine.thumbnails.load(url)`    |
 
-A track you load wins over the manifest.
+A track you load wins over the manifest until the next `load`, `unload`, or
+`detach`. Load it after `engine.load`.
 
 ### From the manifest
 

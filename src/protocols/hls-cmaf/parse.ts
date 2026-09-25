@@ -11,6 +11,7 @@
  */
 import type { PlaylistRefresh } from '../../kernel/refresh.js';
 import { applyRefresh } from '../../kernel/refresh.js';
+import { resolveUrl as resolve } from '../../kernel/url.js';
 import type { MatteboxError } from '../../types/error.js';
 import type {
   ByteRange,
@@ -22,11 +23,12 @@ import type {
   SegmentAddressing,
   SegmentKey,
   SegmentRef,
+  SessionData,
   TileGrid,
   Track,
 } from '../../types/ir.js';
 import type { ParseResult } from '../adapter-shared.js';
-import { manifestError, resolve } from '../adapter-shared.js';
+import { manifestError } from '../adapter-shared.js';
 import { dimensions } from '../dimensions.js';
 import type { TagLine } from './lexer.js';
 import { lex } from './lexer.js';
@@ -326,6 +328,21 @@ function imageTrack(streams: readonly TagLine[], baseUrl: string): Track | null 
   };
 }
 
+/** RFC 8216 §4.3.4.4: DATA-ID is required, with VALUE or URI, and an optional LANGUAGE. */
+function sessionDataFrom(
+  attributes: Readonly<Record<string, string>>,
+  baseUrl: string,
+): SessionData | null {
+  const id = attributes['DATA-ID'];
+  if (id === undefined) return null;
+  return {
+    id,
+    ...(attributes.VALUE !== undefined ? { value: attributes.VALUE } : {}),
+    ...(attributes.URI !== undefined ? { uri: resolve(attributes.URI, baseUrl) } : {}),
+    ...(attributes.LANGUAGE !== undefined ? { lang: attributes.LANGUAGE } : {}),
+  };
+}
+
 /** parse either playlist form into a Presentation. Never throws. */
 export function parse(text: string, baseUrl: string): ParseResult {
   if (!text.trimStart().startsWith('#EXTM3U')) {
@@ -411,6 +428,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
   const mediaEntries: MediaEntry[] = [];
   const variants: Array<{ attributes: Readonly<Record<string, string>>; uri: string }> = [];
   const imageStreams: TagLine[] = [];
+  const sessionData: SessionData[] = [];
   let sessionProtection: ProtectionInfo | null = null;
   let steering: { serverUri: string; defaultPathway?: string } | undefined;
   let pendingStreamInf: TagLine | null = null;
@@ -429,6 +447,9 @@ export function parse(text: string, baseUrl: string): ParseResult {
         pendingStreamInf = line;
       } else if (line.name === 'EXT-X-IMAGE-STREAM-INF') {
         imageStreams.push(line);
+      } else if (line.name === 'EXT-X-SESSION-DATA') {
+        const entry = sessionDataFrom(line.attributes, baseUrl);
+        if (entry !== null) sessionData.push(entry);
       } else if (line.name === 'EXT-X-SESSION-KEY') {
         sessionProtection = protectionFrom(line, baseUrl) ?? sessionProtection;
       } else if (line.name === 'EXT-X-CONTENT-STEERING') {
@@ -581,6 +602,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
       periods: [{ id: 'p0', start: 0, tracks }],
       couplings,
       ...(steering !== undefined ? { steering } : {}),
+      ...(sessionData.length > 0 ? { sessionData } : {}),
     },
     error: null,
   };

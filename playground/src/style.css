@@ -560,6 +560,107 @@ select {
 .tp-hover-time {
   padding: 0 4px;
 }
+.tp-chapter {
+  max-width: 160px;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.tp-chapter[hidden],
+.tp-chapter-image[hidden] {
+  display: none;
+}
+.tp-chapter-image {
+  width: 160px;
+  border-radius: 3px;
+}
+.tp-chapters[hidden],
+.transport.tp-native-on .tp-chapters {
+  display: none;
+}
+.tp-chapter-menu {
+  position: relative;
+}
+/* Drawn like the bar's selects: a bordered field with the same chevron. */
+.tp-chapter-select {
+  display: block;
+  max-width: 220px;
+  padding: 4px 26px 4px 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg) var(--select-chevron) no-repeat right 9px center;
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+}
+.tp-chapter-select::-webkit-details-marker {
+  display: none;
+}
+.tp-chapter-select:hover {
+  border-color: var(--faint);
+}
+.tp-chapter-select:focus-visible,
+.tp-chapter-menu[open] .tp-chapter-select {
+  outline: none;
+  border-color: var(--link);
+}
+.tp-chapter-list {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  width: min(300px, 80vw);
+  max-height: 320px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: var(--shadow-soft);
+}
+.tp-chapter-list button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tp-chapter-list button:hover,
+.tp-chapter-list button[aria-current] {
+  background: var(--canvas-track);
+}
+.tp-chapter-list img {
+  width: 64px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.tp-chapter-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tp-chapter-time {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
 .tp-thumb {
   overflow: hidden;
   border-radius: 3px;

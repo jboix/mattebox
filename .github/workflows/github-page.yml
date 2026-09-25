@@ -32,8 +32,10 @@ jobs:
         run: test/e2e/gen-streams.sh
       - name: Build playground
         run: pnpm run playground:build --base=/${{ github.event.repository.name }}/
-      - name: Add stream corpus to the site
-        run: cp -R test/fixtures/streams playground/dist/streams
+      - name: Add stream corpus and chapter files to the site
+        run: |
+          cp -R test/fixtures/streams playground/dist/streams
+          cp -R test/fixtures/chapters playground/dist/chapters
       - name: Deploy GitHub Page 🚀
         uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445 # releases/v4
         with:

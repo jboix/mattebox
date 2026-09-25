@@ -1742,6 +1742,81 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-bipbop-basic
 }
 `;
 
+exports[`golden corpus: every fixture parses to a stable IR > apple-tv-session-data-master.m3u8 parses to a stable IR 1`] = `
+{
+  "couplings": [],
+  "id": "https://cdn.example/path/master.m3u8",
+  "isLive": false,
+  "periods": [
+    {
+      "id": "p0",
+      "start": 0,
+      "tracks": [
+        {
+          "contentType": "video",
+          "id": "video-main",
+          "mimeType": "video/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 1240800,
+              "codecs": "avc1.42c01e",
+              "height": 144,
+              "id": "v-1240800",
+              "mimeType": "video/mp4",
+              "playlistUrl": "https://cdn.example/path/media.m3u8",
+              "segments": [],
+              "width": 192,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "sessionData": [
+    {
+      "id": "com.apple.hls.format",
+      "value": "HD",
+    },
+    {
+      "id": "com.apple.hls.feature.adam-id",
+      "value": "1478593576",
+    },
+    {
+      "id": "com.apple.hls.title",
+      "lang": "zh-tw",
+      "value": "Sicario: Day of the Soldado",
+    },
+    {
+      "id": "com.apple.hls.poster",
+      "lang": "zh-tw",
+      "value": "https://is5-ssl.mzstatic.com/image/thumb/Video113/v4/4a/7f/cc/4a7fcc75-2b4e-64e9-e706-80f308fe19ae/pr_source.lsr/{w}x{h}mw.{f}",
+    },
+    {
+      "id": "com.apple.hls.genre",
+      "lang": "zh-tw",
+      "value": "劇情片",
+    },
+    {
+      "id": "com.apple.hls.release-date",
+      "value": "2018-11-01T07:00:00Z",
+    },
+    {
+      "id": "com.apple.hls.rating-tag",
+      "value": "第II類",
+    },
+    {
+      "id": "com.apple.hls.rating-system",
+      "value": "hk-movie",
+    },
+    {
+      "id": "com.apple.hls.rating-rank",
+      "value": "400",
+    },
+  ],
+}
+`;
+
 exports[`golden corpus: every fixture parses to a stable IR > edge-audio-only-master.m3u8 parses to a stable IR 1`] = `
 {
   "couplings": [],
@@ -2630,6 +2705,46 @@ exports[`golden corpus: every fixture parses to a stable IR > equiv-local-h264-m
           ],
         },
       ],
+    },
+  ],
+}
+`;
+
+exports[`golden corpus: every fixture parses to a stable IR > shaka-hls-chapters-master.m3u8 parses to a stable IR 1`] = `
+{
+  "couplings": [],
+  "id": "https://cdn.example/path/master.m3u8",
+  "isLive": false,
+  "periods": [
+    {
+      "id": "p0",
+      "start": 0,
+      "tracks": [
+        {
+          "contentType": "video",
+          "id": "video-main",
+          "mimeType": "video/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 1240800,
+              "codecs": "avc1.42c01e",
+              "height": 144,
+              "id": "v-1240800",
+              "mimeType": "video/mp4",
+              "playlistUrl": "https://cdn.example/path/media.m3u8",
+              "segments": [],
+              "width": 192,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "sessionData": [
+    {
+      "id": "com.apple.hls.chapters",
+      "uri": "https://cdn.example/path/chapters.json",
     },
   ],
 }
