@@ -178,7 +178,7 @@ describe('stage install semantics', () => {
   });
 });
 
-// Every configuration from docs/02, as data. Adding a stage means adding a
+// Every preset configuration, as data. Adding a stage means adding a
 // row; this is the test that stops the layering from rotting. Until the
 // real stages exist, each is represented by an inert placeholder that
 // declares the same name, requires, and provides.
@@ -246,7 +246,7 @@ const CONFIGURATIONS: readonly Configuration[] = [
   },
 ];
 
-/** The dependency shape of the future stage, from docs/04 and docs/06. */
+/** The dependency shape of each stage. */
 const STAGE_REQUIRES: Record<string, readonly string[]> = {
   'hls-cmaf': [],
   'dash-cmaf': [],

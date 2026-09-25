@@ -158,6 +158,22 @@ export interface SteeringInfo {
   readonly bases?: Readonly<Record<string, string>>;
 }
 
+/**
+ * How an image rendition splits each segment's image into tiles, one per
+ * time slice (DASH-IF IOP thumbnail_tile, the Roku EXT-X-TILES tag). The
+ * grid fills row by row from the top left.
+ */
+export interface TileGrid {
+  readonly columns: number;
+  readonly rows: number;
+  /** Width of one tile in pixels. */
+  readonly width: number;
+  /** Height of one tile in pixels. */
+  readonly height: number;
+  /** Seconds each tile covers. Absent: the segment duration divided by columns × rows. */
+  readonly duration?: number;
+}
+
 /** One quality level of a track. */
 export interface Rendition {
   readonly id: RenditionId;
@@ -177,6 +193,8 @@ export interface Rendition {
   readonly playlistUrl?: string;
   /** The content-steering pathway this rendition belongs to (HLS PATHWAY-ID). */
   readonly pathway?: string;
+  /** The tile grid of an image rendition whose segments are sprite sheets. */
+  readonly tiles?: TileGrid;
 }
 
 /**

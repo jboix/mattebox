@@ -10,6 +10,8 @@
 import type { Mattebox, Rendition } from '../../src/index.js';
 import { fmtBitrate } from './dock.js';
 import { cssVar, THEME_EVENT } from './theme.js';
+import type { ThumbnailsView } from './thumb.js';
+import { paintThumb } from './thumb.js';
 import { createTraceCursor } from './trace-cursor.js';
 
 export type ChartTab = 'buffer' | 'throughput' | 'stalls' | 'frames' | 'switches';
@@ -94,12 +96,15 @@ export function createCharts(
     <div class="chart-stage">
       <canvas class="chart"></canvas>
       <div class="chart-tip" hidden></div>
+      <div class="chart-thumb tp-thumb" hidden><div class="tp-thumb-tile"></div></div>
     </div>
     <div class="chart-readout muted"></div>`;
   const canvas = host.querySelector('canvas') as HTMLCanvasElement;
   const legend = host.querySelector('.chart-legend') as HTMLElement;
   const readout = host.querySelector('.chart-readout') as HTMLElement;
   const tip = host.querySelector('.chart-tip') as HTMLElement;
+  const thumb = host.querySelector('.chart-thumb') as HTMLElement;
+  const thumbTile = host.querySelector('.chart-thumb .tp-thumb-tile') as HTMLElement;
   const windowSelect = host.querySelector('[data-window]') as HTMLSelectElement;
 
   let tab: ChartTab = 'buffer';
@@ -473,6 +478,7 @@ export function createCharts(
     }
     f.ctx.fillStyle = colors.accent;
     f.ctx.fillRect(x(video.currentTime) - 1, f.top, 2, f.bottom - f.top);
+    drawMediaHover(f, d0, d1);
 
     setLegend([
       ...renditions.map(
@@ -485,6 +491,39 @@ export function createCharts(
     readout.textContent = `${fmtClock(video.currentTime)} of ${live !== null ? 'live' : fmtClock(duration)}, ${ahead.toFixed(1)}s buffered ahead${
       live !== null ? `, window ${fmtClock(live.span.start)} to ${fmtClock(live.span.end)}` : ''
     }`;
+  }
+
+  /**
+   * The buffer chart's hover: the media time under the pointer and, when the
+   * engine answers one, the thumbnail tile for it.
+   */
+  function drawMediaHover(f: Frame, d0: number, d1: number): void {
+    if (hover === null || hover < f.left || hover > f.right || engine === null) {
+      tip.hidden = true;
+      thumb.hidden = true;
+      return;
+    }
+    const t = d0 + ((hover - f.left) / (f.right - f.left)) * (d1 - d0);
+    f.ctx.strokeStyle = colors.muted;
+    f.ctx.lineWidth = 1;
+    f.ctx.beginPath();
+    f.ctx.moveTo(hover, f.top);
+    f.ctx.lineTo(hover, f.bottom);
+    f.ctx.stroke();
+    tip.hidden = false;
+    tip.textContent = fmtClock(t);
+    const api = (engine as { thumbnails?: ThumbnailsView }).thumbnails ?? null;
+    paintThumb(thumb, thumbTile, api, t, 120);
+    // Same flip as the readout: left of the crosshair past the middle.
+    for (const el of [tip, thumb]) {
+      if (hover > f.w / 2) {
+        el.style.left = 'auto';
+        el.style.right = `${f.w - hover + 10}px`;
+      } else {
+        el.style.right = 'auto';
+        el.style.left = `${hover + 10}px`;
+      }
+    }
   }
 
   function drawThroughput(f: Frame): void {
@@ -720,6 +759,7 @@ export function createCharts(
   canvas.addEventListener('mouseleave', () => {
     hover = null;
     tip.hidden = true;
+    thumb.hidden = true;
     lastDraw = 0;
   });
   windowSelect.addEventListener('change', () => {
@@ -758,6 +798,7 @@ export function createCharts(
         f.ctx.fillText('compose an engine to see the timeline', f.w / 2, f.h / 2);
         return;
       }
+      if (tab !== 'buffer') thumb.hidden = true;
       switch (tab) {
         case 'buffer':
           drawBuffer(f);

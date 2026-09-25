@@ -27,8 +27,10 @@ import type {
   SegmentRef,
   SegmentRun,
   SidxSegments,
+  TileGrid,
   Track,
 } from '../../types/ir.js';
+import { dimensions } from '../dimensions.js';
 
 export interface ParseResult {
   readonly presentation: Presentation | null;
@@ -201,6 +203,33 @@ function isTrickMode(adaptationSet: Element): boolean {
     if (rate !== null && rate !== 1) return true;
   }
   return false;
+}
+
+/**
+ * The DASH-IF IOP thumbnail grid: an EssentialProperty with the
+ * thumbnail_tile scheme and value `CxR`, on the Representation or its
+ * AdaptationSet. The Representation's width and height are the whole image,
+ * so one tile is that size divided by the grid.
+ */
+function tileGridOf(
+  representation: Element,
+  adaptationSet: Element,
+  width: number | null,
+  height: number | null,
+): TileGrid | null {
+  if (width === null || height === null) return null;
+  const properties = [
+    ...children(representation, 'EssentialProperty'),
+    ...children(adaptationSet, 'EssentialProperty'),
+  ];
+  for (const property of properties) {
+    if (!(attr(property, 'schemeIdUri') ?? '').includes('thumbnail_tile')) continue;
+    const grid = dimensions(attr(property, 'value'));
+    if (grid === null) continue;
+    const [columns, rows] = grid;
+    return { columns, rows, width: width / columns, height: height / rows };
+  }
+  return null;
 }
 
 /** Merges SegmentTemplate attributes down Period, AdaptationSet, Representation. */
@@ -523,6 +552,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
         parseFrameRate(attr(adaptationSet, 'frameRate'));
       const width = numberAttr(representation, 'width');
       const height = numberAttr(representation, 'height');
+      const tiles = tileGridOf(representation, adaptationSet, width, height);
       renditions.push({
         id,
         bitrate: bandwidth,
@@ -533,6 +563,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
         ...(width !== null ? { width } : {}),
         ...(height !== null ? { height } : {}),
         ...(frameRate !== null ? { frameRate } : {}),
+        ...(tiles !== null ? { tiles } : {}),
       });
     }
 

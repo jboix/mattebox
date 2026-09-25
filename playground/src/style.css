@@ -1296,6 +1296,13 @@ canvas.chart {
 .chart-tip[hidden] {
   display: none;
 }
+.chart-thumb {
+  position: absolute;
+  top: 38px;
+  pointer-events: none;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-soft);
+}
 .chart-readout {
   font-size: 12.5px;
   margin-top: 6px;

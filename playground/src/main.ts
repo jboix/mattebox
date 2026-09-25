@@ -488,9 +488,22 @@ function thumbnailsApi(): ThumbnailsApi | null {
   return (engine as { thumbnails?: ThumbnailsApi } | null)?.thumbnails ?? null;
 }
 
+/** Reports manifest tiles once the thumbnails stage selects an image track. */
+function watchManifestThumbnails(pill: HTMLElement): void {
+  const current = engine;
+  const off = current?.on('tracks:selected', (payload) => {
+    if ((payload as { contentType?: string }).contentType !== 'image') return;
+    off?.();
+    if (engine !== current || config.thumbnails !== undefined) return;
+    pill.className = 'pill ok';
+    pill.textContent = 'thumbnails from the manifest · hover the seek bar';
+  });
+}
+
 async function loadThumbnails(): Promise<void> {
   const pill = document.querySelector('#thumbState') as HTMLElement;
   const api = thumbnailsApi();
+  if (api !== null) watchManifestThumbnails(pill);
   if (config.thumbnails === undefined || api === null) {
     pill.className = 'pill';
     pill.textContent =

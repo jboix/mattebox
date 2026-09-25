@@ -165,7 +165,7 @@ function companionTargets(
     urls.add(url);
     out.push({ url, renditionId: rendition.id, ladder });
   };
-  for (const contentType of ['video', 'audio', 'text'] as const) {
+  for (const contentType of ['video', 'audio', 'text', 'image'] as const) {
     const trackId = kernel.tracks.active.get(contentType);
     if (trackId === undefined) continue;
     for (const period of presentation.periods) {

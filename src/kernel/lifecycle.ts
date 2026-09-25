@@ -151,7 +151,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     if (element === null) return;
     const el = element;
 
-    // Order per docs/09: stop the world (aborts ride the DETACH effects),
+    // Detach order: stop the world (aborts ride the DETACH effects),
     // tear down stages in reverse install order, then release the element.
     deps.bus.dispatch({ type: 'DETACH' });
     stopWatchdog?.();

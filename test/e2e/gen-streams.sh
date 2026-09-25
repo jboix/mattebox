@@ -11,14 +11,56 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$ROOT/test/fixtures/streams"
 DURATION=72
 
+command -v ffmpeg >/dev/null || { echo "ffmpeg is required to generate E2E streams"; exit 1; }
+
+# HLS image playlists (the Roku EXT-X-IMAGE-STREAM-INF form) over the h264
+# media: sprite sheets of 5x2 tiles, one tile per 2 s, so a 20 s sheet and a
+# short last sheet of 6 tiles. The master points at the h264 flavor's media
+# playlists, so the E2E h264 master stays as it is. Separate from the check
+# below, so an existing corpus gains it without a full regeneration.
+images_flavor() {
+  local dir="$OUT/h264-images"
+  mkdir -p "$dir"
+  local sheets=$(( (DURATION + 19) / 20 ))
+  for size in 160x90 256x144; do
+    mkdir -p "$dir/$size"
+    # -t before -i ends the source at DURATION; after it, it would cut the
+    # tiled output, whose last sheet starts before the end and runs past it.
+    ffmpeg -y -loglevel error -f lavfi -t $DURATION -i "testsrc2=size=$size:rate=30" \
+      -vf "select='not(mod(n,60))',tile=5x2" -fps_mode vfr -q:v 5 "$dir/$size/sheet-%03d.jpg"
+    {
+      echo "#EXTM3U"
+      echo "#EXT-X-VERSION:7"
+      echo "#EXT-X-TARGETDURATION:20"
+      echo "#EXT-X-MEDIA-SEQUENCE:1"
+      echo "#EXT-X-PLAYLIST-TYPE:VOD"
+      echo "#EXT-X-IMAGES-ONLY"
+      for i in $(seq 1 "$sheets"); do
+        local length=$(( DURATION - (i - 1) * 20 ))
+        [ "$length" -gt 20 ] && length=20
+        printf "#EXTINF:%d.000,\n" "$length"
+        printf "#EXT-X-TILES:RESOLUTION=%s,LAYOUT=5x2,DURATION=2.000\n" "$size"
+        printf "sheet-%03d.jpg\n" "$i"
+      done
+      echo "#EXT-X-ENDLIST"
+    } > "$dir/$size/images.m3u8"
+  done
+  sed -e 's#^\([a-z-]*\.m3u8\)$#../h264/\1#' -e 's#URI="\([a-z-]*\.m3u8\)"#URI="../h264/\1"#' \
+    "$OUT/h264/master.m3u8" > "$dir/master.m3u8"
+  cat >> "$dir/master.m3u8" <<EOF
+#EXT-X-IMAGE-STREAM-INF:BANDWIDTH=8000,RESOLUTION=160x90,CODECS="jpeg",URI="160x90/images.m3u8"
+#EXT-X-IMAGE-STREAM-INF:BANDWIDTH=16000,RESOLUTION=256x144,CODECS="jpeg",URI="256x144/images.m3u8"
+EOF
+}
+
 if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
    [ -f "$OUT/h264-dash/manifest.mpd" ] && [ -f "$OUT/vp9-dash/manifest.mpd" ] &&
    [ -f "$OUT/ts/master.m3u8" ] && [ -f "$OUT/aac/master.m3u8" ]; then
+  [ -f "$OUT/h264-images/master.m3u8" ] || images_flavor
   echo "streams present, skipping generation"
   exit 0
 fi
 
-command -v ffmpeg >/dev/null || { echo "ffmpeg is required to generate E2E streams"; exit 1; }
 mkdir -p "$OUT"
 
 # Encode one variant. The codec string comes from a throwaway DASH pass so
@@ -194,5 +236,6 @@ dash vp9 libvpx-vp9 -deadline realtime -cpu-used 8
 
 ts_flavor
 aac_flavor
+images_flavor
 
 echo "generated: h264 [$H_LOW] vp9 [$V_LOW] plus dash flavors, three rungs"

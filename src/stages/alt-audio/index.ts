@@ -126,7 +126,7 @@ export default function altAudio(): Stage {
   return {
     name: 'alt-audio',
     provides: ['alt-audio'],
-    // docs/06: audio group switching crosses codec boundaries, so the
+    // Audio group switching crosses codec boundaries, so the
     // changeType machinery must be present; the loader pulls codec-switch in.
     requires: ['scheduler', 'codec-switch'],
     install(ctx) {

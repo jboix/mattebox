@@ -69,8 +69,8 @@ function claims(state: HlsSlice, text: string): boolean {
 /**
  * The playlist URLs the selection needs and this slice has not asked for:
  * the playing video rendition and its ladder neighbours, and every
- * rendition of the active audio and text tracks (one each in practice; an
- * audio-only ladder is short). Fetching the whole ladder up front costs one
+ * rendition of the active audio, text, and image tracks (one each in
+ * practice; an audio-only ladder is short). Fetching the whole ladder up front costs one
  * request per variant, hundreds on a large multivariant playlist.
  */
 function neededPlaylists(state: HlsSlice, kernel: Readonly<KernelState>): readonly Rendition[] {
@@ -78,7 +78,8 @@ function neededPlaylists(state: HlsSlice, kernel: Readonly<KernelState>): readon
   if (presentation === null) return [];
   const asked = new Set(Object.values(state.pending));
   const needed: Rendition[] = [];
-  for (const contentType of ['video', 'audio', 'text'] as const) {
+  // An image track is active only when the thumbnails stage selected it.
+  for (const contentType of ['video', 'audio', 'text', 'image'] as const) {
     const trackId = kernel.tracks.active.get(contentType);
     if (trackId === undefined) continue;
     for (const period of presentation.periods) {

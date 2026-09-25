@@ -22,8 +22,10 @@ import type {
   SegmentAddressing,
   SegmentKey,
   SegmentRef,
+  TileGrid,
   Track,
 } from '../../types/ir.js';
+import { dimensions } from '../dimensions.js';
 import type { TagLine } from './lexer.js';
 import { lex } from './lexer.js';
 
@@ -42,6 +44,8 @@ export interface MediaPlaylist {
   readonly protection: ProtectionInfo | null;
   /** From the first EXT-X-PROGRAM-DATE-TIME: `wallClock` epoch seconds at `presentationTime`. */
   readonly dateAnchor?: { readonly wallClock: number; readonly presentationTime: number };
+  /** From the first EXT-X-TILES of an image playlist. */
+  readonly tiles?: TileGrid;
 }
 
 export interface MediaPlaylistResult {
@@ -114,6 +118,25 @@ function protectionFrom(key: TagLine, baseUrl: string): ProtectionInfo | null {
 const AUDIO_CODECS = /^(mp4a|ac-3|ec-3|opus|flac)/i;
 
 /**
+ * A tile grid from LAYOUT="CxR" and a tile RESOLUTION, both from the Roku
+ * image-playlist specification (EXT-X-IMAGE-STREAM-INF, EXT-X-TILES).
+ * DURATION, when present, is the seconds each tile covers.
+ */
+function tileGridFrom(attributes: Readonly<Record<string, string>>): TileGrid | null {
+  const layout = dimensions(attributes.LAYOUT);
+  const size = dimensions(attributes.RESOLUTION);
+  if (layout === null || size === null) return null;
+  const duration = Number(attributes.DURATION);
+  return {
+    columns: layout[0],
+    rows: layout[1],
+    width: size[0],
+    height: size[1],
+    ...(duration > 0 ? { duration } : {}),
+  };
+}
+
+/**
  * Rewrites the legacy decimal AVC codec form some packagers still emit into
  * the RFC 6381 hex form MSE demands. `avc1.66.30` (profile 66, level 30) is
  * accepted by Firefox but rejected by Chrome's isTypeSupported, which is why a
@@ -157,6 +180,7 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
   let playlistType: string | null = null;
   let protection: ProtectionInfo | null = null;
   let pendingKey: SegmentKey | null = null;
+  let tiles: TileGrid | null = null;
 
   let dateAnchor: { wallClock: number; presentationTime: number } | undefined;
   let pendingDate: number | null = null;
@@ -219,6 +243,11 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
           if (Number.isFinite(parsed)) pendingDate = parsed / 1000;
           break;
         }
+        case 'EXT-X-TILES':
+          // Every segment of an image playlist may carry its own tag; the
+          // first one describes the rendition, as packagers repeat one grid.
+          tiles = tiles ?? tileGridFrom(line.attributes);
+          break;
         default:
           break;
       }
@@ -259,6 +288,7 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
       playlistType,
       protection,
       ...(dateAnchor !== undefined ? { dateAnchor } : {}),
+      ...(tiles !== null ? { tiles } : {}),
     },
     error: null,
   };
@@ -277,6 +307,42 @@ function mediaContentType(type: string): 'audio' | 'text' | null {
   if (type === 'SUBTITLES') return 'text';
   // CLOSED-CAPTIONS have no URI (in-band); VIDEO alternates are rare.
   return null;
+}
+
+/**
+ * Image playlists (Roku EXT-X-IMAGE-STREAM-INF) as one image track, one
+ * rendition per playlist. RESOLUTION is the size of one tile. The grid is
+ * known here only when the tag carries LAYOUT; otherwise it arrives with the
+ * media playlist's EXT-X-TILES. The kernel schedules no image track; the
+ * thumbnails stage reads it.
+ */
+function imageTrack(streams: readonly TagLine[], baseUrl: string): Track | null {
+  const renditions: Rendition[] = [];
+  for (const { attributes } of streams) {
+    const id = `i-${attributes.RESOLUTION ?? attributes.BANDWIDTH}`;
+    if (attributes.URI === undefined || renditions.some((r) => r.id === id)) continue;
+    const size = dimensions(attributes.RESOLUTION);
+    const tiles = tileGridFrom(attributes);
+    renditions.push({
+      id,
+      bitrate: Number(attributes.BANDWIDTH) || 0,
+      codecs: attributes.CODECS ?? null,
+      mimeType: /png/i.test(attributes.CODECS ?? '') ? 'image/png' : 'image/jpeg',
+      segments: [],
+      playlistUrl: resolve(attributes.URI, baseUrl),
+      ...(size !== null ? { width: size[0], height: size[1] } : {}),
+      ...(tiles !== null ? { tiles } : {}),
+    });
+  }
+  const first = renditions[0];
+  if (first === undefined) return null;
+  return {
+    id: 'image-main',
+    contentType: 'image',
+    mimeType: first.mimeType,
+    protection: null,
+    renditions,
+  };
 }
 
 /** parse either playlist form into a Presentation. Never throws. */
@@ -363,6 +429,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
   // Multivariant: decompose variants, hoist media entries, record couplings.
   const mediaEntries: MediaEntry[] = [];
   const variants: Array<{ attributes: Readonly<Record<string, string>>; uri: string }> = [];
+  const imageStreams: TagLine[] = [];
   let sessionProtection: ProtectionInfo | null = null;
   let steering: { serverUri: string; defaultPathway?: string } | undefined;
   let pendingStreamInf: TagLine | null = null;
@@ -379,6 +446,8 @@ export function parse(text: string, baseUrl: string): ParseResult {
         });
       } else if (line.name === 'EXT-X-STREAM-INF') {
         pendingStreamInf = line;
+      } else if (line.name === 'EXT-X-IMAGE-STREAM-INF') {
+        imageStreams.push(line);
       } else if (line.name === 'EXT-X-SESSION-KEY') {
         sessionProtection = protectionFrom(line, baseUrl) ?? sessionProtection;
       } else if (line.name === 'EXT-X-CONTENT-STEERING') {
@@ -392,7 +461,8 @@ export function parse(text: string, baseUrl: string): ParseResult {
           };
         }
       }
-      // EXT-X-I-FRAME-STREAM-INF is recognized and skipped; thumbnails later.
+      // EXT-X-I-FRAME-STREAM-INF is recognized and skipped: normal playback
+      // never uses an I-frame-only stream.
       continue;
     }
     if (pendingStreamInf !== null) {
@@ -410,9 +480,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
   const couplings: Coupling[] = [];
   for (const variant of variants) {
     const bandwidth = Number(variant.attributes.BANDWIDTH) || 0;
-    const resolution = variant.attributes.RESOLUTION;
-    const [width, height] =
-      resolution !== undefined ? resolution.split('x').map((n) => Number(n)) : [];
+    const [width, height] = dimensions(variant.attributes.RESOLUTION) ?? [];
     const { video, audio } = splitCodecs(variant.attributes.CODECS);
     // A STREAM-INF whose CODECS names an audio codec but no video codec is an
     // audio-only rendition, not a low-bitrate video one. When the stream also
@@ -445,8 +513,8 @@ export function parse(text: string, baseUrl: string): ParseResult {
       segments: [],
       playlistUrl: variant.uri,
       ...(pathway !== undefined ? { pathway } : {}),
-      ...(width !== undefined && Number.isFinite(width) ? { width } : {}),
-      ...(height !== undefined && Number.isFinite(height) ? { height } : {}),
+      ...(width !== undefined ? { width } : {}),
+      ...(height !== undefined ? { height } : {}),
       ...(Number.isFinite(frameRate) ? { frameRate } : {}),
     });
     const requires: Record<string, string> = {};
@@ -519,6 +587,9 @@ export function parse(text: string, baseUrl: string): ParseResult {
       ],
     });
   }
+
+  const images = imageTrack(imageStreams, baseUrl);
+  if (images !== null) tracks.push(images);
 
   return {
     presentation: {
@@ -623,6 +694,7 @@ export function refreshFor(
     mediaSequence: playlist.mediaSequence,
     segments,
     ...(playlist.init !== null ? { init: playlist.init } : {}),
+    ...(playlist.tiles !== undefined ? { tiles: playlist.tiles } : {}),
     protection: playlist.protection,
     endlist: playlist.endlist,
     ...(playlist.endlist ? {} : { updatePeriod: playlist.targetDuration || 4 }),

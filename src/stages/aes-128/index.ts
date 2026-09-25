@@ -5,7 +5,7 @@
  * bytes. Keys are fetched through the transport's request path and cached
  * by URL; the IV is the playlist's or, absent one, the media sequence
  * number. SAMPLE-AES is not this: it decrypts inside the elementary stream
- * and stays deferred (docs/16).
+ * and stays deferred.
  */
 import type { Segment, SegmentKey } from '../../types/ir.js';
 import type { KernelState } from '../../types/kernel.js';

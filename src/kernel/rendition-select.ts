@@ -1,5 +1,5 @@
 /**
- * The constraint solver: docs/08 made real. Selection mechanism lives in
+ * The constraint solver. Selection mechanism lives in
  * the kernel; ABR is one optional voice with an opinion. With no abr
  * registered this module alone is a complete working player: lowest
  * permitted rendition at startup, then never change.
@@ -193,7 +193,7 @@ export function withDeadGroups(presentation: Presentation, dead: ReadonlySet<str
   return out;
 }
 
-/** The strict arbitration order from docs/08. Never deviate; never return zero renditions. */
+/** The strict arbitration order. Never deviate; never return zero renditions. */
 export function arbitrate(ctx: ArbitrationContext): ArbitrationOutcome {
   const events: Effect[] = [];
   if (ctx.renditions.length === 0) {
@@ -437,7 +437,7 @@ export interface PinApplyPlan {
 }
 
 /**
- * The apply strategies from docs/08. `next` costs nothing and waits out
+ * The apply strategies. `next` costs nothing and waits out
  * the buffer. `soon` flushes from the next segment boundary after
  * currentTime plus a lead, so the switch is usually invisible. `now` pays
  * a visible stall for immediacy.
