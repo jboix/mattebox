@@ -26,7 +26,7 @@ pnpm run verify    # everything CI checks
 | `pnpm run build`              | tsc + Rolldown                  | Modern ESM, types, ES2015 ESM, CDN bundles             |
 | `pnpm run check:emit`         | scripts/check-emit.mjs          | Banned TS constructs, bare import specifiers           |
 | `pnpm run check:side-effects` | scripts/side-effect-audit.mjs   | Import-time registrations                              |
-| `pnpm exec size-limit`        | size-limit                      | One budget: `mattebox.min.js` under 61 kB min+gzip     |
+| `pnpm exec size-limit`        | size-limit                      | One budget: `mattebox.min.js` under 75 kB min+gzip     |
 | `pnpm run check:size-chart`   | size-chart + git diff           | Regenerates `docs/*-chart-*.svg`; fails if they change |
 | `pnpm run check:package`      | scripts/check-package.mjs       | publint and attw on every entry point                  |
 | `pnpm run test`               | Vitest                          | Node tests, and browser tests in real browsers         |

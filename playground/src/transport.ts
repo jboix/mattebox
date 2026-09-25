@@ -15,6 +15,8 @@
  */
 import type { Mattebox } from '../../src/index.js';
 import { collapseGroups, trackName } from './dock.js';
+import type { ThumbnailsView } from './thumb.js';
+import { paintThumb } from './thumb.js';
 
 const CONTROLS_KEY = 'mattebox-playground:native-controls';
 const VIEWPORT_KEY = 'mattebox-playground:viewport';
@@ -40,16 +42,6 @@ interface LiveView {
 }
 interface PdtView {
   toWallClock(presentationTime: number): number | null;
-}
-interface ThumbTile {
-  readonly url: string;
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
-interface ThumbnailsView {
-  at(time: number): ThumbTile | null;
 }
 /** The tile's width in the hover card; sprite tiles are scaled to it. */
 const THUMB_WIDTH = 160;
@@ -180,17 +172,7 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
 
   /** Puts the sprite tile for a time into the hover card, scaled to THUMB_WIDTH. */
   function showThumb(time: number): void {
-    const tile = thumbnailsApi()?.at(time) ?? null;
-    thumb.hidden = tile === null;
-    if (tile === null) return;
-    const scale = THUMB_WIDTH / tile.width;
-    thumb.style.width = `${THUMB_WIDTH}px`;
-    thumb.style.height = `${Math.round(tile.height * scale)}px`;
-    thumbTile.style.width = `${tile.width}px`;
-    thumbTile.style.height = `${tile.height}px`;
-    thumbTile.style.transform = `scale(${scale})`;
-    thumbTile.style.backgroundImage = `url("${tile.url}")`;
-    thumbTile.style.backgroundPosition = `-${tile.x}px -${tile.y}px`;
+    paintThumb(thumb, thumbTile, thumbnailsApi(), time, THUMB_WIDTH);
   }
 
   /** The seekable span from the element, or the duration for a source that reports none. */

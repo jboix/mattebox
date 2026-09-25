@@ -107,7 +107,7 @@ Two stages are only in `full`. Add them with `stages` when you need them.
 
 | Stage        | Why                                               |
 | ------------ | ------------------------------------------------- |
-| `thumbnails` | Needs a sprite track URL from your app            |
+| `thumbnails` | Fetches image playlists, so it is opt-in          |
 | `cmcd`       | Changes every request to the CDN, so it is opt-in |
 
 The caption stages read the NAL unit headers of every H.264 and HEVC video

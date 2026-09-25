@@ -1,5 +1,5 @@
 /**
- * The element-size cap from docs/08, verbatim: a ResizeObserver feeding one
+ * The element-size cap: a ResizeObserver feeding one
  * named constraint source. Its size is the litmus test for the constraint
  * API; if this file grows, the API is wrong.
  */

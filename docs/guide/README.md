@@ -14,7 +14,7 @@ order the first time, then use the table.
 | [07 DRM](07-drm.md)                                           | ClearKey, Widevine, PlayReady, FairPlay               |
 | [08 Legacy transport streams](08-legacy-transport-streams.md) | MPEG-TS, packed audio, and codec probing              |
 | [09 Events and errors](09-events-and-errors.md)               | Events, error codes, the `recovery` stage             |
-| [10 Thumbnails](10-thumbnails.md)                             | Scrub previews from a sprite-sheet track              |
+| [10 Thumbnails](10-thumbnails.md)                             | Scrub previews from the manifest or a sprite track    |
 | [11 Network and CDN](11-network-and-cdn.md)                   | Transport hooks, retries, CMCD, content steering      |
 | [12 Diagnostics](12-diagnostics.md)                           | Stats, the trace, replay, the hosted playground       |
 | [13 Builds and targets](13-builds-and-targets.md)             | The three build outputs, the modern build, TV targets |

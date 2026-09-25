@@ -1,7 +1,7 @@
 /**
  * The `full` preset: every stage the catalogue ships. `dual-ts-drm` plus
  * the accessories: CMCD (changes every request, so opt-in elsewhere) and
- * thumbnails (needs an app-supplied sprite track). Feature parity with
+ * thumbnails (fetches image playlists, so opt-in elsewhere). Feature parity with
  * videojs-http-streaming; the modularity claim is measured against it, and
  * the main CDN bundle exposes it.
  */

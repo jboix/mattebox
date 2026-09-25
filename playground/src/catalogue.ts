@@ -146,6 +146,10 @@ const LOCAL_STREAMS: readonly StreamEntry[] =
     : [
         { label: 'local h264 (generated)', url: local('h264/master.m3u8') },
         { label: 'local vp9 (generated)', url: local('vp9/master.m3u8') },
+        {
+          label: 'local h264 + HLS image playlists (generated, needs thumbnails)',
+          url: local('h264-images/master.m3u8'),
+        },
         { label: 'local h264 DASH (generated)', url: local('h264-dash/manifest.mpd') },
         { label: 'local vp9 DASH (generated)', url: local('vp9-dash/manifest.mpd') },
         { label: 'local muxed TS (generated, needs ts-transmux)', url: local('ts/master.m3u8') },
@@ -177,9 +181,29 @@ export const STREAMS: readonly StreamEntry[] = [
   },
   {
     // DASH-IF thumbnail tiles: an image AdaptationSet with the thumbnail_tile
-    // EssentialProperty. Not discovered by the engine yet (see docs/17).
-    label: 'DASH-IF · Big Buck Bunny (tiled thumbnails in the MPD, not wired yet)',
+    // EssentialProperty. The thumbnails stage reads it with no track URL.
+    label: 'DASH-IF · Big Buck Bunny (10x1 tiles in the MPD)',
     url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_tiled_thumbnails.mpd',
+  },
+  {
+    // Fractional tile widths: a 2048 px sheet split into 10 columns.
+    label: 'DASH-IF · Big Buck Bunny (4 sheets of tiles in the MPD)',
+    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_4_tiles_thumbnails.mpd',
+  },
+  {
+    // One 10x20 sheet for the whole film: 200 tiles, fractional tile size.
+    label: 'DASH-IF · Big Buck Bunny (one 10x20 sheet in the MPD)',
+    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_tiled_thumbnails_2.mpd',
+  },
+  {
+    // Two image representations in one set; the stage uses the first.
+    label: 'DASH-IF · Big Buck Bunny (two thumbnail sizes in the MPD)',
+    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_multiple_tiled_thumbnails.mpd',
+  },
+  {
+    // Live: one 1x1 image per 2 s segment on an open template.
+    label: 'DASH-IF livesim · live with thumbnails in the MPD',
+    url: 'https://livesim2.dashif.org/livesim2/testpic_2s/Manifest_thumbs.mpd',
   },
   {
     label: 'SRG SSR · RTS (fr)',

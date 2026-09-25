@@ -43,6 +43,7 @@ Place this at the repository root. It applies to every stage.
 - Explicit `.js` extensions in all import specifiers.
 - `import type` for type-only imports.
 - Comments explain **why**. Cite spec sections: `// RFC 8216 §4.3.2.2`.
+- Never cite the local design record (`docs/NN`, `docs/specs/`) in code, tests, the playground, or published docs. It is not in the repository, so the reference is dead once pushed. State the reason itself.
 - Prefer `Map` over object literals for keyed state that churns.
 - No barrel files inside `src/kernel/`.
 

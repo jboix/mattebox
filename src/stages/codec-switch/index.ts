@@ -53,7 +53,7 @@ export default function codecSwitch(): Stage {
   return {
     name: 'codec-switch',
     provides: ['codec-switch'],
-    // docs/05 also lists codec-probe; that becomes a real `requires` once
+    // The design also lists codec-probe; that becomes a real `requires` once
     // the probe has a runtime call site (tracked in the register). Until
     // then this policy reasons over declared strings and needs only mse's
     // changeType.

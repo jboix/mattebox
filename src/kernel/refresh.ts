@@ -31,6 +31,7 @@ export function applyRefresh(
                 ...rendition,
                 segments: refresh.segments,
                 ...(refresh.init !== undefined ? { init: refresh.init } : {}),
+                ...(refresh.tiles !== undefined ? { tiles: refresh.tiles } : {}),
               }
             : rendition,
         ),

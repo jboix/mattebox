@@ -16,6 +16,7 @@ import type {
   ProtectionInfo,
   Segment,
   SegmentRef,
+  TileGrid,
   TimeRangesSnapshot,
   TrackId,
 } from './ir.js';
@@ -119,6 +120,8 @@ export type Fact =
       readonly segments: readonly Segment[];
       /** The rendition's init segment, when the playlist names one. */
       readonly init?: SegmentRef;
+      /** The tile grid, when the playlist is an image playlist that declares one (EXT-X-TILES). */
+      readonly tiles?: TileGrid;
       /** Protection the playlist declares. It applies to a track that declares none. */
       readonly protection?: ProtectionInfo | null;
       /**

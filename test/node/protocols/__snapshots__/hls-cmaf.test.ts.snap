@@ -1910,6 +1910,135 @@ exports[`golden corpus: every fixture parses to a stable IR > edge-discontinuity
 }
 `;
 
+exports[`golden corpus: every fixture parses to a stable IR > edge-image-stream-master.m3u8 parses to a stable IR 1`] = `
+{
+  "couplings": [],
+  "id": "https://cdn.example/path/master.m3u8",
+  "isLive": false,
+  "periods": [
+    {
+      "id": "p0",
+      "start": 0,
+      "tracks": [
+        {
+          "contentType": "video",
+          "id": "video-main",
+          "mimeType": "video/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 1200000,
+              "codecs": "avc1.64001f, mp4a.40.2",
+              "height": 720,
+              "id": "v-1200000",
+              "mimeType": "video/mp4",
+              "playlistUrl": "https://cdn.example/path/video/720p.m3u8",
+              "segments": [],
+              "width": 1280,
+            },
+            {
+              "bitrate": 600000,
+              "codecs": "avc1.4d401e, mp4a.40.2",
+              "height": 360,
+              "id": "v-600000",
+              "mimeType": "video/mp4",
+              "playlistUrl": "https://cdn.example/path/video/360p.m3u8",
+              "segments": [],
+              "width": 640,
+            },
+          ],
+        },
+        {
+          "contentType": "image",
+          "id": "image-main",
+          "mimeType": "image/jpeg",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 16460,
+              "codecs": "jpeg",
+              "height": 180,
+              "id": "i-320x180",
+              "mimeType": "image/jpeg",
+              "playlistUrl": "https://cdn.example/path/images/320x180-5x2.m3u8",
+              "segments": [],
+              "width": 320,
+            },
+            {
+              "bitrate": 4800,
+              "codecs": "jpeg",
+              "height": 90,
+              "id": "i-160x90",
+              "mimeType": "image/jpeg",
+              "playlistUrl": "https://cdn.example/path/images/160x90-5x2.m3u8",
+              "segments": [],
+              "tiles": {
+                "columns": 5,
+                "height": 90,
+                "rows": 2,
+                "width": 160,
+              },
+              "width": 160,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
+`;
+
+exports[`golden corpus: every fixture parses to a stable IR > edge-image-stream-media.m3u8 parses to a stable IR 1`] = `
+{
+  "couplings": [],
+  "duration": 138,
+  "id": "https://cdn.example/path/master.m3u8",
+  "isLive": false,
+  "periods": [
+    {
+      "id": "p0",
+      "start": 0,
+      "tracks": [
+        {
+          "contentType": "video",
+          "id": "main",
+          "mimeType": "video/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 0,
+              "codecs": null,
+              "id": "r-0",
+              "mimeType": "video/mp4",
+              "segments": [
+                {
+                  "duration": 60,
+                  "seq": 1,
+                  "start": 0,
+                  "url": "https://cdn.example/path/tile-1.jpg",
+                },
+                {
+                  "duration": 60,
+                  "seq": 2,
+                  "start": 60,
+                  "url": "https://cdn.example/path/tile-2.jpg",
+                },
+                {
+                  "duration": 18,
+                  "seq": 3,
+                  "start": 120,
+                  "url": "https://cdn.example/path/tile-3.jpg",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
+`;
+
 exports[`golden corpus: every fixture parses to a stable IR > edge-multi-audio-groups.m3u8 parses to a stable IR 1`] = `
 {
   "couplings": [
