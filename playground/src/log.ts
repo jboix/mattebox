@@ -8,6 +8,7 @@
  */
 import type { Effect, Mattebox, Message, TraceEntry } from '../../src/index.js';
 import { fmtBitrate } from './dock.js';
+import { escapeHtml } from './html.js';
 import { createTraceCursor } from './trace-cursor.js';
 
 export type Level = 'error' | 'warn' | 'info' | 'debug';
@@ -461,10 +462,10 @@ export function createEventLog(host: HTMLElement): EventLog {
     row.hidden = !visible(entry);
     row.innerHTML = `<span class="log-time">${fmtTime(entry.t)}</span><span class="log-src" title="${
       entry.source
-    }">${entry.source === 'command' ? 'cmd' : entry.source === 'fact' ? 'fact' : entry.source === 'event' ? 'evt' : 'el'}</span><span class="log-type">${
-      entry.type
-    }</span><span class="log-msg">${entry.message}</span>${
-      entry.effects !== '' ? `<span class="log-fx">→ ${entry.effects}</span>` : ''
+    }">${entry.source === 'command' ? 'cmd' : entry.source === 'fact' ? 'fact' : entry.source === 'event' ? 'evt' : 'el'}</span><span class="log-type">${escapeHtml(
+      entry.type,
+    )}</span><span class="log-msg">${escapeHtml(entry.message)}</span>${
+      entry.effects !== '' ? `<span class="log-fx">→ ${escapeHtml(entry.effects)}</span>` : ''
     }`;
     row.addEventListener('click', () => {
       const open = row.classList.toggle('open');

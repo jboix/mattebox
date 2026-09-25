@@ -306,7 +306,7 @@ describe('reload', () => {
         config: { traceCapacity: 500 },
         transport: {
           fetchImpl: (url, init) =>
-            url.startsWith('https://second.test')
+            new URL(url).origin === 'https://second.test'
               ? second.fetchImpl(url, init)
               : first.fetchImpl(url, init),
         },

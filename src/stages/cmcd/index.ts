@@ -49,11 +49,22 @@ function serialize(keys: Record<string, string | number | boolean>): string {
     .join(',');
 }
 
+/**
+ * A version 4 UUID for `sid` (CTA-5004 recommends a UUID). randomUUID
+ * exists only in secure contexts, so plain-HTTP pages build one from
+ * getRandomValues, which every context has (RFC 9562 §5.4).
+ */
+function sessionUuid(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = ((bytes[6] as number) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] as number) & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export default function cmcd(options: CmcdOptions = {}): Stage {
-  const sessionId =
-    options.sessionId ??
-    globalThis.crypto?.randomUUID?.() ??
-    `mb-${Math.random().toString(36).slice(2)}`;
+  const sessionId = options.sessionId ?? sessionUuid();
   const mode = options.mode ?? 'query';
 
   return {

@@ -30,6 +30,7 @@ import { createCharts } from './charts.js';
 import { fmtBitrate, renderQuality } from './dock.js';
 import type { FaultConfig } from './faults.js';
 import { createFaultyFetch, defaultFaults } from './faults.js';
+import { escapeHtml } from './html.js';
 import type { Level, Source } from './log.js';
 import { createEventLog, toJson } from './log.js';
 import type { Check, ParsedManifest } from './manifest-checks.js';
@@ -588,7 +589,7 @@ function renderManifestPicker(): void {
     manifestOptionsSignature = signature;
     const current = pick.value;
     pick.innerHTML = list
-      .map((m) => `<option value="${m.url}">${manifestLabel(m)}</option>`)
+      .map((m) => `<option value="${escapeHtml(m.url)}">${escapeHtml(manifestLabel(m))}</option>`)
       .join('');
     pick.value = list.some((m) => m.url === current) ? current : (list[0]?.url ?? '');
   }
@@ -1023,8 +1024,8 @@ function renderChecks(host: HTMLElement, checks: readonly Check[]): void {
   host.innerHTML = `<div class="checks-summary">${summary}</div>${checks
     .map(
       (c) =>
-        `<div class="check check-${c.level}"><span class="check-dot"></span><div><div>${c.message}</div>${
-          c.hint !== undefined ? `<div class="check-hint">${c.hint}</div>` : ''
+        `<div class="check check-${c.level}"><span class="check-dot"></span><div><div>${escapeHtml(c.message)}</div>${
+          c.hint !== undefined ? `<div class="check-hint">${escapeHtml(c.hint)}</div>` : ''
         }</div></div>`,
     )
     .join('')}`;

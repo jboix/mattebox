@@ -145,6 +145,35 @@ describe('cmcd stage', () => {
     expect(draft.url).not.toContain('CMCD=');
     expect(draft.headers['CMCD-Request']).toContain('ot=m'); // a manifest URL
   });
+
+  it('generates a UUID session id without randomUUID, as on a plain-HTTP page', () => {
+    // randomUUID exists only in secure contexts; hide it to take the fallback.
+    const saved = Object.getOwnPropertyDescriptor(globalThis.crypto, 'randomUUID');
+    Object.defineProperty(globalThis.crypto, 'randomUUID', {
+      value: undefined,
+      configurable: true,
+    });
+    try {
+      const { ctx, hooks } = fakeContext({
+        element: { buffered: { length: 0, start: () => 0, end: () => 0 }, currentTime: 0 },
+      });
+      cmcd({ mode: 'header' }).install(ctx);
+      const draft: TransportRequestDraftView = {
+        url: 'https://cdn.example/media.m3u8',
+        headers: {},
+        timeoutMs: null,
+        token: 't',
+        attempt: 0,
+      };
+      hooks[0]?.(draft);
+      expect(draft.headers['CMCD-Request']).toMatch(
+        /sid="[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/,
+      );
+    } finally {
+      if (saved === undefined) Reflect.deleteProperty(globalThis.crypto, 'randomUUID');
+      else Object.defineProperty(globalThis.crypto, 'randomUUID', saved);
+    }
+  });
 });
 
 describe('thumbnails parsing', () => {

@@ -5,6 +5,7 @@
  * refresh.
  */
 import type { Constraint, Mattebox, Rendition } from '../../src/index.js';
+import { escapeHtml } from './html.js';
 
 /** The constraint source every cap chosen here is registered under. */
 export const CAP_SOURCE = 'playground';
@@ -181,10 +182,10 @@ export function renderQuality(host: HTMLElement, deps: DockDeps): void {
             : '';
       const blocked = !allowed.has(r.id) ? '<span class="pill bad">capped</span>' : '';
       const pinnedHere = pinned === r.id;
-      return `<div class="q-row ${r.id === playing?.id ? 'on' : ''}" title="${r.id}">
-        <span class="q-desc">${renditionLabel(r)}</span>
+      return `<div class="q-row ${r.id === playing?.id ? 'on' : ''}" title="${escapeHtml(r.id)}">
+        <span class="q-desc">${escapeHtml(renditionLabel(r))}</span>
         <span class="q-tags">${state}${blocked}</span>
-        <button class="small" data-pin="${r.id}" ${pinnedHere ? 'disabled' : ''}>${
+        <button class="small" data-pin="${escapeHtml(r.id)}" ${pinnedHere ? 'disabled' : ''}>${
           pinnedHere ? 'pinned' : 'Pin'
         }</button>
       </div>`;
