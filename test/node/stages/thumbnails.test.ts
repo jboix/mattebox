@@ -407,6 +407,21 @@ describe('app-loaded WebVTT tiles', () => {
   });
 });
 
+describe('an app track after the next source loads', () => {
+  it('no longer applies', async () => {
+    const VTT = ['WEBVTT', '', '00:00:00.000 --> 00:00:10.000', 'sprite.jpg#xywh=0,0,160,90'].join(
+      '\n',
+    );
+    const { api, setState } = install({ responses: { 'https://cdn.example/thumbs.vtt': VTT } });
+    await api.load('https://cdn.example/thumbs.vtt');
+    expect(api.source).toBe('app');
+    // The stage's slice counts LOAD, UNLOAD, and DETACH.
+    setState({ ...initialState(), thumbnails: { loads: 1 } });
+    expect(api.source).toBe('none');
+    expect(api.at(5)).toBeNull();
+  });
+});
+
 describe('a failed track load', () => {
   it('rejects instead of loading no tiles', async () => {
     const { api } = install();

@@ -13,7 +13,8 @@ DURATION=72
 
 command -v ffmpeg >/dev/null || { echo "ffmpeg is required to generate E2E streams"; exit 1; }
 
-# HLS image playlists (the Roku EXT-X-IMAGE-STREAM-INF form) over the h264
+# HLS image playlists (the Roku EXT-X-IMAGE-STREAM-INF form) and Apple JSON
+# chapters over the h264
 # media: sprite sheets of 5x2 tiles, one tile per 2 s, so a 20 s sheet and a
 # short last sheet of 6 tiles. The master points at the h264 flavor's media
 # playlists, so the E2E h264 master stays as it is. Separate from the check
@@ -50,13 +51,62 @@ images_flavor() {
   cat >> "$dir/master.m3u8" <<EOF
 #EXT-X-IMAGE-STREAM-INF:BANDWIDTH=8000,RESOLUTION=160x90,CODECS="jpeg",URI="160x90/images.m3u8"
 #EXT-X-IMAGE-STREAM-INF:BANDWIDTH=16000,RESOLUTION=256x144,CODECS="jpeg",URI="256x144/images.m3u8"
+#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.chapters",URI="chapters/chapters.json"
+EOF
+  # Apple's JSON chapters: three chapters with English and French titles and
+  # a frame from each as its image. The last has no duration, so it runs to
+  # the end of the presentation.
+  mkdir -p "$dir/chapters"
+  for at in 0 24 48; do
+    ffmpeg -y -loglevel error -f lavfi -i "testsrc2=size=320x180:rate=30" -ss "$((at + 2))" \
+      -frames:v 1 -q:v 5 "$dir/chapters/at-$at.jpg"
+  done
+  cat > "$dir/chapters/chapters.json" <<'EOF'
+[
+  {
+    "chapter": 1,
+    "start-time": 0,
+    "duration": 24,
+    "titles": [
+      { "language": "en", "title": "Opening" },
+      { "language": "fr", "title": "Ouverture" }
+    ],
+    "images": [
+      { "image-category": "thumbnail", "pixel-width": 320, "pixel-height": 180, "url": "at-0.jpg" }
+    ]
+  },
+  {
+    "chapter": 2,
+    "start-time": 24,
+    "duration": 24,
+    "titles": [
+      { "language": "en", "title": "The middle" },
+      { "language": "fr", "title": "Le milieu" }
+    ],
+    "images": [
+      { "image-category": "thumbnail", "pixel-width": 320, "pixel-height": 180, "url": "at-24.jpg" }
+    ],
+    "metadata": [{ "key": "com.example.scene", "value": "bars" }]
+  },
+  {
+    "chapter": 3,
+    "start-time": 48,
+    "titles": [
+      { "language": "en", "title": "Closing" },
+      { "language": "fr", "title": "Fermeture" }
+    ],
+    "images": [
+      { "image-category": "thumbnail", "pixel-width": 320, "pixel-height": 180, "url": "at-48.jpg" }
+    ]
+  }
+]
 EOF
 }
 
 if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
    [ -f "$OUT/h264-dash/manifest.mpd" ] && [ -f "$OUT/vp9-dash/manifest.mpd" ] &&
    [ -f "$OUT/ts/master.m3u8" ] && [ -f "$OUT/aac/master.m3u8" ]; then
-  [ -f "$OUT/h264-images/master.m3u8" ] || images_flavor
+  [ -f "$OUT/h264-images/chapters/chapters.json" ] || images_flavor
   echo "streams present, skipping generation"
   exit 0
 fi

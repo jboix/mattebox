@@ -1,6 +1,6 @@
 /**
  * What both manifest adapters share: the parse result shape, the parse
- * error, URL resolution, and the step that turns fetched manifest bytes
+ * error, and the step that turns fetched manifest bytes
  * into a MANIFEST_LOADED or MANIFEST_FAILED fact.
  */
 import type { MatteboxError } from '../types/error.js';
@@ -20,15 +20,6 @@ export function manifestError(reason: string): MatteboxError {
     recoverable: false,
     context: { reason },
   };
-}
-
-/** A manifest URI made absolute against its document; an unparsable one stays as written. */
-export function resolve(uri: string, baseUrl: string): string {
-  try {
-    return new URL(uri, baseUrl).href;
-  } catch {
-    return uri;
-  }
 }
 
 /**

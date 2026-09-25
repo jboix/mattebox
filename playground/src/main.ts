@@ -66,6 +66,8 @@ interface PlaygroundConfig {
   srgTitle?: string;
   /** WebVTT sprite-sheet thumbnail track, loaded into the thumbnails stage. */
   thumbnails?: string;
+  /** Chapters file, loaded into the chapters stage. */
+  chapters?: string;
 }
 
 /** The EME key system string behind each vendor name the selector offers. */
@@ -200,6 +202,7 @@ async function rebuild(): Promise<void> {
   manifestOptionsSignature = '';
   if (config.stream !== '') engine.load(config.stream);
   void loadThumbnails();
+  void loadChapters();
   stall.lastTime = -1;
   stall.since = performance.now();
   renderStatic();
@@ -321,6 +324,10 @@ app.innerHTML = `
       <div class="controls">
         <input id="thumbUrl" class="grow" placeholder="Thumbnail track URL (WebVTT sprite sheet, optional)">
         <span id="thumbState" class="pill">no thumbnails</span>
+      </div>
+      <div class="controls">
+        <input id="chapterUrl" class="grow" placeholder="Chapters file URL (WebVTT or Apple JSON, optional; the manifest may name one)">
+        <span id="chapterState" class="pill">no chapters</span>
       </div>
 
       <div class="sub srg">
@@ -519,6 +526,45 @@ async function loadThumbnails(): Promise<void> {
   } catch (error) {
     pill.className = 'pill bad';
     pill.textContent = `thumbnails failed: ${String((error as Error).message)}`;
+  }
+}
+
+// ---- chapters: load the file; the scrub tooltip shows the title ------------
+
+type ChaptersApi = {
+  load(url: string): Promise<number>;
+};
+
+/** Reports chapters the stage found in the manifest, when the app named no file. */
+function watchManifestChapters(pill: HTMLElement): void {
+  const current = engine;
+  current?.on('chapters:changed', (payload) => {
+    const { count, source } = payload as { count: number; source: string };
+    if (engine !== current || source !== 'manifest' || config.chapters !== undefined) return;
+    pill.className = count > 0 ? 'pill ok' : 'pill bad';
+    pill.textContent = `${count} chapter${count === 1 ? '' : 's'} from the manifest · hover the seek bar`;
+  });
+}
+
+async function loadChapters(): Promise<void> {
+  const pill = document.querySelector('#chapterState') as HTMLElement;
+  const api = (engine as { chapters?: ChaptersApi } | null)?.chapters ?? null;
+  if (api !== null) watchManifestChapters(pill);
+  if (config.chapters === undefined || api === null) {
+    pill.className = 'pill';
+    pill.textContent =
+      api === null && config.chapters !== undefined ? 'chapters stage off' : 'no chapters';
+    return;
+  }
+  pill.className = 'pill wait';
+  pill.textContent = 'loading chapters…';
+  try {
+    const count = await api.load(config.chapters);
+    pill.className = count > 0 ? 'pill ok' : 'pill bad';
+    pill.textContent = `${count} chapter${count === 1 ? '' : 's'} · hover the seek bar`;
+  } catch (error) {
+    pill.className = 'pill bad';
+    pill.textContent = `chapters failed: ${String((error as Error).message)}`;
   }
 }
 
@@ -766,6 +812,7 @@ function renderStreams(): void {
         ...(entry.licenseUrl !== undefined ? { licenseUrl: entry.licenseUrl } : {}),
         ...(entry.keySystem !== undefined ? { keySystem: entry.keySystem } : {}),
         ...(entry.thumbnails !== undefined ? { thumbnails: entry.thumbnails } : {}),
+        ...(entry.chapters !== undefined ? { chapters: entry.chapters } : {}),
       });
     });
   }
@@ -777,6 +824,7 @@ function renderStreams(): void {
 /** Mirrors the config into the URL, license, and key-system inputs. */
 function reflectStreamInputs(): void {
   (document.querySelector('#thumbUrl') as HTMLInputElement).value = config.thumbnails ?? '';
+  (document.querySelector('#chapterUrl') as HTMLInputElement).value = config.chapters ?? '';
   (document.querySelector('#streamUrl') as HTMLInputElement).value = config.stream;
   (document.querySelector('#licenseUrl') as HTMLInputElement).value = config.licenseUrl ?? '';
   (document.querySelector('#keySystem') as HTMLSelectElement).value = config.keySystem ?? '';
@@ -795,6 +843,7 @@ function applyStreamChoice(choice: {
   certificateUrl?: string;
   srgTitle?: string;
   thumbnails?: string;
+  chapters?: string;
 }): void {
   config.stream = choice.url;
   delete config.licenseUrl;
@@ -803,7 +852,9 @@ function applyStreamChoice(choice: {
   delete config.certificateUrl;
   delete config.srgTitle;
   delete config.thumbnails;
+  delete config.chapters;
   if (choice.thumbnails !== undefined) config.thumbnails = choice.thumbnails;
+  if (choice.chapters !== undefined) config.chapters = choice.chapters;
   if (choice.licenseUrl !== undefined) config.licenseUrl = choice.licenseUrl;
   if (choice.keySystem !== undefined) config.keySystem = choice.keySystem;
   if (choice.licenseUrls !== undefined) config.licenseUrls = choice.licenseUrls;
@@ -818,6 +869,7 @@ function applyStreamChoice(choice: {
   const license = (document.querySelector('#licenseUrl') as HTMLInputElement).value.trim();
   const keySystem = (document.querySelector('#keySystem') as HTMLSelectElement).value;
   const thumbs = (document.querySelector('#thumbUrl') as HTMLInputElement).value.trim();
+  const chapterUrl = (document.querySelector('#chapterUrl') as HTMLInputElement).value.trim();
   if (url === '') return;
   // A hand-edited URL keeps the SRG license set only while the URL is unchanged.
   const keepIl = url === config.stream;
@@ -831,6 +883,7 @@ function applyStreamChoice(choice: {
       : {}),
     ...(keepIl && config.srgTitle !== undefined ? { srgTitle: config.srgTitle } : {}),
     ...(thumbs !== '' ? { thumbnails: thumbs } : {}),
+    ...(chapterUrl !== '' ? { chapters: chapterUrl } : {}),
   });
 });
 (document.querySelector('#licenseUrl') as HTMLInputElement).addEventListener('change', (e) => {

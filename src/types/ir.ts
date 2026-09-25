@@ -257,6 +257,21 @@ export interface LiveInfo {
   readonly dateAnchor?: { readonly wallClock: number; readonly presentationTime: number };
 }
 
+/**
+ * One HLS EXT-X-SESSION-DATA entry (RFC 8216 §4.3.4.4): a named value, or a
+ * URI to a JSON document, for the whole presentation. The chapters stage
+ * reads `com.apple.hls.chapters`; other ids pass through for the app.
+ */
+export interface SessionData {
+  /** DATA-ID, a reverse-DNS name such as `com.apple.hls.title`. */
+  readonly id: string;
+  readonly value?: string;
+  /** Resolved against the playlist that declared it. */
+  readonly uri?: string;
+  /** BCP 47 language of the value. */
+  readonly lang?: string;
+}
+
 /** The root of the IR. One per loaded manifest. */
 export interface Presentation {
   readonly id: string;
@@ -267,4 +282,6 @@ export interface Presentation {
   readonly couplings: readonly Coupling[];
   readonly live?: LiveInfo;
   readonly steering?: SteeringInfo;
+  /** HLS EXT-X-SESSION-DATA entries in playlist order. Absent for DASH. */
+  readonly sessionData?: readonly SessionData[];
 }

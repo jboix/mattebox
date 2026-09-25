@@ -28,6 +28,7 @@ import abrCapSize from '../../src/stages/abr-cap-size/index.js';
 import abrPersist from '../../src/stages/abr-persist/index.js';
 import aes128 from '../../src/stages/aes-128/index.js';
 import altAudio from '../../src/stages/alt-audio/index.js';
+import chapters from '../../src/stages/chapters/index.js';
 import cmafTiming from '../../src/stages/cmaf-timing/index.js';
 import cmcd from '../../src/stages/cmcd/index.js';
 import codecProbe from '../../src/stages/codec-probe/index.js';
@@ -98,6 +99,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('stages', contentSteering),
   built('stages', cmcd),
   built('stages', thumbnails),
+  built('stages', chapters),
 ];
 
 /**
@@ -129,6 +131,8 @@ export interface StreamEntry {
   readonly keySystem?: string;
   /** A WebVTT sprite-sheet thumbnail track, for the thumbnails stage. */
   readonly thumbnails?: string;
+  /** A chapters file, for the chapters stage. */
+  readonly chapters?: string;
 }
 
 /**
@@ -140,6 +144,9 @@ export interface StreamEntry {
  */
 const local = (path: string): string => `${import.meta.env.BASE_URL}streams/${path}`;
 
+/** Chapter files from `test/fixtures/chapters`, served beside the corpus. */
+const chapterFile = (name: string): string => `${import.meta.env.BASE_URL}chapters/${name}`;
+
 const LOCAL_STREAMS: readonly StreamEntry[] =
   import.meta.env.VITE_LOCAL_STREAMS === 'off'
     ? []
@@ -147,7 +154,7 @@ const LOCAL_STREAMS: readonly StreamEntry[] =
         { label: 'local h264 (generated)', url: local('h264/master.m3u8') },
         { label: 'local vp9 (generated)', url: local('vp9/master.m3u8') },
         {
-          label: 'local h264 + HLS image playlists (generated, needs thumbnails)',
+          label: 'local h264 + HLS image playlists and Apple chapters (generated)',
           url: local('h264-images/master.m3u8'),
         },
         { label: 'local h264 DASH (generated)', url: local('h264-dash/manifest.mpd') },
@@ -164,6 +171,7 @@ export const STREAMS: readonly StreamEntry[] = [
   {
     label: 'DASH-IF · Big Buck Bunny',
     url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd',
+    chapters: chapterFile('big-buck-bunny.vtt'),
   },
   {
     // Public sprite-sheet thumbnails (WebVTT with #xywh tiles), the format the
@@ -182,23 +190,27 @@ export const STREAMS: readonly StreamEntry[] = [
   {
     // DASH-IF thumbnail tiles: an image AdaptationSet with the thumbnail_tile
     // EssentialProperty. The thumbnails stage reads it with no track URL.
-    label: 'DASH-IF · Big Buck Bunny (10x1 tiles in the MPD)',
+    label: 'DASH-IF · Big Buck Bunny (10x1 tiles in the MPD, chapters with images)',
     url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_tiled_thumbnails.mpd',
+    chapters: chapterFile('big-buck-bunny-metadata.vtt'),
   },
   {
     // Fractional tile widths: a 2048 px sheet split into 10 columns.
     label: 'DASH-IF · Big Buck Bunny (4 sheets of tiles in the MPD)',
     url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_4_tiles_thumbnails.mpd',
+    chapters: chapterFile('big-buck-bunny.vtt'),
   },
   {
     // One 10x20 sheet for the whole film: 200 tiles, fractional tile size.
     label: 'DASH-IF · Big Buck Bunny (one 10x20 sheet in the MPD)',
     url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_tiled_thumbnails_2.mpd',
+    chapters: chapterFile('big-buck-bunny.vtt'),
   },
   {
     // Two image representations in one set; the stage uses the first.
     label: 'DASH-IF · Big Buck Bunny (two thumbnail sizes in the MPD)',
     url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_multiple_tiled_thumbnails.mpd',
+    chapters: chapterFile('big-buck-bunny.vtt'),
   },
   {
     // Live: one 1x1 image per 2 s segment on an open template.
@@ -228,6 +240,7 @@ export const STREAMS: readonly StreamEntry[] = [
   {
     label: 'Unified Streaming · Tears of Steel',
     url: 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
+    chapters: chapterFile('tears-of-steel.vtt'),
   },
   {
     label: 'Shaka · Angel One (Widevine DASH)',

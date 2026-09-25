@@ -13,6 +13,7 @@ import abrCapSize from '../src/stages/abr-cap-size/index.js';
 import abrPersist from '../src/stages/abr-persist/index.js';
 import aes128 from '../src/stages/aes-128/index.js';
 import altAudio from '../src/stages/alt-audio/index.js';
+import chapters from '../src/stages/chapters/index.js';
 import cmafTiming from '../src/stages/cmaf-timing/index.js';
 import cmcd from '../src/stages/cmcd/index.js';
 import codecProbe from '../src/stages/codec-probe/index.js';
@@ -53,4 +54,4 @@ export const baseFactories = {
 /** The TS tier minus ts-transmux, which cdn/worker.ts adds with the embedded Worker. */
 export const tsFactories = { packedAudio, metaId3 };
 export const drmFactories = { emeCore, emeCenc, emeFairplay };
-export const accessoryFactories = { cmcd, thumbnails };
+export const accessoryFactories = { cmcd, thumbnails, chapters };
