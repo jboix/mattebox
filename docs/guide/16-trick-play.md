@@ -41,13 +41,17 @@ decode on their own, so the engine switches to it for scanning. Without one,
 `available` is false and `setRate` throws. Show your scan controls only when
 `available` is true.
 
-Scanning stops by itself at the live edge, at the start of the presentation,
-and when you load another source.
+Scanning stops by itself at the live edge, at the start and the end of the
+presentation, and when you load another source. It also stops when your
+page plays, pauses, or sets `playbackRate` during a scan, such as from a
+play button or a speed menu. The normal stream then plays in the state you
+asked for.
 
-| Event           | Payload            | When                                               |
-| --------------- | ------------------ | -------------------------------------------------- |
-| `trick:started` | `{ rate }`         | Scanning starts                                    |
-| `trick:stopped` | `{ rate, reason }` | Scanning stops: `rate`, `edge`, `start`, or `load` |
+| Event           | Payload            | When                                                                 |
+| --------------- | ------------------ | -------------------------------------------------------------------- |
+| `trick:started` | `{ rate }`         | Scanning starts                                                      |
+| `trick:rate`    | `{ rate }`         | The rate changes, a step from 4 to 8 included; 1 when scanning stops |
+| `trick:stopped` | `{ rate, reason }` | Scanning stops: `rate`, `edge`, `start`, `end`, `page`, or `load`    |
 
 ## Scrubbing
 
@@ -61,8 +65,8 @@ the pointer. Call these from your seek bar's pointer events.
 | `scrubEnd(time?)` | Seeks to `time`, returns to the normal stream, resumes if it was playing |
 | `scrubbing`       | True between `scrubStart` and `scrubEnd`                                 |
 
-`scrubStart` throws without an I-frame track. Without one, seek on release
-as usual, or draw a thumbnail tile over the video while dragging.
+`scrubStart` throws without an I-frame track. Without one, seek as the
+pointer moves, as usual.
 
 | Event                 | Payload    | When             |
 | --------------------- | ---------- | ---------------- |
@@ -87,6 +91,11 @@ if (bitmap !== null) canvas.getContext('2d').drawImage(bitmap, 0, 0);
 | The I-frame track is TS                                                    |
 | The track's segments are still loading (the first call on HLS starts that) |
 | A later call replaced this one                                             |
+
+`previews` is false when `frameAt` can never answer for this source: no
+WebCodecs, no I-frame track, encrypted content, TS I-frames, or a codec the
+decoder refuses. TS and the codec show only in the media, so `previews` can
+turn false after a `frameAt` call. Stop asking then, and show a tile.
 
 The bitmap belongs to a small cache. Draw it; never close it.
 

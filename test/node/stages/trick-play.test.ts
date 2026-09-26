@@ -136,6 +136,11 @@ describe('fitting trick fragments', () => {
   });
 });
 
+/** The last `trick:stopped` event. */
+function stopped(events: ReadonlyArray<{ event: string; payload: unknown }>) {
+  return events.filter((entry) => entry.event === 'trick:stopped').at(-1);
+}
+
 describe('engine.trick', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -155,17 +160,104 @@ describe('engine.trick', () => {
     ]);
     expect(element).toMatchObject({ playbackRate: 8, muted: true });
     expect(api.rate).toBe(8);
-    expect(events).toEqual([{ event: 'trick:started', payload: { rate: 8 } }]);
+    expect(events).toEqual([
+      { event: 'trick:started', payload: { rate: 8 } },
+      { event: 'trick:rate', payload: { rate: 8 } },
+    ]);
 
     dispatched.length = 0;
+    element.currentTime = 70;
     api.setRate(1);
     expect(dispatched).toEqual([
+      // The element's time, not the kernel's, which trails it during a scan.
+      { type: 'SEEK', to: 70 },
       { type: 'SELECT_TRACK', trackId: 'v', apply: 'now' },
       { type: 'SET_BUFFER_GOAL', seconds: goal },
     ]);
     expect(element).toMatchObject({ playbackRate: 1, muted: false });
     expect(api.rate).toBe(1);
-    expect(events[1]).toEqual({ event: 'trick:stopped', payload: { rate: 8, reason: 'rate' } });
+    expect(events.slice(2)).toEqual([
+      { event: 'trick:stopped', payload: { rate: 8, reason: 'rate' } },
+      { event: 'trick:rate', payload: { rate: 1 } },
+    ]);
+  });
+
+  it('reports every rate change, a step from one scan rate to another included', () => {
+    const { api, events } = install();
+    api.setRate(4);
+    api.setRate(8);
+    api.setRate(-8);
+    api.setRate(-8);
+    api.setRate(1);
+    const rates = events.filter((entry) => entry.event === 'trick:rate');
+    expect(rates.map((entry) => (entry.payload as { rate: number }).rate)).toEqual([4, 8, -8, 1]);
+  });
+
+  it("the scan's own play, pause, and rate changes do not end it", () => {
+    const { api, element } = install();
+    api.setRate(8);
+    element.fire('ratechange');
+    element.fire('play');
+    expect(api.rate).toBe(8);
+    api.setRate(-4);
+    element.fire('pause');
+    element.fire('ratechange');
+    expect(api.rate).toBe(-4);
+  });
+
+  it('a speed the page sets during a forward scan ends it on the normal stream at that speed', () => {
+    const { api, element, dispatched, events } = install();
+    api.setRate(8);
+    dispatched.length = 0;
+    element.playbackRate = 1.5;
+    element.fire('ratechange');
+    expect(api.rate).toBe(1);
+    expect(dispatched.map((cmd) => cmd.type)).toEqual(['SEEK', 'SELECT_TRACK', 'SET_BUFFER_GOAL']);
+    expect(element.playbackRate).toBe(1.5);
+    expect(stopped(events)).toEqual({
+      event: 'trick:stopped',
+      payload: { rate: 8, reason: 'page' },
+    });
+  });
+
+  it('a pause during a forward scan ends it paused, at normal speed', () => {
+    const { api, element, events } = install();
+    api.setRate(8);
+    element.play.mockClear();
+    element.paused = true;
+    element.fire('pause');
+    expect(api.rate).toBe(1);
+    expect(element.playbackRate).toBe(1);
+    expect(element.play).not.toHaveBeenCalled();
+    expect(stopped(events)).toEqual({
+      event: 'trick:stopped',
+      payload: { rate: 8, reason: 'page' },
+    });
+  });
+
+  it('a play during a rewind ends it and plays the normal stream', () => {
+    const { api, element, dispatched } = install();
+    api.setRate(-4);
+    element.play.mockClear();
+    element.paused = false;
+    element.fire('play');
+    expect(api.rate).toBe(1);
+    expect(dispatched.at(-2)).toEqual({ type: 'SELECT_TRACK', trackId: 'v', apply: 'now' });
+    expect(element.play).toHaveBeenCalled();
+    vi.advanceTimersByTime(1000);
+    expect(element.currentTime).toBe(30);
+  });
+
+  it('the end of the stream ends a forward scan', () => {
+    const { api, element, events } = install();
+    api.setRate(8);
+    Object.assign(element, { paused: true, ended: true });
+    element.fire('pause');
+    expect(element.playbackRate).toBe(1);
+    expect(stopped(events)).toEqual({
+      event: 'trick:stopped',
+      payload: { rate: 8, reason: 'end' },
+    });
   });
 
   it('a rate from -2 to 2 other than 1 is playback speed, not a scan, and throws', () => {
@@ -194,7 +286,7 @@ describe('engine.trick', () => {
     vi.advanceTimersByTime(750);
     expect(element.currentTime).toBe(0);
     expect(api.rate).toBe(1);
-    expect(events.at(-1)).toEqual({
+    expect(stopped(events)).toEqual({
       event: 'trick:stopped',
       payload: { rate: -4, reason: 'start' },
     });
@@ -207,7 +299,10 @@ describe('engine.trick', () => {
     element.currentTime = 95.5;
     element.fire('timeupdate');
     expect(api.rate).toBe(1);
-    expect(events.at(-1)).toEqual({ event: 'trick:stopped', payload: { rate: 8, reason: 'edge' } });
+    expect(stopped(events)).toEqual({
+      event: 'trick:stopped',
+      payload: { rate: 8, reason: 'edge' },
+    });
   });
 
   it('a new source ends scanning without switching back', () => {
@@ -463,5 +558,36 @@ describe('frameAt', () => {
     };
     const harness = install({ presentation: locked, request: async () => new Response(range0()) });
     expect(await harness.api.frameAt(1)).toBeNull();
+    expect(harness.api.previews).toBe(false);
+  });
+
+  it('says whether previews can work: not without WebCodecs', () => {
+    const { api } = install({ presentation: resolved() });
+    expect(api.previews).toBe(false);
+    stubWebCodecs();
+    expect(api.previews).toBe(true);
+  });
+
+  it('turns previews off once a resolved I-frame track shows no init segment, as TS has none', async () => {
+    stubWebCodecs();
+    const base = resolved();
+    const period = base.periods[0] as Presentation['periods'][number];
+    const ts: Presentation = {
+      ...base,
+      periods: [
+        {
+          ...period,
+          tracks: period.tracks.map((t) =>
+            t.role === 'trick'
+              ? { ...t, renditions: t.renditions.map(({ init: _init, ...r }) => r) }
+              : t,
+          ),
+        },
+      ],
+    };
+    const { api } = install({ presentation: ts });
+    expect(api.previews).toBe(true);
+    expect(await api.frameAt(1)).toBeNull();
+    expect(api.previews).toBe(false);
   });
 });

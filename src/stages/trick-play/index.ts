@@ -82,6 +82,13 @@ export interface TrickApi {
    * belongs to a small cache: draw it, never close it.
    */
   frameAt(time: number, options?: { readonly width?: number }): Promise<ImageBitmap | null>;
+  /**
+   * False when frameAt can never answer for this source: no WebCodecs, no
+   * I-frame track, encrypted content, TS I-frames, or a codec the decoder
+   * refuses. The last two show only in the media, so it can turn false
+   * after a frameAt call. A preview stops asking then.
+   */
+  readonly previews: boolean;
 }
 
 /** A scan is faster than this, in either direction; slower is playback speed. */
@@ -266,8 +273,12 @@ export default function trickPlay(): Stage {
         ctx.dispatch({ type: 'SELECT_TRACK', trackId: trick.id, apply: 'now' });
       }
 
-      /** The normal stream, rate, mute, and play state from before scanning or scrubbing. */
-      function restore(): void {
+      /**
+       * The normal stream and mute from before scanning or scrubbing, and a
+       * play state: the one from before, or the one the page asked for when
+       * it took playback over (`page`).
+       */
+      function restore(page?: { readonly paused: boolean; readonly rate: number }): void {
         const was = saved;
         saved = null;
         if (was === null) return;
@@ -275,20 +286,34 @@ export default function trickPlay(): Stage {
           ctx.dispatch({ type: 'SELECT_TRACK', trackId: was.mainTrackId, apply: 'now' });
         }
         ctx.dispatch({ type: 'SET_BUFFER_GOAL', seconds: was.bufferGoal });
-        element.playbackRate = 1;
+        element.playbackRate = page?.rate ?? 1;
         element.muted = was.muted;
-        if (was.playing) void element.play().catch(() => undefined);
+        if (page === undefined ? was.playing : !page.paused) {
+          void element.play().catch(() => undefined);
+        }
       }
 
-      /** Ends a scan. `resume` is false when a new source took over. */
-      function end(reason: string, resume = true): void {
+      /**
+       * Ends a scan. `resume` is false when a new source took over. Through
+       * a kernel SEEK first: the kernel's time trails the element's by up to
+       * a timeupdate interval, seconds of media at a scan rate, and the
+       * switch back plans around the kernel's time.
+       */
+      function end(
+        reason: string,
+        resume = true,
+        page?: { readonly paused: boolean; readonly rate: number },
+      ): void {
         stopTimer();
         const was = rate;
         rate = 1;
         if (saved === null) return;
-        if (resume) restore();
-        else saved = null;
+        if (resume) {
+          ctx.dispatch({ type: 'SEEK', to: element.currentTime });
+          restore(page);
+        } else saved = null;
         ctx.emit('trick:stopped', { rate: was, reason });
+        if (was !== 1) ctx.emit('trick:rate', { rate: 1 });
       }
 
       /** True when a new source loaded since scanning or scrubbing began; both just stop. */
@@ -327,6 +352,29 @@ export default function trickPlay(): Stage {
       };
       element.addEventListener('timeupdate', onTimeUpdate);
 
+      /**
+       * The page took playback over during a scan: a play, a pause, or a
+       * rate the scan did not set, such as a speed menu or a play button.
+       * The scan ends and the normal stream plays in the state the page
+       * asked for; without this the I-frame track would play at that rate.
+       * The events arrive after the fact, so each is judged by the state it
+       * finds: forward scans play at `rate`, rewinding pauses at rate 1.
+       */
+      const onTakeover = (): void => {
+        if (rate === 1 || scrubbing || stale()) return;
+        const forward = rate > 0;
+        const ours = forward
+          ? !element.paused && element.playbackRate === rate
+          : element.paused && element.playbackRate === 1;
+        if (ours) return;
+        // A rate the page did not set is the scan's own, and does not carry over.
+        const own = element.ended || (forward && element.playbackRate === rate);
+        const page = { paused: element.paused, rate: own ? 1 : element.playbackRate };
+        end(element.ended ? 'end' : 'page', true, page);
+      };
+      const TAKEOVER = ['play', 'pause', 'ratechange'] as const;
+      for (const name of TAKEOVER) element.addEventListener(name, onTakeover);
+
       function scrubStart(): void {
         stale();
         if (trickTrack(ctx.getState()) === null) {
@@ -337,6 +385,7 @@ export default function trickPlay(): Stage {
           // A scan hands over: the trick track stays, the timer stops.
           stopTimer();
           ctx.emit('trick:stopped', { rate, reason: 'scrub' });
+          ctx.emit('trick:rate', { rate: 1 });
           rate = 1;
         } else {
           begin();
@@ -423,6 +472,9 @@ export default function trickPlay(): Stage {
         return job;
       }
 
+      /** The load on which frameAt found the I-frame track undecodable, or null. */
+      let undecodable: number | null = null;
+
       async function decodeFrameAt(
         time: number,
         options: { readonly width?: number },
@@ -442,9 +494,12 @@ export default function trickPlay(): Stage {
           return null;
         }
         const segment = segmentAtTime(addressing, time, period.start);
-        if (segment === null || rendition.codecs === null || rendition.init === undefined) {
+        if (rendition.init === undefined || rendition.codecs === null) {
+          // Resolved and still no init segment: TS I-frames, which carry none.
+          undecodable = currentLoads();
           return null;
         }
+        if (segment === null) return null;
         const width = options.width ?? DEFAULT_FRAME_WIDTH;
         const key = `${segment.url}@${segment.byteRange?.start ?? 0}:${width}`;
         const cached = frames.get(key);
@@ -465,7 +520,10 @@ export default function trickPlay(): Stage {
         ]);
         if (head === null || bytes === null) return null;
         const config = decoderConfigBox(head);
-        if (config === null || looksLikeTransportStream(bytes)) return null;
+        if (config === null || looksLikeTransportStream(bytes)) {
+          undecodable = currentLoads();
+          return null;
+        }
         const key0 = fragmentSamples(bytes, trexDefaults(head))[0]?.samples.find(
           (s) => s.isKeyframe && s.offset + s.size <= bytes.byteLength,
         );
@@ -475,7 +533,10 @@ export default function trickPlay(): Stage {
           config.description,
           bytes.subarray(key0.offset, key0.offset + key0.size),
         );
-        if (frame === null) return null;
+        if (frame === null) {
+          undecodable = currentLoads();
+          return null;
+        }
         try {
           const bitmap = await createImageBitmap(frame, {
             resizeWidth: width,
@@ -500,6 +561,10 @@ export default function trickPlay(): Stage {
         get rate() {
           stale();
           return rate;
+        },
+        get previews() {
+          if (typeof VideoDecoder === 'undefined' || undecodable === currentLoads()) return false;
+          return previewSite(ctx.getState()) !== null;
         },
         get scrubbing() {
           stale();
@@ -545,6 +610,7 @@ export default function trickPlay(): Stage {
             timer = setInterval(rewindStep, REWIND_STEP_MS);
           }
           if (was === 1) ctx.emit('trick:started', { rate: next });
+          if (was !== next) ctx.emit('trick:rate', { rate: next });
         },
       };
       ctx.registerNamespace('trick', api);
@@ -554,6 +620,7 @@ export default function trickPlay(): Stage {
         for (const bitmap of frames.values()) bitmap.close();
         frames.clear();
         element.removeEventListener('timeupdate', onTimeUpdate);
+        for (const name of TAKEOVER) element.removeEventListener(name, onTakeover);
       };
     },
   };

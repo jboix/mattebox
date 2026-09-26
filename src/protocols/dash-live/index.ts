@@ -14,6 +14,8 @@ import type { Stage } from '../../types/stage.js';
 import { parse } from '../dash-cmaf/parse.js';
 import { registerLiveNamespace } from '../live-shared.js';
 
+export type { LiveApi } from '../live-shared.js';
+
 const MPD_TOKEN = 'dash:live:mpd';
 const UTC_TOKEN = 'dash:live:utc';
 const TICK_TOKEN = 'dash-live:reload';

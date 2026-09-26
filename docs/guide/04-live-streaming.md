@@ -36,6 +36,8 @@ scheduled, and the playhead rejoins at the live edge. See
 ## engine.live
 
 Either adapter adds `engine.live`. It works the same for both protocols.
+Its type is `LiveApi`, from `mattebox/protocols/hls-live` or
+`mattebox/protocols/dash-live`.
 
 | Member         | Meaning                                               |
 | -------------- | ----------------------------------------------------- |

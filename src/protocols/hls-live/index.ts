@@ -28,6 +28,8 @@ import { parseMediaPlaylist, refreshFor } from '../hls-cmaf/parse.js';
 import { RELOAD_FAILED, unavailableMessages } from '../hls-cmaf/unavailable.js';
 import { registerLiveNamespace } from '../live-shared.js';
 
+export type { LiveApi } from '../live-shared.js';
+
 const REFRESH_TOKEN = 'hls:live:refresh';
 const TICK_TOKEN = 'hls-live:reload';
 
