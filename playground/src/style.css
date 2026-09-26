@@ -1668,3 +1668,11 @@ canvas.chart {
 .tp-scan[hidden] {
   display: none;
 }
+.tp-frame {
+  width: 160px;
+  border-radius: 3px;
+  background: #000;
+}
+.tp-frame[hidden] {
+  display: none;
+}

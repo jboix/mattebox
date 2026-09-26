@@ -21,10 +21,17 @@
 import { fitFragment } from '../../containers/fmp4/fit.js';
 import { concat } from '../../containers/fmp4/writer.js';
 import type { SampleDefaults } from '../../containers/mp4-box/index.js';
-import { findBox, trackTimescales, trexDefaults } from '../../containers/mp4-box/index.js';
+import {
+  decoderConfigBox,
+  findBox,
+  fragmentSamples,
+  trackTimescales,
+  trexDefaults,
+} from '../../containers/mp4-box/index.js';
 import { looksLikeTransportStream, programTables } from '../../containers/ts-transmux/demux.js';
 import { findRendition, findTrackSite, isTrick } from '../../kernel/presentation.js';
-import type { Segment, Track } from '../../types/ir.js';
+import { isUnresolved, segmentAtTime } from '../../kernel/timeline.js';
+import type { ByteRange, Segment, Track } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage } from '../../types/stage.js';
@@ -47,6 +54,34 @@ export interface TrickApi {
    * without an I-frame track.
    */
   setRate(rate: number): void;
+  /** True between scrubStart and scrubEnd. */
+  readonly scrubbing: boolean;
+  /**
+   * Starts scrubbing: the video switches to the I-frame track and pauses, so
+   * scrubTo shows the key frame at each position. Throws an Error without an
+   * I-frame track. A scan in progress hands over to the scrub.
+   */
+  scrubStart(): void;
+  /**
+   * Shows the key frame at `time`. Call it on every pointer move: the
+   * browser drops a seek still in flight when a new one starts.
+   */
+  scrubTo(time: number): void;
+  /**
+   * Ends scrubbing at `time`, or where the scrub left the playhead: the
+   * normal stream returns, and playback resumes if it was playing before.
+   */
+  scrubEnd(time?: number): void;
+  /**
+   * The key frame nearest before `time` from the I-frame track, decoded
+   * with WebCodecs and scaled to `width` (default 320), for a preview.
+   * Null without WebCodecs, without an I-frame track, on encrypted content,
+   * on TS I-frames, while the track's segments are still being resolved,
+   * and when a later call replaced this one while it waited. One frame
+   * decodes at a time and only the newest waiting call is kept. The bitmap
+   * belongs to a small cache: draw it, never close it.
+   */
+  frameAt(time: number, options?: { readonly width?: number }): Promise<ImageBitmap | null>;
 }
 
 /** A scan is faster than this, in either direction; slower is playback speed. */
@@ -61,6 +96,11 @@ const TABLES_ORDER = 90;
 const TABLES_BYTES = 188 * 8;
 /** Forward scanning stops this close to the live edge. */
 const EDGE_MARGIN = 2;
+/** While scrubbing only the frame under the pointer matters, not seconds ahead. */
+const SCRUB_BUFFER_GOAL = 4;
+/** Decoded preview frames kept, by segment and width. */
+const FRAME_CACHE_SIZE = 24;
+const DEFAULT_FRAME_WIDTH = 320;
 
 interface TrickSlice {
   /** Moves on every LOAD, UNLOAD, and DETACH; scanning never outlives its source. */
@@ -81,6 +121,37 @@ function trickTrack(state: Readonly<KernelState>): Track | null {
     if (track !== undefined) return track;
   }
   return null;
+}
+
+/**
+ * One key frame decoded with WebCodecs, or null when the browser cannot
+ * configure the codec or produces no frame. The decoder lives for one frame.
+ */
+async function decodeKeyFrame(
+  codec: string,
+  description: Uint8Array,
+  data: Uint8Array,
+): Promise<VideoFrame | null> {
+  let frame: VideoFrame | null = null;
+  const decoder = new VideoDecoder({
+    output: (out) => {
+      if (frame === null) frame = out;
+      else out.close();
+    },
+    error: () => undefined,
+  });
+  try {
+    const support = await VideoDecoder.isConfigSupported({ codec, description });
+    if (support.supported !== true) return null;
+    decoder.configure({ codec, description });
+    decoder.decode(new EncodedVideoChunk({ type: 'key', timestamp: 0, data }));
+    await decoder.flush();
+    return frame;
+  } catch {
+    return null;
+  } finally {
+    if (decoder.state !== 'closed') decoder.close();
+  }
 }
 
 export default function trickPlay(): Stage {
@@ -195,31 +266,46 @@ export default function trickPlay(): Stage {
         ctx.dispatch({ type: 'SELECT_TRACK', trackId: trick.id, apply: 'now' });
       }
 
-      /** Back to normal playback. `resume` is false when a new source took over. */
+      /** The normal stream, rate, mute, and play state from before scanning or scrubbing. */
+      function restore(): void {
+        const was = saved;
+        saved = null;
+        if (was === null) return;
+        if (was.mainTrackId !== null) {
+          ctx.dispatch({ type: 'SELECT_TRACK', trackId: was.mainTrackId, apply: 'now' });
+        }
+        ctx.dispatch({ type: 'SET_BUFFER_GOAL', seconds: was.bufferGoal });
+        element.playbackRate = 1;
+        element.muted = was.muted;
+        if (was.playing) void element.play().catch(() => undefined);
+      }
+
+      /** Ends a scan. `resume` is false when a new source took over. */
       function end(reason: string, resume = true): void {
         stopTimer();
-        const restore = saved;
-        saved = null;
         const was = rate;
         rate = 1;
-        if (restore === null) return;
-        if (resume) {
-          if (restore.mainTrackId !== null) {
-            ctx.dispatch({ type: 'SELECT_TRACK', trackId: restore.mainTrackId, apply: 'now' });
-          }
-          ctx.dispatch({ type: 'SET_BUFFER_GOAL', seconds: restore.bufferGoal });
-          element.playbackRate = 1;
-          element.muted = restore.muted;
-          if (restore.playing) void element.play().catch(() => undefined);
-        }
+        if (saved === null) return;
+        if (resume) restore();
+        else saved = null;
         ctx.emit('trick:stopped', { rate: was, reason });
       }
 
-      /** True when a new source loaded since scanning began; scanning then just stops. */
+      /** True when a new source loaded since scanning or scrubbing began; both just stop. */
       function stale(): boolean {
         if (saved === null || loads === currentLoads()) return false;
+        scrubbing = false;
         end('load', false);
         return true;
+      }
+
+      // ---- scrubbing --------------------------------------------------
+      let scrubbing = false;
+
+      function clamp(time: number): number {
+        const ranges = element.seekable;
+        if (ranges.length === 0) return Math.max(0, time);
+        return Math.min(Math.max(time, ranges.start(0)), ranges.end(ranges.length - 1));
       }
 
       function rewindStep(): void {
@@ -241,6 +327,172 @@ export default function trickPlay(): Stage {
       };
       element.addEventListener('timeupdate', onTimeUpdate);
 
+      function scrubStart(): void {
+        stale();
+        if (trickTrack(ctx.getState()) === null) {
+          throw new Error('this presentation has no I-frame track to scrub with');
+        }
+        if (scrubbing) return;
+        if (saved !== null) {
+          // A scan hands over: the trick track stays, the timer stops.
+          stopTimer();
+          ctx.emit('trick:stopped', { rate, reason: 'scrub' });
+          rate = 1;
+        } else {
+          begin();
+        }
+        const was = saved;
+        if (was === null) return;
+        scrubbing = true;
+        element.pause();
+        element.playbackRate = 1;
+        ctx.dispatch({
+          type: 'SET_BUFFER_GOAL',
+          seconds: Math.min(was.bufferGoal, SCRUB_BUFFER_GOAL),
+        });
+        ctx.emit('trick:scrub-started', {});
+      }
+
+      function scrubTo(time: number): void {
+        if (stale() || !scrubbing || !Number.isFinite(time)) return;
+        // The element, not the kernel: seeks this frequent must not abort the
+        // small I-frame fetches in flight. The kernel follows the seeking event.
+        element.currentTime = clamp(time);
+      }
+
+      function scrubEnd(time?: number): void {
+        if (stale() || !scrubbing) return;
+        scrubbing = false;
+        const to = clamp(time ?? element.currentTime);
+        // Through the kernel, so the switch back plans around this time and
+        // not around the last seek the element reported.
+        ctx.dispatch({ type: 'SEEK', to });
+        restore();
+        ctx.emit('trick:scrub-ended', { time: to });
+      }
+
+      // ---- frame previews ----------------------------------------------
+      const frames = new Map<string, ImageBitmap>();
+      const inits = new Map<string, Promise<Uint8Array | null>>();
+      const resolving = new Set<string>();
+
+      async function fetchBytes(url: string, range?: ByteRange): Promise<Uint8Array | null> {
+        const headers: Record<string, string> =
+          range === undefined ? {} : { Range: `bytes=${range.start}-${range.end}` };
+        const response = await ctx.request(url, { headers });
+        return response.ok ? new Uint8Array(await response.arrayBuffer()) : null;
+      }
+
+      /** The smallest I-frame rendition: a preview card needs no more. */
+      function previewSite(state: Readonly<KernelState>) {
+        const trick = trickTrack(state);
+        if (trick === null || trick.protection !== null) return null;
+        const smallest = [...trick.renditions].sort((a, b) => a.bitrate - b.bitrate)[0];
+        return smallest === undefined ? null : findRendition(state.presentation, smallest.id);
+      }
+
+      /** The frame being decoded, and the newest call waiting behind it. */
+      let working: Promise<unknown> | null = null;
+      let waiting: {
+        run: () => Promise<ImageBitmap | null>;
+        settle: (b: ImageBitmap | null) => void;
+      } | null = null;
+
+      function frameAt(
+        time: number,
+        options: { readonly width?: number } = {},
+      ): Promise<ImageBitmap | null> {
+        const run = () => decodeFrameAt(time, options);
+        if (working === null) return start(run);
+        // Busy: this call replaces the one waiting; the running one finishes and is cached.
+        waiting?.settle(null);
+        return new Promise((settle) => {
+          waiting = { run, settle };
+        });
+      }
+
+      function start(run: () => Promise<ImageBitmap | null>): Promise<ImageBitmap | null> {
+        const job = run().catch(() => null);
+        working = job;
+        void job.then(() => {
+          working = null;
+          const next = waiting;
+          waiting = null;
+          if (next !== null) void start(next.run).then(next.settle);
+        });
+        return job;
+      }
+
+      async function decodeFrameAt(
+        time: number,
+        options: { readonly width?: number },
+      ): Promise<ImageBitmap | null> {
+        if (typeof VideoDecoder === 'undefined' || !Number.isFinite(time)) return null;
+        const state = ctx.getState();
+        const site = previewSite(state);
+        if (site === null) return null;
+        const { rendition, period } = site;
+        const addressing = rendition.segments;
+        if (isUnresolved(addressing) || (Array.isArray(addressing) && addressing.length === 0)) {
+          // Not playing, so not resolved: ask once; a later call finds the segments.
+          if (!resolving.has(rendition.id)) {
+            resolving.add(rendition.id);
+            ctx.dispatch({ type: 'RESOLVE_RENDITION', renditionId: rendition.id });
+          }
+          return null;
+        }
+        const segment = segmentAtTime(addressing, time, period.start);
+        if (segment === null || rendition.codecs === null || rendition.init === undefined) {
+          return null;
+        }
+        const width = options.width ?? DEFAULT_FRAME_WIDTH;
+        const key = `${segment.url}@${segment.byteRange?.start ?? 0}:${width}`;
+        const cached = frames.get(key);
+        if (cached !== undefined) {
+          frames.delete(key);
+          frames.set(key, cached);
+          return cached;
+        }
+        const init = rendition.init;
+        let initBytes = inits.get(rendition.id);
+        if (initBytes === undefined) {
+          initBytes = fetchBytes(init.url, init.byteRange).catch(() => null);
+          inits.set(rendition.id, initBytes);
+        }
+        const [head, bytes] = await Promise.all([
+          initBytes,
+          fetchBytes(segment.url, segment.byteRange).catch(() => null),
+        ]);
+        if (head === null || bytes === null) return null;
+        const config = decoderConfigBox(head);
+        if (config === null || looksLikeTransportStream(bytes)) return null;
+        const key0 = fragmentSamples(bytes, trexDefaults(head))[0]?.samples.find(
+          (s) => s.isKeyframe && s.offset + s.size <= bytes.byteLength,
+        );
+        if (key0 === undefined) return null;
+        const frame = await decodeKeyFrame(
+          rendition.codecs,
+          config.description,
+          bytes.subarray(key0.offset, key0.offset + key0.size),
+        );
+        if (frame === null) return null;
+        try {
+          const bitmap = await createImageBitmap(frame, {
+            resizeWidth: width,
+            resizeQuality: 'medium',
+          });
+          frames.set(key, bitmap);
+          if (frames.size > FRAME_CACHE_SIZE) {
+            const [oldest, evicted] = frames.entries().next().value as [string, ImageBitmap];
+            frames.delete(oldest);
+            evicted.close();
+          }
+          return bitmap;
+        } finally {
+          frame.close();
+        }
+      }
+
       const api: TrickApi = {
         get available() {
           return trickTrack(ctx.getState()) !== null;
@@ -249,8 +501,18 @@ export default function trickPlay(): Stage {
           stale();
           return rate;
         },
+        get scrubbing() {
+          stale();
+          return scrubbing;
+        },
+        scrubStart,
+        scrubTo,
+        scrubEnd,
+        frameAt,
         setRate(next: number): void {
           stale();
+          // A scan replaces a scrub; what to restore stays the same.
+          scrubbing = false;
           if (next === 1) {
             if (rate !== 1) end('rate');
             return;
@@ -289,6 +551,8 @@ export default function trickPlay(): Stage {
 
       return () => {
         stopTimer();
+        for (const bitmap of frames.values()) bitmap.close();
+        frames.clear();
         element.removeEventListener('timeupdate', onTimeUpdate);
       };
     },

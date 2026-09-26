@@ -487,3 +487,28 @@ export function fragmentSamples(
   }
   return out;
 }
+
+/** What a WebCodecs VideoDecoder needs from an init segment besides the codec string. */
+export interface DecoderConfigBox {
+  /** The sample entry format, such as 'avc1' or 'hvc1'. */
+  readonly format: string;
+  /** The avcC or hvcC box payload: VideoDecoderConfig.description. */
+  readonly description: Uint8Array;
+}
+
+/**
+ * The first video track's decoder configuration box, or null for another
+ * codec or a protected (encv) entry. ISO/IEC 14496-15 §5.3.3 (avcC) and
+ * §8.3.3 (hvcC).
+ */
+export function decoderConfigBox(init: Uint8Array): DecoderConfigBox | null {
+  for (const stsd of findBoxes(init, 'moov/trak/mdia/minf/stbl/stsd')) {
+    const entry = sampleEntries(stsd.payload)[0];
+    if (entry === undefined || entry.body.byteLength < VISUAL_ENTRY_HEADER) continue;
+    const hevc = entry.format === 'hvc1' || entry.format === 'hev1';
+    if (!hevc && entry.format !== 'avc1' && entry.format !== 'avc3') continue;
+    const config = findBox(entry.body.subarray(VISUAL_ENTRY_HEADER), hevc ? 'hvcC' : 'avcC');
+    if (config !== null) return { format: entry.format, description: config.payload };
+  }
+  return null;
+}

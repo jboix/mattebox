@@ -49,6 +49,47 @@ and when you load another source.
 | `trick:started` | `{ rate }`         | Scanning starts                                    |
 | `trick:stopped` | `{ rate, reason }` | Scanning stops: `rate`, `edge`, `start`, or `load` |
 
+## Scrubbing
+
+While the viewer drags the seek bar, the video can show the key frame under
+the pointer. Call these from your seek bar's pointer events.
+
+| Member            | Meaning                                                                  |
+| ----------------- | ------------------------------------------------------------------------ |
+| `scrubStart()`    | Switches to the I-frame track and pauses                                 |
+| `scrubTo(time)`   | Shows the key frame at `time`; only the latest time waits for a seek     |
+| `scrubEnd(time?)` | Seeks to `time`, returns to the normal stream, resumes if it was playing |
+| `scrubbing`       | True between `scrubStart` and `scrubEnd`                                 |
+
+`scrubStart` throws without an I-frame track. Without one, seek on release
+as usual, or draw a thumbnail tile over the video while dragging.
+
+| Event                 | Payload    | When             |
+| --------------------- | ---------- | ---------------- |
+| `trick:scrub-started` | `{}`       | Scrubbing starts |
+| `trick:scrub-ended`   | `{ time }` | Scrubbing ends   |
+
+## Frame previews
+
+`frameAt` decodes the key frame at a time from the I-frame track, for a
+preview card. You decide what the card shows: this frame, a thumbnail tile
+from `engine.thumbnails.at(time)`, or nothing.
+
+```ts
+const bitmap = await engine.trick.frameAt(time, { width: 320 });
+if (bitmap !== null) canvas.getContext('2d').drawImage(bitmap, 0, 0);
+```
+
+| Resolves to null when                                                      |
+| -------------------------------------------------------------------------- |
+| The browser has no WebCodecs                                               |
+| The stream has no I-frame track, or it is encrypted                        |
+| The I-frame track is TS                                                    |
+| The track's segments are still loading (the first call on HLS starts that) |
+| A later call replaced this one                                             |
+
+The bitmap belongs to a small cache. Draw it; never close it.
+
 ## Where the I-frame track comes from
 
 | Manifest | Source                                                          |

@@ -47,6 +47,10 @@ interface TrickView {
   readonly available: boolean;
   readonly rate: number;
   setRate(rate: number): void;
+  scrubStart(): void;
+  scrubTo(time: number): void;
+  scrubEnd(time?: number): void;
+  frameAt(time: number, options?: { width?: number }): Promise<ImageBitmap | null>;
 }
 /** The scan rates the menu offers: rewind, normal, fast forward. Scans start past 2x either way. */
 const SCAN_RATES = [-8, -4, 1, 4, 8];
@@ -104,6 +108,7 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
         <input id="tpScrub" type="range" min="0" max="${STEPS}" value="0" step="1" aria-label="Seek" title="Seek bar across the seekable range. The darker band is media buffered ahead of the playhead; hover to read the time under the cursor.">
         <div id="tpBuffered" class="tp-buffered" aria-hidden="true"></div>
         <div id="tpHover" class="tp-hover" hidden>
+          <canvas id="tpFrame" class="tp-frame" hidden></canvas>
           <img id="tpChapterImage" class="tp-chapter-image" alt="" hidden>
           <div id="tpThumb" class="tp-thumb" hidden><div id="tpThumbTile" class="tp-thumb-tile"></div></div>
           <span id="tpChapter" class="tp-chapter" hidden></span>
@@ -168,6 +173,10 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
   const hoverTime = host.querySelector('#tpHoverTime') as HTMLElement;
   const chapterTitle = host.querySelector('#tpChapter') as HTMLElement;
   const chapterImage = host.querySelector('#tpChapterImage') as HTMLImageElement;
+  const frameCanvas = host.querySelector('#tpFrame') as HTMLCanvasElement;
+  /** Hover positions asked for, and the newest one whose frame is on screen. */
+  let hoverRequest = 0;
+  let shownRequest = 0;
   const thumb = host.querySelector('#tpThumb') as HTMLElement;
   const thumbTile = host.querySelector('#tpThumbTile') as HTMLElement;
   const goLive = host.querySelector('#tpLive') as HTMLButtonElement;
@@ -225,15 +234,35 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
   }
 
   /**
-   * Fills the hover card for a time. The engine answers thumbnails and
-   * chapters separately; this card shows the sprite tile, the frame under
-   * the cursor, with the chapter title over it. A chapter image stands in
-   * only when the stream has no thumbnails; the chapter menu shows them all.
+   * Fills the hover card for a time. The engine answers each source
+   * separately and the card picks: a key frame decoded from the I-frame track
+   * (engine.trick.frameAt), else the sprite tile, else the chapter's image,
+   * with the chapter title under it. The tile or image shows at once; a
+   * decoded frame replaces it when it arrives for the same position.
    */
   function showThumb(time: number): void {
+    hoverRequest += 1;
+    const request = hoverRequest;
+    const trick = trickApi();
+    if (trick?.available) {
+      // The last decoded frame stays until a newer one arrives: the engine
+      // decodes one at a time, so they arrive in order and never flicker.
+      void trick.frameAt(time, { width: THUMB_WIDTH * 2 }).then((bitmap) => {
+        if (bitmap === null || request < shownRequest) return;
+        shownRequest = request;
+        frameCanvas.width = bitmap.width;
+        frameCanvas.height = bitmap.height;
+        frameCanvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+        frameCanvas.hidden = false;
+        thumb.hidden = true;
+        chapterImage.hidden = true;
+      });
+    }
     const chapter = chaptersApi()?.at(time) ?? null;
     chapterTitle.hidden = chapter === null || chapter.title === '';
     chapterTitle.textContent = chapter?.title ?? '';
+    // A decoded frame on screen stays; the tile and image fill in before the first one.
+    if (!frameCanvas.hidden) return;
     const thumbnails = thumbnailsApi();
     const image = thumbnails?.at(time) == null ? chapter?.image?.url : undefined;
     chapterImage.hidden = image === undefined;
@@ -291,16 +320,46 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
     if (video.paused) void video.play().catch(() => undefined);
     else video.pause();
   });
+  // With an I-frame track the bar is a scrub bar, as Video.js's smooth
+  // seeking: the first move while pressed starts scrubbing, every move shows
+  // the key frame there (engine.trick.scrubTo), and release lands and resumes.
+  // A click without a move is a plain seek. Without an I-frame track, dragging
+  // shows the time and releasing seeks.
+  let pressed = false;
+  let scrubbing = false;
   scrub.addEventListener('pointerdown', () => {
     dragging = true;
+    pressed = true;
   });
   scrub.addEventListener('input', () => {
     const t = timeAt(Number(scrub.value) / STEPS);
-    if (t !== null) now.textContent = label('Playhead', t).text;
+    if (t === null) return;
+    now.textContent = label('Playhead', t).text;
+    const trick = trickApi();
+    if (pressed && !scrubbing && trick?.available) {
+      trick.scrubStart();
+      scrubbing = true;
+    }
+    if (scrubbing) trick?.scrubTo(t);
   });
   scrub.addEventListener('change', () => {
     dragging = false;
+    pressed = false;
+    const t = timeAt(Number(scrub.value) / STEPS);
+    if (scrubbing) {
+      scrubbing = false;
+      trickApi()?.scrubEnd(t ?? undefined);
+      return;
+    }
     seekToFraction(Number(scrub.value) / STEPS);
+  });
+  // A drag the browser takes over (a scroll, a lost pointer) ends where it was.
+  scrub.addEventListener('pointercancel', () => {
+    pressed = false;
+    if (!scrubbing) return;
+    scrubbing = false;
+    dragging = false;
+    trickApi()?.scrubEnd();
   });
   scrub.addEventListener('pointermove', (event) => {
     const rect = scrub.getBoundingClientRect();
@@ -319,6 +378,8 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
   });
   scrub.addEventListener('pointerleave', () => {
     hover.hidden = true;
+    // The next hover starts from the tile, not a frame from this one.
+    frameCanvas.hidden = true;
   });
   goLive.addEventListener('click', () => liveApi()?.seekToEdge());
   // The menu follows the engine: scanning ends on its own at the edge or the start.

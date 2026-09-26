@@ -226,6 +226,8 @@ export interface KernelState {
   readonly tracks: {
     readonly active: ReadonlyMap<ContentType, TrackId>;
     readonly available: readonly TrackId[];
+    /** Renditions not playing whose segments the adapters resolve anyway (RESOLVE_RENDITION). */
+    readonly resolve?: ReadonlySet<RenditionId>;
   };
   readonly quality: QualityState;
   readonly stats: StatsState;
