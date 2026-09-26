@@ -9,7 +9,7 @@ import type { TracksApi } from '../types/facade.js';
 import type { ContentType, Track, TrackId } from '../types/ir.js';
 import type { KernelState } from '../types/kernel.js';
 import type { Command } from '../types/messages.js';
-import { findTrackSite } from './presentation.js';
+import { findTrackSite, isTrick } from './presentation.js';
 
 export interface TrackRegistryDeps {
   getState(): KernelState;
@@ -48,6 +48,15 @@ export function createTrackRegistry(deps: TrackRegistryDeps): TrackRegistry {
     },
     select(trackId) {
       const track = find(trackId);
+      // An I-frame-only track cannot play at normal speed; the trick-play
+      // stage selects it itself, for fast forward and rewind.
+      if (track !== null && isTrick(track)) {
+        deps.emitEvent('command:rejected', {
+          command: 'SELECT_TRACK',
+          reason: `trick track: ${trackId}`,
+        });
+        return;
+      }
       if (track !== null && !deps.hasSink(track.contentType)) {
         // Selecting a track nothing can render is refused up front; the
         // reducer cannot see the sink registry, so the check lives here.

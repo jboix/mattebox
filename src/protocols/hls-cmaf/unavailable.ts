@@ -5,6 +5,7 @@
  * CONSTRAIN replaces a source's constraint and two slices writing one source
  * in the same turn would erase each other's exclusions.
  */
+import { isTrick } from '../../kernel/presentation.js';
 import { withDeadGroups } from '../../kernel/rendition-select.js';
 import type { MatteboxError } from '../../types/error.js';
 import type { KernelState } from '../../types/kernel.js';
@@ -43,7 +44,8 @@ export function unavailableMessages(
       (track) =>
         track.renditions.length > 0 &&
         track.renditions.every((r) => excluded.has(r.id)) &&
-        (track.contentType === 'video' || (track.id === activeAudio && !grouped)),
+        ((track.contentType === 'video' && !isTrick(track)) ||
+          (track.id === activeAudio && !grouped)),
     ),
   );
   if (gone) return [{ type: 'MANIFEST_FAILED', error: { ...error, fatal: true } }];

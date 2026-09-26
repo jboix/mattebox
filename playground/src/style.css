@@ -1665,3 +1665,6 @@ canvas.chart {
   font-size: 10.5px;
   white-space: nowrap;
 }
+.tp-scan[hidden] {
+  display: none;
+}

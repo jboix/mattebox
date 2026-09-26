@@ -115,6 +115,42 @@ function finishPes(acc: PesAccumulator): PesPacket | null {
   return { pid: acc.pid, streamType: acc.streamType, kind: acc.kind, pts, dts, data };
 }
 
+/**
+ * The PMT PID a PAT packet's payload names: pointer_field, then the
+ * section, where the first program's PMT PID sits in the last two bytes of
+ * the first program entry. ISO/IEC 13818-1 §2.4.4.3.
+ */
+function pmtPidOf(payload: Uint8Array): number | null {
+  const pointer = payload[0] ?? 0;
+  const section = payload.subarray(1 + pointer);
+  if (section.byteLength < 13) return null;
+  return (((section[10] ?? 0) & 0x1f) << 8) | (section[11] ?? 0);
+}
+
+/**
+ * The PAT and PMT packets at the start of a transport stream, joined, or
+ * null when either is missing. An HLS I-frame byte range starts at the
+ * frame, past these tables, so a reader takes them from the start of the
+ * same file and puts them in front.
+ */
+export function programTables(data: Uint8Array): Uint8Array | null {
+  let pat: Uint8Array | null = null;
+  let pmtPid: number | null = null;
+  for (let offset = 0; offset + PACKET_SIZE <= data.byteLength; offset += PACKET_SIZE) {
+    if (data[offset] !== SYNC_BYTE) return null;
+    const pid = (((data[offset + 1] ?? 0) & 0x1f) << 8) | (data[offset + 2] ?? 0);
+    const packet = data.subarray(offset, offset + PACKET_SIZE);
+    if (pid === 0 && pat === null) {
+      // No adaptation field in a PAT packet in practice; the payload follows the header.
+      pat = packet;
+      pmtPid = pmtPidOf(packet.subarray(4));
+    } else if (pat !== null && pid === pmtPid) {
+      return concat(pat, packet);
+    }
+  }
+  return null;
+}
+
 export function demux(data: Uint8Array): DemuxResult {
   if (!looksLikeTransportStream(data)) {
     return { video: [], audio: [], id3: [], notTransportStream: true };
@@ -164,13 +200,7 @@ export function demux(data: Uint8Array): DemuxResult {
     const payload = data.subarray(payloadOffset, offset + PACKET_SIZE);
 
     if (pid === 0) {
-      // PAT: pointer_field, then the section. The first program's PMT PID
-      // sits in the last two bytes of the first program entry.
-      const pointer = payload[0] ?? 0;
-      const section = payload.subarray(1 + pointer);
-      if (section.byteLength >= 13) {
-        pmtPid = (((section[10] ?? 0) & 0x1f) << 8) | (section[11] ?? 0);
-      }
+      pmtPid = pmtPidOf(payload) ?? pmtPid;
       continue;
     }
 

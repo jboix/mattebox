@@ -10,7 +10,7 @@
  * for the same reason.
  */
 import { scheduled } from '../../kernel/effects.js';
-import { findRendition } from '../../kernel/presentation.js';
+import { findRendition, isTrick } from '../../kernel/presentation.js';
 import { canSwitchTo } from '../../kernel/rendition-select.js';
 import type { Rendition } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
@@ -114,7 +114,7 @@ function lowestBitrate(kernel: Readonly<KernelState>): number {
   let lowest = Number.POSITIVE_INFINITY;
   for (const period of kernel.presentation?.periods ?? []) {
     for (const track of period.tracks) {
-      if (track.contentType !== 'video') continue;
+      if (track.contentType !== 'video' || isTrick(track)) continue;
       for (const rendition of track.renditions) {
         lowest = Math.min(lowest, rendition.bitrate);
       }

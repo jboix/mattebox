@@ -39,6 +39,22 @@ describe('track registry', () => {
     expect(registry.active('audio')?.lang).toBe('de');
   });
 
+  it('refuses a trick track, which only the trick-play stage selects', () => {
+    const { bus, registry } = stack(['video', 'audio']);
+    const period = vodFixture.periods[0] as (typeof vodFixture.periods)[number];
+    const video = period.tracks[0] as (typeof period.tracks)[number];
+    const trick = { ...video, id: 'v-trick', role: 'trick' };
+    bus.absorb({
+      type: 'MANIFEST_LOADED',
+      presentation: { ...vodFixture, periods: [{ ...period, tracks: [...period.tracks, trick] }] },
+    });
+    const rejections: unknown[] = [];
+    bus.on('command:rejected', (payload) => rejections.push(payload));
+    registry.select('v-trick');
+    expect(registry.active('video')?.id).toBe('v');
+    expect(rejections).toEqual([{ command: 'SELECT_TRACK', reason: 'trick track: v-trick' }]);
+  });
+
   it('emits tracks:changed when the presentation changes', () => {
     const { bus } = stack(['video']);
     const events: unknown[] = [];

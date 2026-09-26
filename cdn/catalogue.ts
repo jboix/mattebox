@@ -31,6 +31,7 @@ import textCea608 from '../src/stages/text-cea608/index.js';
 import textWebvtt from '../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../src/stages/text-webvtt-segmented/index.js';
 import thumbnails from '../src/stages/thumbnails/index.js';
+import trickPlay from '../src/stages/trick-play/index.js';
 
 export const hlsFactories = { hlsCmaf, hlsLive, aes128 };
 export const dashFactories = { dashCmaf, dashLive };
@@ -54,4 +55,4 @@ export const baseFactories = {
 /** The TS tier minus ts-transmux, which cdn/worker.ts adds with the embedded Worker. */
 export const tsFactories = { packedAudio, metaId3 };
 export const drmFactories = { emeCore, emeCenc, emeFairplay };
-export const accessoryFactories = { cmcd, thumbnails, chapters };
+export const accessoryFactories = { cmcd, thumbnails, chapters, trickPlay };

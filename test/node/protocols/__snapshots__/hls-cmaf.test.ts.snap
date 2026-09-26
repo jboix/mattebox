@@ -38,6 +38,96 @@ exports[`URL resolution at parse time > merging a media playlist fills segments,
 ]
 `;
 
+exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp4-iframe-media.m3u8 parses to a stable IR 1`] = `
+{
+  "couplings": [],
+  "duration": 10,
+  "id": "https://cdn.example/path/master.m3u8",
+  "isLive": false,
+  "periods": [
+    {
+      "id": "p0",
+      "start": 0,
+      "tracks": [
+        {
+          "contentType": "video",
+          "id": "main",
+          "mimeType": "video/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 0,
+              "codecs": null,
+              "id": "r-0",
+              "init": {
+                "byteRange": {
+                  "end": 719,
+                  "start": 0,
+                },
+                "url": "https://cdn.example/path/main.mp4",
+              },
+              "mimeType": "video/mp4",
+              "segments": [
+                {
+                  "byteRange": {
+                    "end": 15318,
+                    "start": 720,
+                  },
+                  "duration": 2,
+                  "seq": 0,
+                  "start": 0,
+                  "url": "https://cdn.example/path/main.mp4",
+                },
+                {
+                  "byteRange": {
+                    "end": 184593,
+                    "start": 169476,
+                  },
+                  "duration": 2,
+                  "seq": 1,
+                  "start": 2,
+                  "url": "https://cdn.example/path/main.mp4",
+                },
+                {
+                  "byteRange": {
+                    "end": 370537,
+                    "start": 354710,
+                  },
+                  "duration": 2,
+                  "seq": 2,
+                  "start": 4,
+                  "url": "https://cdn.example/path/main.mp4",
+                },
+                {
+                  "byteRange": {
+                    "end": 557125,
+                    "start": 541202,
+                  },
+                  "duration": 2,
+                  "seq": 3,
+                  "start": 6,
+                  "url": "https://cdn.example/path/main.mp4",
+                },
+                {
+                  "byteRange": {
+                    "end": 740787,
+                    "start": 724920,
+                  },
+                  "duration": 2,
+                  "seq": 4,
+                  "start": 8,
+                  "url": "https://cdn.example/path/main.mp4",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
+`;
+
 exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp4-master.m3u8 parses to a stable IR 1`] = `
 {
   "couplings": [
@@ -560,6 +650,75 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
             },
           ],
           "role": "main",
+        },
+        {
+          "contentType": "video",
+          "id": "video-trick",
+          "mimeType": "video/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 187492,
+              "codecs": "avc1.64002a",
+              "height": 1080,
+              "id": "t-1920x1080",
+              "mimeType": "video/mp4",
+              "playlistUrl": "https://cdn.example/path/v7/iframe_index.m3u8",
+              "segments": [],
+              "width": 1920,
+            },
+            {
+              "bitrate": 136398,
+              "codecs": "avc1.640020",
+              "height": 720,
+              "id": "t-1280x720",
+              "mimeType": "video/mp4",
+              "playlistUrl": "https://cdn.example/path/v6/iframe_index.m3u8",
+              "segments": [],
+              "width": 1280,
+            },
+            {
+              "bitrate": 101378,
+              "codecs": "avc1.640020",
+              "height": 540,
+              "id": "t-960x540",
+              "mimeType": "video/mp4",
+              "playlistUrl": "https://cdn.example/path/v5/iframe_index.m3u8",
+              "segments": [],
+              "width": 960,
+            },
+            {
+              "bitrate": 77818,
+              "codecs": "avc1.64001e",
+              "height": 432,
+              "id": "t-768x432",
+              "mimeType": "video/mp4",
+              "playlistUrl": "https://cdn.example/path/v4/iframe_index.m3u8",
+              "segments": [],
+              "width": 768,
+            },
+            {
+              "bitrate": 65091,
+              "codecs": "avc1.64001e",
+              "height": 360,
+              "id": "t-640x360",
+              "mimeType": "video/mp4",
+              "playlistUrl": "https://cdn.example/path/v3/iframe_index.m3u8",
+              "segments": [],
+              "width": 640,
+            },
+            {
+              "bitrate": 40282,
+              "codecs": "avc1.640015",
+              "height": 270,
+              "id": "t-480x270",
+              "mimeType": "video/mp4",
+              "playlistUrl": "https://cdn.example/path/v2/iframe_index.m3u8",
+              "segments": [],
+              "width": 480,
+            },
+          ],
+          "role": "trick",
         },
       ],
     },

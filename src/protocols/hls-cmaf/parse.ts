@@ -293,6 +293,26 @@ function mediaContentType(type: string): 'audio' | 'text' | null {
 }
 
 /**
+ * The rendition fields a tag with a URI attribute declares: the Roku
+ * EXT-X-IMAGE-STREAM-INF and the RFC 8216 §4.3.4.3 EXT-X-I-FRAME-STREAM-INF.
+ * RESOLUTION names the rendition, BANDWIDTH when it is missing.
+ */
+function uriStreamRendition(
+  attributes: Readonly<Record<string, string>>,
+  prefix: string,
+  baseUrl: string,
+): Pick<Rendition, 'id' | 'bitrate' | 'playlistUrl' | 'width' | 'height'> | null {
+  if (attributes.URI === undefined) return null;
+  const size = dimensions(attributes.RESOLUTION);
+  return {
+    id: `${prefix}-${attributes.RESOLUTION ?? attributes.BANDWIDTH}`,
+    bitrate: Number(attributes.BANDWIDTH) || 0,
+    playlistUrl: resolve(attributes.URI, baseUrl),
+    ...(size !== null ? { width: size[0], height: size[1] } : {}),
+  };
+}
+
+/**
  * Image playlists (Roku EXT-X-IMAGE-STREAM-INF) as one image track, one
  * rendition per playlist. RESOLUTION is the size of one tile. The grid is
  * known here only when the tag carries LAYOUT; otherwise it arrives with the
@@ -302,18 +322,14 @@ function mediaContentType(type: string): 'audio' | 'text' | null {
 function imageTrack(streams: readonly TagLine[], baseUrl: string): Track | null {
   const renditions: Rendition[] = [];
   for (const { attributes } of streams) {
-    const id = `i-${attributes.RESOLUTION ?? attributes.BANDWIDTH}`;
-    if (attributes.URI === undefined || renditions.some((r) => r.id === id)) continue;
-    const size = dimensions(attributes.RESOLUTION);
+    const base = uriStreamRendition(attributes, 'i', baseUrl);
+    if (base === null || renditions.some((r) => r.id === base.id)) continue;
     const tiles = tileGridFrom(attributes);
     renditions.push({
-      id,
-      bitrate: Number(attributes.BANDWIDTH) || 0,
+      ...base,
       codecs: attributes.CODECS ?? null,
       mimeType: /png/i.test(attributes.CODECS ?? '') ? 'image/png' : 'image/jpeg',
       segments: [],
-      playlistUrl: resolve(attributes.URI, baseUrl),
-      ...(size !== null ? { width: size[0], height: size[1] } : {}),
       ...(tiles !== null ? { tiles } : {}),
     });
   }
@@ -324,6 +340,40 @@ function imageTrack(streams: readonly TagLine[], baseUrl: string): Track | null 
     contentType: 'image',
     mimeType: first.mimeType,
     protection: null,
+    renditions,
+  };
+}
+
+/**
+ * I-frame playlists (RFC 8216 §4.3.4.3) as one video track with role
+ * 'trick'. Their media playlists carry EXT-X-I-FRAMES-ONLY and byte ranges
+ * into the normal segments. Normal playback never selects the track.
+ */
+function trickTrack(
+  streams: readonly TagLine[],
+  baseUrl: string,
+  protection: ProtectionInfo | null,
+): Track | null {
+  const renditions: Rendition[] = [];
+  for (const { attributes } of streams) {
+    const base = uriStreamRendition(attributes, 't', baseUrl);
+    if (base === null || renditions.some((r) => r.id === base.id)) continue;
+    const pathway = attributes['PATHWAY-ID'];
+    renditions.push({
+      ...base,
+      codecs: splitCodecs(attributes.CODECS).video,
+      mimeType: 'video/mp4',
+      segments: [],
+      ...(pathway !== undefined ? { pathway } : {}),
+    });
+  }
+  if (renditions.length === 0) return null;
+  return {
+    id: 'video-trick',
+    contentType: 'video',
+    mimeType: 'video/mp4',
+    role: 'trick',
+    protection,
     renditions,
   };
 }
@@ -428,6 +478,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
   const mediaEntries: MediaEntry[] = [];
   const variants: Array<{ attributes: Readonly<Record<string, string>>; uri: string }> = [];
   const imageStreams: TagLine[] = [];
+  const iframeStreams: TagLine[] = [];
   const sessionData: SessionData[] = [];
   let sessionProtection: ProtectionInfo | null = null;
   let steering: { serverUri: string; defaultPathway?: string } | undefined;
@@ -447,6 +498,8 @@ export function parse(text: string, baseUrl: string): ParseResult {
         pendingStreamInf = line;
       } else if (line.name === 'EXT-X-IMAGE-STREAM-INF') {
         imageStreams.push(line);
+      } else if (line.name === 'EXT-X-I-FRAME-STREAM-INF') {
+        iframeStreams.push(line);
       } else if (line.name === 'EXT-X-SESSION-DATA') {
         const entry = sessionDataFrom(line.attributes, baseUrl);
         if (entry !== null) sessionData.push(entry);
@@ -463,8 +516,6 @@ export function parse(text: string, baseUrl: string): ParseResult {
           };
         }
       }
-      // EXT-X-I-FRAME-STREAM-INF is recognized and skipped: normal playback
-      // never uses an I-frame-only stream.
       continue;
     }
     if (pendingStreamInf !== null) {
@@ -590,6 +641,8 @@ export function parse(text: string, baseUrl: string): ParseResult {
     });
   }
 
+  const trick = trickTrack(iframeStreams, baseUrl, sessionProtection);
+  if (trick !== null) tracks.push(trick);
   const images = imageTrack(imageStreams, baseUrl);
   if (images !== null) tracks.push(images);
 
