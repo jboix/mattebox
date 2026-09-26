@@ -1,0 +1,38 @@
+[
+  {
+    "chapter": 1,
+    "start-time": 0,
+    "duration": 24,
+    "titles": [
+      { "language": "en", "title": "Opening" },
+      { "language": "fr", "title": "Ouverture" }
+    ],
+    "images": [
+      { "image-category": "thumbnail", "pixel-width": 320, "pixel-height": 180, "url": "at-0.jpg" }
+    ]
+  },
+  {
+    "chapter": 2,
+    "start-time": 24,
+    "duration": 24,
+    "titles": [
+      { "language": "en", "title": "The middle" },
+      { "language": "fr", "title": "Le milieu" }
+    ],
+    "images": [
+      { "image-category": "thumbnail", "pixel-width": 320, "pixel-height": 180, "url": "at-24.jpg" }
+    ],
+    "metadata": [{ "key": "com.example.scene", "value": "bars" }]
+  },
+  {
+    "chapter": 3,
+    "start-time": 48,
+    "titles": [
+      { "language": "en", "title": "Closing" },
+      { "language": "fr", "title": "Fermeture" }
+    ],
+    "images": [
+      { "image-category": "thumbnail", "pixel-width": 320, "pixel-height": 180, "url": "at-48.jpg" }
+    ]
+  }
+]
