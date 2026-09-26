@@ -24,8 +24,8 @@ import emeCore from '../../src/stages/eme-core/index.js';
 import emeFairplay from '../../src/stages/eme-fairplay/index.js';
 import type { Requirement } from '../../src/types/stage.js';
 import { renderCapabilities } from './capabilities.js';
-import type { CatalogueEntry } from './catalogue.js';
-import { CATALOGUE, PRESETS, STREAMS } from './catalogue.js';
+import type { CatalogueEntry, StreamEntry } from './catalogue.js';
+import { CATALOGUE, PRESETS, STREAMS, TOPICS } from './catalogue.js';
 import { createCharts } from './charts.js';
 import { fmtBitrate, renderQuality } from './dock.js';
 import type { FaultConfig } from './faults.js';
@@ -301,10 +301,8 @@ app.innerHTML = `
     </div>
 
     <section class="panel tab-panel" data-panel="stream" id="streamPanel" hidden>
-      <div class="panel-head"><h2>Stream</h2><span class="hint">choose a demo source or paste a manifest URL</span></div>
-      <div class="controls">
-        <select id="streamSelect" class="grow"></select>
-      </div>
+      <div class="sub">
+      <div class="panel-head"><h2>Load a stream</h2><span class="hint">paste a manifest URL, or pick a demo stream below</span></div>
       <div class="controls">
         <input id="streamUrl" class="grow" placeholder="https://…/master.m3u8  or  manifest.mpd">
         <button id="loadUrl" class="primary">Load</button>
@@ -328,6 +326,12 @@ app.innerHTML = `
       <div class="controls">
         <input id="chapterUrl" class="grow" placeholder="Chapters file URL (WebVTT or Apple JSON, optional; the manifest may name one)">
         <span id="chapterState" class="pill">no chapters</span>
+      </div>
+      </div>
+
+      <div class="sub">
+        <div class="panel-head"><h3>Demo streams</h3><span class="hint">grouped by what they test; click one to load it</span></div>
+        <div id="streamTopics" class="stream-topics"></div>
       </div>
 
       <div class="sub srg">
@@ -795,29 +799,104 @@ function renderStages(): void {
 
 // ---- streams -------------------------------------------------------------
 
+const TOPICS_KEY = 'mattebox.playground.topics';
+
+/** The badges an entry shows: its format, what it carries, and its own tags. */
+function streamBadges(entry: StreamEntry): string[] {
+  return [
+    /\.mpd(\?|$)/i.test(entry.url) ? 'DASH' : 'HLS',
+    ...(entry.tags ?? []),
+    ...(entry.thumbnails !== undefined ? ['thumbnail track'] : []),
+    ...(entry.chapters !== undefined ? ['chapters file'] : []),
+    ...(entry.licenseUrl !== undefined ? ['DRM'] : []),
+  ];
+}
+
+function chooseStream(entry: StreamEntry): void {
+  applyStreamChoice({
+    url: entry.url,
+    ...(entry.licenseUrl !== undefined ? { licenseUrl: entry.licenseUrl } : {}),
+    ...(entry.keySystem !== undefined ? { keySystem: entry.keySystem } : {}),
+    ...(entry.thumbnails !== undefined ? { thumbnails: entry.thumbnails } : {}),
+    ...(entry.chapters !== undefined ? { chapters: entry.chapters } : {}),
+  });
+}
+
+/**
+ * The demo streams, one foldable section per topic. Built once; every call
+ * marks the stream playing and opens its section. Which sections are open
+ * is remembered across visits.
+ */
 function renderStreams(): void {
-  const select = document.querySelector('#streamSelect') as HTMLSelectElement;
-  if (select.options.length === 0) {
-    for (const stream of STREAMS) {
-      const option = document.createElement('option');
-      option.value = stream.url;
-      option.textContent = stream.label;
-      select.appendChild(option);
+  const host = document.querySelector('#streamTopics') as HTMLElement;
+  if (host.childElementCount === 0) {
+    let remembered: string[] | null = null;
+    try {
+      remembered = JSON.parse(localStorage.getItem(TOPICS_KEY) ?? 'null') as string[] | null;
+    } catch {
+      remembered = null;
     }
-    select.addEventListener('change', () => {
-      const entry = STREAMS.find((s) => s.url === select.value);
-      if (entry === undefined) return;
-      applyStreamChoice({
-        url: entry.url,
-        ...(entry.licenseUrl !== undefined ? { licenseUrl: entry.licenseUrl } : {}),
-        ...(entry.keySystem !== undefined ? { keySystem: entry.keySystem } : {}),
-        ...(entry.thumbnails !== undefined ? { thumbnails: entry.thumbnails } : {}),
-        ...(entry.chapters !== undefined ? { chapters: entry.chapters } : {}),
+    for (const topic of TOPICS) {
+      const entries = STREAMS.filter((e) => e.topic === topic.id);
+      if (entries.length === 0) continue;
+      const section = document.createElement('details');
+      section.className = 'stream-topic';
+      section.dataset.topic = topic.id;
+      section.open = remembered?.includes(topic.id) ?? false;
+      const summary = document.createElement('summary');
+      const title = document.createElement('span');
+      title.className = 'stream-topic-title';
+      title.textContent = topic.title;
+      const count = document.createElement('span');
+      count.className = 'stream-topic-count';
+      count.textContent = String(entries.length);
+      const hint = document.createElement('span');
+      hint.className = 'hint';
+      hint.textContent = topic.hint;
+      summary.append(title, count, hint);
+      const list = document.createElement('ul');
+      list.className = 'stream-list';
+      for (const entry of entries) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.url = entry.url;
+        button.title = entry.url;
+        const label = document.createElement('span');
+        label.className = 'stream-label';
+        label.textContent = entry.label;
+        const badges = document.createElement('span');
+        badges.className = 'stream-badges';
+        for (const text of streamBadges(entry)) {
+          const badge = document.createElement('span');
+          badge.className = 'stream-badge';
+          badge.textContent = text;
+          badges.append(badge);
+        }
+        button.append(label, badges);
+        button.addEventListener('click', () => chooseStream(entry));
+        const item = document.createElement('li');
+        item.append(button);
+        list.append(item);
+      }
+      section.append(summary, list);
+      section.addEventListener('toggle', () => {
+        const open = [...host.querySelectorAll<HTMLDetailsElement>('details')]
+          .filter((d) => d.open)
+          .map((d) => d.dataset.topic);
+        try {
+          localStorage.setItem(TOPICS_KEY, JSON.stringify(open));
+        } catch {
+          // Storage is a convenience.
+        }
       });
-    });
+      host.append(section);
+    }
   }
-  const match = STREAMS.find((s) => s.url === config.stream);
-  select.value = match ? config.stream : '';
+  for (const button of host.querySelectorAll<HTMLElement>('button[data-url]')) {
+    const on = button.dataset.url === config.stream;
+    button.toggleAttribute('aria-current', on);
+    if (on) (button.closest('details') as HTMLDetailsElement).open = true;
+  }
   reflectStreamInputs();
 }
 
@@ -996,7 +1075,6 @@ function applyStreamChoice(choice: {
         ...(certificateUrl !== undefined ? { certificateUrl } : {}),
         srgTitle: c.title,
       });
-      (document.querySelector('#streamSelect') as HTMLSelectElement).value = '';
       setState(`playing ${c.title}`);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {

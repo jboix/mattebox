@@ -122,9 +122,47 @@ export const PRESETS: ReadonlyArray<{ name: string; stages: readonly string[] }>
   fullPreset,
 ].map((preset) => ({ name: preset.presetName, stages: preset.stages().map((s) => s.name) }));
 
+/** A topic of the stream list: one foldable section in the Stream tab. */
+export interface StreamTopic {
+  readonly id: string;
+  readonly title: string;
+  /** One line on what the streams in it test. */
+  readonly hint: string;
+}
+
+/** The stream list's sections, in display order. */
+export const TOPICS: readonly StreamTopic[] = [
+  {
+    id: 'vod',
+    title: 'HLS and DASH on demand',
+    hint: 'the everyday case, one stream per packager',
+  },
+  {
+    id: 'previews',
+    title: 'Thumbnails and chapters',
+    hint: 'hover the seek bar; open the chapter menu in the bar',
+  },
+  { id: 'live', title: 'Live', hint: 'sliding windows, DVR, go live' },
+  {
+    id: 'ads',
+    title: 'Ad insertion and discontinuities',
+    hint: 'stitched breaks, multi-period timelines',
+  },
+  { id: 'drm', title: 'DRM', hint: 'licenses from public test servers' },
+  {
+    id: 'local',
+    title: 'Generated locally',
+    hint: 'the E2E corpus from test/e2e/gen-streams.sh, served by the dev server',
+  },
+];
+
 export interface StreamEntry {
   readonly label: string;
   readonly url: string;
+  /** The `TOPICS` id of the section the stream sits in. */
+  readonly topic: string;
+  /** Short facts shown as badges, beyond the ones derived from the fields below. */
+  readonly tags?: readonly string[];
   /** License server for encrypted demo streams; prefilled when the entry is chosen. */
   readonly licenseUrl?: string;
   /** Vendor name from the key-system selector, when one should be preferred. */
@@ -151,18 +189,35 @@ const LOCAL_STREAMS: readonly StreamEntry[] =
   import.meta.env.VITE_LOCAL_STREAMS === 'off'
     ? []
     : [
-        { label: 'local h264 (generated)', url: local('h264/master.m3u8') },
-        { label: 'local vp9 (generated)', url: local('vp9/master.m3u8') },
         {
-          label: 'local h264 + HLS image playlists and Apple chapters (generated)',
-          url: local('h264-images/master.m3u8'),
+          label: 'h264, three rungs, two audio groups, subtitles',
+          url: local('h264/master.m3u8'),
+          topic: 'local',
         },
-        { label: 'local h264 DASH (generated)', url: local('h264-dash/manifest.mpd') },
-        { label: 'local vp9 DASH (generated)', url: local('vp9-dash/manifest.mpd') },
-        { label: 'local muxed TS (generated, needs ts-transmux)', url: local('ts/master.m3u8') },
         {
-          label: 'local packed AAC (generated, needs packed-audio)',
+          label: 'vp9, three rungs, two audio groups, subtitles',
+          url: local('vp9/master.m3u8'),
+          topic: 'local',
+        },
+        { label: 'h264, three rungs', url: local('h264-dash/manifest.mpd'), topic: 'local' },
+        { label: 'vp9, three rungs', url: local('vp9-dash/manifest.mpd'), topic: 'local' },
+        {
+          label: 'Muxed MPEG-TS',
+          url: local('ts/master.m3u8'),
+          topic: 'local',
+          tags: ['needs ts-transmux'],
+        },
+        {
+          label: 'Packed AAC audio',
           url: local('aac/master.m3u8'),
+          topic: 'local',
+          tags: ['needs packed-audio'],
+        },
+        {
+          label: 'Image playlists and Apple chapters',
+          url: local('h264-images/master.m3u8'),
+          topic: 'previews',
+          tags: ['generated', 'tiles in manifest', 'chapters in manifest'],
         },
       ];
 
@@ -171,98 +226,141 @@ export const STREAMS: readonly StreamEntry[] = [
   {
     label: 'DASH-IF · Big Buck Bunny',
     url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd',
+    topic: 'vod',
     chapters: chapterFile('big-buck-bunny.vtt'),
   },
   {
-    // Public sprite-sheet thumbnails (WebVTT with #xywh tiles), the format the
-    // thumbnails stage reads. The CDN wants a Referer, which the browser sends.
-    label: 'Bitmovin · Art of Motion (HLS, WebVTT thumbnails)',
-    url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08e80da-bf1d-4e3d-8899-f0f6155f6efa.m3u8',
-    thumbnails:
-      'https://bitdash-a.akamaihd.net/content/MI201109210084_1/thumbnails/f08e80da-bf1d-4e3d-8899-f0f6155f6efa.vtt',
-  },
-  {
-    label: 'Bitmovin · Art of Motion (DASH, WebVTT thumbnails)',
-    url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/mpds/f08e80da-bf1d-4e3d-8899-f0f6155f6efa.mpd',
-    thumbnails:
-      'https://bitdash-a.akamaihd.net/content/MI201109210084_1/thumbnails/f08e80da-bf1d-4e3d-8899-f0f6155f6efa.vtt',
-  },
-  {
-    // DASH-IF thumbnail tiles: an image AdaptationSet with the thumbnail_tile
-    // EssentialProperty. The thumbnails stage reads it with no track URL.
-    label: 'DASH-IF · Big Buck Bunny (10x1 tiles in the MPD, chapters with images)',
-    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_tiled_thumbnails.mpd',
-    chapters: chapterFile('big-buck-bunny-metadata.vtt'),
-  },
-  {
-    // Fractional tile widths: a 2048 px sheet split into 10 columns.
-    label: 'DASH-IF · Big Buck Bunny (4 sheets of tiles in the MPD)',
-    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_4_tiles_thumbnails.mpd',
-    chapters: chapterFile('big-buck-bunny.vtt'),
-  },
-  {
-    // One 10x20 sheet for the whole film: 200 tiles, fractional tile size.
-    label: 'DASH-IF · Big Buck Bunny (one 10x20 sheet in the MPD)',
-    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_tiled_thumbnails_2.mpd',
-    chapters: chapterFile('big-buck-bunny.vtt'),
-  },
-  {
-    // Two image representations in one set; the stage uses the first.
-    label: 'DASH-IF · Big Buck Bunny (two thumbnail sizes in the MPD)',
-    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_multiple_tiled_thumbnails.mpd',
-    chapters: chapterFile('big-buck-bunny.vtt'),
-  },
-  {
-    // Live: one 1x1 image per 2 s segment on an open template.
-    label: 'DASH-IF livesim · live with thumbnails in the MPD',
-    url: 'https://livesim2.dashif.org/livesim2/testpic_2s/Manifest_thumbs.mpd',
-  },
-  {
-    label: 'SRG SSR · RTS (fr)',
-    url: 'https://rts-vod-amd.akamaized.net/ww/14683290/5bb14625-55e0-328c-bb9d-d5be774abd88/master.m3u8',
-  },
-  {
-    // A server-side ad-inserted VOD: ad breaks stitched in with
-    // EXT-X-DISCONTINUITY, each break its own timeline and encoding.
-    label: 'Mux · DAI stitched ads (HLS, 4 discontinuities)',
-    url: 'https://test-streams.mux.dev/dai-discontinuity-deltatre/manifest.m3u8',
-  },
-  {
-    // Multi-period DASH is how ad insertion is signaled in DASH: one period
-    // per content or ad segment, each with its own timeline.
-    label: 'DASH-IF · multi-period (ad-insertion layout, test case 5a)',
-    url: 'https://dash.akamaized.net/dash264/TestCases/5a/nomor/1.mpd',
-  },
-  {
-    label: 'Apple bipbop basic',
+    label: 'Apple · bipbop basic',
     url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_4x3/bipbop_4x3_variant.m3u8',
+    topic: 'vod',
+    tags: ['TS', 'CEA-608'],
+  },
+  {
+    // Apple's advanced example lists I-frame playlists, which the engine
+    // keeps as a trick track (engine.tracks.available) and never plays.
+    label: 'Apple · advanced fMP4',
+    url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
+    topic: 'vod',
+    tags: ['I-frame playlists', 'alternate audio', 'subtitles'],
   },
   {
     label: 'Unified Streaming · Tears of Steel',
     url: 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
+    topic: 'vod',
     chapters: chapterFile('tears-of-steel.vtt'),
   },
   {
-    label: 'Shaka · Angel One (Widevine DASH)',
+    label: 'SRG SSR · RTS (fr)',
+    url: 'https://rts-vod-amd.akamaized.net/ww/14683290/5bb14625-55e0-328c-bb9d-d5be774abd88/master.m3u8',
+    topic: 'vod',
+  },
+  {
+    // DASH-IF thumbnail tiles: an image AdaptationSet with the thumbnail_tile
+    // EssentialProperty. The thumbnails stage reads it with no track URL.
+    label: 'DASH-IF · Big Buck Bunny, 10x1 tiles, chapters with images',
+    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_tiled_thumbnails.mpd',
+    topic: 'previews',
+    tags: ['tiles in manifest'],
+    chapters: chapterFile('big-buck-bunny-metadata.vtt'),
+  },
+  {
+    // Fractional tile widths: a 2048 px sheet split into 10 columns.
+    label: 'DASH-IF · Big Buck Bunny, 4 sheets of tiles',
+    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_4_tiles_thumbnails.mpd',
+    topic: 'previews',
+    tags: ['tiles in manifest'],
+    chapters: chapterFile('big-buck-bunny.vtt'),
+  },
+  {
+    // One 10x20 sheet for the whole film: 200 tiles, fractional tile size.
+    label: 'DASH-IF · Big Buck Bunny, one 10x20 sheet',
+    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_tiled_thumbnails_2.mpd',
+    topic: 'previews',
+    tags: ['tiles in manifest'],
+    chapters: chapterFile('big-buck-bunny.vtt'),
+  },
+  {
+    // Two image representations in one set; the stage uses the first.
+    label: 'DASH-IF · Big Buck Bunny, two thumbnail sizes',
+    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_with_multiple_tiled_thumbnails.mpd',
+    topic: 'previews',
+    tags: ['tiles in manifest'],
+    chapters: chapterFile('big-buck-bunny.vtt'),
+  },
+  {
+    // Live: one 1x1 image per 2 s segment on an open template.
+    label: 'DASH-IF livesim · live with thumbnails',
+    url: 'https://livesim2.dashif.org/livesim2/testpic_2s/Manifest_thumbs.mpd',
+    topic: 'previews',
+    tags: ['live', 'tiles in manifest'],
+  },
+  {
+    // Public sprite-sheet thumbnails (WebVTT with #xywh tiles), the format the
+    // thumbnails stage reads. The CDN wants a Referer, which the browser sends.
+    label: 'Bitmovin · Art of Motion',
+    url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/m3u8s/f08e80da-bf1d-4e3d-8899-f0f6155f6efa.m3u8',
+    topic: 'previews',
+    thumbnails:
+      'https://bitdash-a.akamaihd.net/content/MI201109210084_1/thumbnails/f08e80da-bf1d-4e3d-8899-f0f6155f6efa.vtt',
+  },
+  {
+    label: 'Bitmovin · Art of Motion',
+    url: 'https://bitdash-a.akamaihd.net/content/MI201109210084_1/mpds/f08e80da-bf1d-4e3d-8899-f0f6155f6efa.mpd',
+    topic: 'previews',
+    thumbnails:
+      'https://bitdash-a.akamaihd.net/content/MI201109210084_1/thumbnails/f08e80da-bf1d-4e3d-8899-f0f6155f6efa.vtt',
+  },
+  {
+    label: 'SRG SSR · RTS Info',
+    url: 'https://rtsinfo-d.akamaized.net/out/v1/lsvs/rts-info/cmaf/hls-master.m3u8?dw=7201',
+    topic: 'live',
+    tags: ['live', 'DVR'],
+  },
+  {
+    label: 'SRG SSR · Couleur 3, audio',
+    url: 'https://stxt-audiostreaming.akamaized.net/hls/live/2117380/couleur3/master.m3u8',
+    topic: 'live',
+    tags: ['live', 'DVR', 'audio only'],
+  },
+  {
+    // An Akamai live-push test stream (Big Buck Bunny on a loop), not RTS.
+    label: 'Akamai live push · Big Buck Bunny, small window',
+    url: 'https://hls-harbor-livepush.akamaized.net/live_cdn/nsqIStpj8PaG-Ev/emcQJ0pGpremocy/index.m3u8',
+    topic: 'live',
+    tags: ['live', 'TS'],
+  },
+  {
+    label: 'DASH-IF livesim · test picture',
+    url: 'https://livesim2.dashif.org/livesim2/testpic_2s/Manifest.mpd',
+    topic: 'live',
+    tags: ['live'],
+  },
+  {
+    // A server-side ad-inserted VOD: ad breaks stitched in with
+    // EXT-X-DISCONTINUITY, each break its own timeline and encoding.
+    label: 'Mux · stitched ads, 4 discontinuities',
+    url: 'https://test-streams.mux.dev/dai-discontinuity-deltatre/manifest.m3u8',
+    topic: 'ads',
+  },
+  {
+    // Multi-period DASH is how ad insertion is signaled in DASH: one period
+    // per content or ad segment, each with its own timeline.
+    label: 'DASH-IF · multi-period, test case 5a',
+    url: 'https://dash.akamaized.net/dash264/TestCases/5a/nomor/1.mpd',
+    topic: 'ads',
+    tags: ['plays the first period only'],
+  },
+  {
+    label: 'Shaka · Angel One',
     url: 'https://storage.googleapis.com/shaka-demo-assets/angel-one-widevine/dash.mpd',
+    topic: 'drm',
     licenseUrl: 'https://cwip-shaka-proxy.appspot.com/no_auth',
     keySystem: 'Widevine',
   },
   {
-    label: 'Shaka · Sintel (Widevine + PlayReady DASH)',
+    label: 'Shaka · Sintel, Widevine and PlayReady',
     url: 'https://storage.googleapis.com/shaka-demo-assets/sintel-widevine/dash.mpd',
+    topic: 'drm',
     licenseUrl: 'https://cwip-shaka-proxy.appspot.com/no_auth',
-  },
-  {
-    label: 'RTS · live (muxed TS, small window)',
-    url: 'https://hls-harbor-livepush.akamaized.net/live_cdn/nsqIStpj8PaG-Ev/emcQJ0pGpremocy/index.m3u8',
-  },
-  {
-    label: 'SRG SSR · Couleur 3 (live audio DVR)',
-    url: 'https://stxt-audiostreaming.akamaized.net/hls/live/2117380/couleur3/master.m3u8',
-  },
-  {
-    label: 'SRG SSR · RTS Info (live CMAF video DVR)',
-    url: 'https://rtsinfo-d.akamaized.net/out/v1/lsvs/rts-info/cmaf/hls-master.m3u8?dw=7201',
   },
 ];
