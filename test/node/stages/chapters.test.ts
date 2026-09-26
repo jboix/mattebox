@@ -225,3 +225,94 @@ describe('engine.chapters', () => {
     });
   });
 });
+
+describe('engine.chapters.set', () => {
+  // Chapters as an app maps them from a content API: the SRG SSR integration
+  // layer gives fullLengthMarkIn and fullLengthMarkOut in milliseconds.
+  const il = [
+    {
+      urn: 'urn:rts:video:2',
+      fullLengthMarkIn: 300_000,
+      fullLengthMarkOut: 600_000,
+      title: 'Sport',
+      imageUrl: 'https://img.example/2.jpg',
+    },
+    {
+      urn: 'urn:rts:video:1',
+      fullLengthMarkIn: 0,
+      fullLengthMarkOut: 300_000,
+      title: 'News',
+      imageUrl: 'https://img.example/1.jpg',
+    },
+  ];
+  const mapped = il.map((c) => ({
+    id: c.urn,
+    start: c.fullLengthMarkIn / 1000,
+    end: c.fullLengthMarkOut / 1000,
+    title: c.title,
+    image: { url: c.imageUrl },
+    data: { urn: c.urn },
+  }));
+
+  it('answers from chapters the app holds, in start order', () => {
+    const { api, events } = install({});
+    expect(api.set(mapped)).toBe(2);
+    expect(api.source).toBe('app');
+    expect(api.all.map((c) => c.title)).toEqual(['News', 'Sport']);
+    expect(api.at(301)).toMatchObject({
+      id: 'urn:rts:video:2',
+      start: 300,
+      end: 600,
+      image: { url: 'https://img.example/2.jpg' },
+      data: { urn: 'urn:rts:video:2' },
+    });
+    expect(events).toContainEqual({
+      event: 'chapters:changed',
+      payload: { count: 2, source: 'app' },
+    });
+  });
+
+  it('a missing end runs to the next start, the last to the end of the presentation', () => {
+    const { api } = install({});
+    api.set([
+      { start: 10, title: 'B' },
+      { start: 0, title: 'A' },
+    ]);
+    expect(api.all.map((c) => [c.title, c.start, c.end])).toEqual([
+      ['A', 0, 10],
+      ['B', 10, Number.POSITIVE_INFINITY],
+    ]);
+    expect(api.all[0]?.id).toBe('0');
+  });
+
+  it('skips an entry without a usable start, with a warning', () => {
+    const { api, events } = install({});
+    expect(api.set([{ start: Number.NaN, id: 'bad' }, { start: -1 }, { start: 5 }])).toBe(1);
+    expect(events).toContainEqual({
+      event: 'chapters:warning',
+      payload: { reason: 'invalid-chapter', id: 'bad' },
+    });
+  });
+
+  it('cuts an overlap, as for files', () => {
+    const { api } = install({});
+    api.set([
+      { start: 0, end: 20, id: 'a' },
+      { start: 10, end: 30, id: 'b' },
+    ]);
+    expect(api.all.map((c) => [c.id, c.end])).toEqual([
+      ['a', 10],
+      ['b', 30],
+    ]);
+  });
+
+  it('an empty list removes the app chapters, and the next LOAD clears them too', () => {
+    const { api, send } = install({});
+    api.set(mapped);
+    expect(api.set([])).toBe(0);
+    expect(api.source).toBe('none');
+    api.set(mapped);
+    send({ type: 'LOAD', url: 'https://cdn.example/next.m3u8' });
+    expect(api.all).toEqual([]);
+  });
+});

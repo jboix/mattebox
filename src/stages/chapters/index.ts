@@ -6,9 +6,10 @@
  *   `com.apple.hls.chapters` names Apple's JSON chapters document. The
  *   stage's reducer fetches it once per load and parses it; the list lives
  *   in the stage's slice.
- * - A file the app loads: a WebVTT chapters track, the metadata track this
- *   engine defines (JSON cue payloads with an image and data), or Apple's
- *   JSON. It wins over the manifest until the next LOAD, UNLOAD, or DETACH.
+ * - The app: a file it loads (a WebVTT chapters track, the metadata track
+ *   this engine defines, or Apple's JSON), or chapters it sets from data it
+ *   already holds. They win over the manifest until the next LOAD, UNLOAD,
+ *   or DETACH.
  *
  * Both fetches go through the transport, so request hooks (auth, cmcd,
  * steering) apply. A load counter in the slice ties the app's list, which
@@ -18,10 +19,10 @@ import { findTrackSite } from '../../kernel/presentation.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
-import type { Chapter, ChaptersResult } from './parse.js';
-import { parseAppleChapters, parseChapterTrack } from './parse.js';
+import type { Chapter, ChapterInput, ChaptersResult } from './parse.js';
+import { chaptersFromInput, parseAppleChapters, parseChapterTrack } from './parse.js';
 
-export type { Chapter, ChapterImage } from './parse.js';
+export type { Chapter, ChapterImage, ChapterInput } from './parse.js';
 
 declare module '../../index.js' {
   interface MatteboxNamespaces {
@@ -32,6 +33,12 @@ declare module '../../index.js' {
 export interface ChaptersApi {
   /** Fetches and parses a chapters file. Resolves to the chapter count. */
   load(url: string): Promise<number>;
+  /**
+   * Sets chapters the app already holds, such as ones from a content API.
+   * Like a loaded file, they win over the manifest's until the next load.
+   * An empty list removes the app's chapters. Returns the chapter count.
+   */
+  set(chapters: readonly ChapterInput[]): number;
   /** The chapter covering a presentation time, or null. */
   at(time: number): Chapter | null;
   /** Every chapter, in start order. */
@@ -61,14 +68,14 @@ function preferredLanguage(kernel: Readonly<KernelState>): string | null {
   return findTrackSite(kernel.presentation, textId)?.track.lang ?? null;
 }
 
-/** A parse's warnings and the list-changed event, as emit effects. */
-function report(url: string, result: ChaptersResult, source: 'app' | 'manifest'): Effect[] {
+/** A parse's warnings and the list-changed event, as emit effects. `url` is null for app data. */
+function report(url: string | null, result: ChaptersResult, source: 'app' | 'manifest'): Effect[] {
   return [
     ...result.warnings.map(
       (warning): Effect => ({
         kind: 'emit',
         event: 'chapters:warning',
-        payload: { url, ...warning },
+        payload: url === null ? { ...warning } : { url, ...warning },
       }),
     ),
     {
@@ -155,6 +162,19 @@ export default function chapters(): Stage {
           if (at !== slice().loads) return result.chapters.length;
           list = { loads: at, chapters: result.chapters };
           for (const effect of effects) {
+            if (effect.kind === 'emit') ctx.emit(effect.event, effect.payload);
+          }
+          return result.chapters.length;
+        },
+        set(chapters: readonly ChapterInput[]): number {
+          if (chapters.length === 0) {
+            list = null;
+            ctx.emit('chapters:changed', { count: current().length, source: api.source });
+            return 0;
+          }
+          const result = chaptersFromInput(chapters);
+          list = { loads: slice().loads, chapters: result.chapters };
+          for (const effect of report(null, result, 'app')) {
             if (effect.kind === 'emit') ctx.emit(effect.event, effect.payload);
           }
           return result.chapters.length;

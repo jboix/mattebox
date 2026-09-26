@@ -224,6 +224,18 @@ describe('chapters from the manifest', () => {
     expect(api.all).toEqual([]);
   });
 
+  it('chapters the app sets win over the manifest; an empty set brings them back', () => {
+    const { api, send } = install();
+    send({ type: 'MANIFEST_LOADED', presentation: manifest() });
+    send(answer(fixture('chapters/shaka-hls-chapters.json')));
+    api.set([{ start: 0, title: 'Mine' }]);
+    expect(api.source).toBe('app');
+    expect(api.at(300)?.title).toBe('Mine');
+    api.set([]);
+    expect(api.source).toBe('manifest');
+    expect(api.at(300)?.title).toBe('The attack');
+  });
+
   it('an open last chapter ends at the presentation duration once known', () => {
     const { api, send, setPresentation } = install();
     send({ type: 'MANIFEST_LOADED', presentation: manifest() });

@@ -32,7 +32,7 @@ export interface Chapter {
 
 /** Something the parser skipped or changed, for a `chapters:warning` event. */
 export interface ChapterWarning {
-  readonly reason: 'malformed-cue' | 'bad-json' | 'overlap' | 'fetch-failed';
+  readonly reason: 'malformed-cue' | 'bad-json' | 'overlap' | 'fetch-failed' | 'invalid-chapter';
   readonly id?: string;
 }
 
@@ -219,6 +219,53 @@ export function parseAppleChapters(
           }
         : {}),
       ...(Object.keys(data).length > 0 ? { data: data as Serializable } : {}),
+    };
+  });
+  return { chapters: orderChapters(chapters, warnings), warnings };
+}
+
+/** One chapter as an app hands it over, from data it already holds. */
+export interface ChapterInput {
+  /** Presentation time, seconds. */
+  readonly start: number;
+  /** Absent: the next chapter's start, or the end of the presentation for the last one. */
+  readonly end?: number;
+  readonly title?: string;
+  readonly id?: string;
+  readonly lang?: string;
+  readonly image?: ChapterImage;
+  readonly data?: Serializable;
+}
+
+/**
+ * Chapters an app built itself, as the record every source produces. An
+ * entry without a finite, non-negative start is skipped; an end that is
+ * missing or not after the start runs to the next chapter's start.
+ */
+export function chaptersFromInput(inputs: readonly ChapterInput[]): ChaptersResult {
+  const warnings: ChapterWarning[] = [];
+  const valid = inputs.filter((input) => {
+    const ok = Number.isFinite(input.start) && input.start >= 0;
+    if (!ok)
+      warnings.push({
+        reason: 'invalid-chapter',
+        ...(input.id !== undefined ? { id: input.id } : {}),
+      });
+    return ok;
+  });
+  const starts = valid.map((input) => input.start).sort((a, b) => a - b);
+  const chapters: Chapter[] = valid.map((input) => {
+    const given = input.end !== undefined && Number.isFinite(input.end) && input.end > input.start;
+    return {
+      id: input.id ?? String(Math.round(input.start * 1000)),
+      start: input.start,
+      end: given
+        ? (input.end as number)
+        : (starts.find((s) => s > input.start) ?? Number.POSITIVE_INFINITY),
+      title: input.title ?? '',
+      ...(input.lang !== undefined ? { lang: input.lang } : {}),
+      ...(input.image !== undefined ? { image: input.image } : {}),
+      ...(input.data !== undefined ? { data: input.data } : {}),
     };
   });
   return { chapters: orderChapters(chapters, warnings), warnings };

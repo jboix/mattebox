@@ -5,9 +5,9 @@ a seek bar shows.
 
 ## engine.chapters
 
-Chapters come from the manifest or from a file you load. The stage fetches
-both through the transport, so request hooks such as authentication headers
-and CMCD apply.
+Chapters come from the manifest, from a file you load, or from data you
+already hold. The stage fetches manifests and files through the transport,
+so request hooks such as authentication headers and CMCD apply.
 
 ```ts
 import chapters from 'mattebox/stages/chapters';
@@ -22,21 +22,48 @@ const chapter = engine.chapters.at(video.currentTime);
 // { id, start, end, title, lang?, image?, data? } or null
 ```
 
-| Member      | Meaning                                                           |
-| ----------- | ----------------------------------------------------------------- |
-| `load(url)` | Fetches and parses a chapters file. Resolves to the chapter count |
-| `at(time)`  | The chapter covering a presentation time, or null                 |
-| `all`       | Every chapter, in start order                                     |
-| `source`    | `'none'`, `'app'`, or `'manifest'`                                |
+| Member          | Meaning                                                                           |
+| --------------- | --------------------------------------------------------------------------------- |
+| `load(url)`     | Fetches and parses a chapters file. Resolves to the chapter count                 |
+| `set(chapters)` | Sets chapters you already hold. Returns the chapter count; `set([])` removes them |
+| `at(time)`      | The chapter covering a presentation time, or null                                 |
+| `all`           | Every chapter, in start order                                                     |
+| `source`        | `'none'`, `'app'`, or `'manifest'`                                                |
 
-A file you load wins over the manifest's chapters. Load it after
+Chapters you load or set win over the manifest's. Load or set them after
 `engine.load`. Every `load`, `unload`, and `detach` empties both lists, so
 chapters never carry over to the next source.
 
-| Event              | Payload                | When                                                              |
-| ------------------ | ---------------------- | ----------------------------------------------------------------- |
-| `chapters:changed` | `{ count, source }`    | The list is replaced or emptied                                   |
-| `chapters:warning` | `{ url, reason, id? }` | An entry was skipped, truncated, or not JSON, or the fetch failed |
+| Event              | Payload                 | When                                                                                         |
+| ------------------ | ----------------------- | -------------------------------------------------------------------------------------------- |
+| `chapters:changed` | `{ count, source }`     | The list is replaced or emptied                                                              |
+| `chapters:warning` | `{ url?, reason, id? }` | An entry was skipped, truncated, or not JSON, or the fetch failed; `url` is absent for `set` |
+
+## From data you already hold
+
+A content API often returns chapters with the media. You map them to
+`{ start, end?, title?, id?, lang?, image?, data? }`, times in seconds, and
+pass the list to `set`.
+
+```ts
+engine.load(stream);
+engine.chapters.set(
+  apiChapters.map((c) => ({
+    id: c.id,
+    start: c.startMs / 1000,
+    end: c.endMs / 1000,
+    title: c.title,
+    image: { url: c.imageUrl },
+  })),
+);
+```
+
+| Rule        | Result                                                                                |
+| ----------- | ------------------------------------------------------------------------------------- |
+| No `end`    | The chapter ends at the next chapter's start; the last at the end of the presentation |
+| Bad `start` | Not finite or below 0: the entry is skipped with a `chapters:warning`                 |
+| No `id`     | The start in milliseconds                                                             |
+| Overlap     | The earlier chapter is cut at the next chapter's start                                |
 
 ## From the manifest
 
