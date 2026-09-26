@@ -36,6 +36,8 @@ export interface ScheduleTrackInput {
 
 export interface ScheduleInput {
   readonly currentTime: number;
+  /** The presentation's duration, for VOD: a playhead at the very end still needs the last segment. */
+  readonly duration?: number;
   /** Seconds of forward buffer to maintain. */
   readonly bufferGoal: number;
   /** Continues the state counter so tokens stay unique. */
@@ -72,6 +74,35 @@ export interface ScheduleResult {
 }
 
 const DEFAULT_GAP_TOLERANCE = 0.25;
+
+/**
+ * A playhead this close to the end counts as inside the last segment. No
+ * segment starts at the duration itself, so a seek to the very end would
+ * otherwise find nothing to fetch there.
+ */
+export const END_SLACK = 0.5;
+
+/** Where the buffer is measured from: the playhead, or just inside the last segment when it sits at the end. */
+export function measuredFrom(time: number, duration: number | undefined): number {
+  return duration === undefined ? time : Math.min(time, duration - END_SLACK);
+}
+
+/**
+ * Whether `ranges` hold media from the playhead through to `duration`. The
+ * playhead alone never counts: a seek to the end with nothing buffered there
+ * has not reached it, and ending the stream then would cut the duration
+ * down to what is buffered (W3C Media Source Extensions, endOfStream).
+ */
+export function reachesEnd(
+  ranges: TimeRangesSnapshot,
+  time: number,
+  duration: number,
+  tolerance: number,
+): boolean {
+  const from = measuredFrom(time, duration);
+  const inside = ranges.some((range) => range.start <= from + tolerance && range.end > from);
+  return inside && bufferedEndFrom(ranges, from, tolerance) >= duration - END_SLACK;
+}
 
 /**
  * The end of continuous buffer from `time`, merging gaps below the
@@ -136,10 +167,11 @@ export function schedule(input: ScheduleInput): ScheduleResult {
     // decision is better made once this segment's bytes have arrived.
     if (track.inflight.length > 0) continue;
 
-    const bufferedEnd = bufferedEndFrom(track.ranges, input.currentTime, tolerance);
-    if (bufferedEnd - input.currentTime >= input.bufferGoal) continue;
+    const now = measuredFrom(input.currentTime, input.duration);
+    const bufferedEnd = bufferedEndFrom(track.ranges, now, tolerance);
+    if (bufferedEnd - now >= input.bufferGoal) continue;
 
-    let target = Math.max(bufferedEnd, input.currentTime);
+    let target = Math.max(bufferedEnd, now);
     if (input.liveWindow != null && target < input.liveWindow.start) {
       // The window slid past this position; resume at its start.
       target = input.liveWindow.start;
@@ -172,7 +204,7 @@ export function schedule(input: ScheduleInput): ScheduleResult {
       }
       if (covering === null) break;
       frontier = Math.max(frontier, covering.end);
-      if (frontier - input.currentTime >= input.bufferGoal) {
+      if (frontier - now >= input.bufferGoal) {
         segment = null;
         break;
       }

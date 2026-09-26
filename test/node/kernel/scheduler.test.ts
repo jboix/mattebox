@@ -8,7 +8,7 @@ import type {
 } from '../../../src/index.js';
 import { createReducer } from '../../../src/kernel/reducer.js';
 import type { ScheduleInput, ScheduleTrackInput } from '../../../src/kernel/scheduler.js';
-import { bufferedEndFrom, schedule } from '../../../src/kernel/scheduler.js';
+import { bufferedEndFrom, reachesEnd, schedule } from '../../../src/kernel/scheduler.js';
 import { createMseSink } from '../../../src/kernel/sinks/mse-sink.js';
 import { createNullSink } from '../../helpers/null-sink.js';
 import { deepFreeze, readyStateWithInflight } from './helpers.js';
@@ -231,6 +231,47 @@ describe('buffer goal', () => {
     const result = schedule(input({ tracks: [track({ ranges })] }));
     // Continues from the coalesced end: next is segment 2, not a refetch of 0 or 1.
     expect(result.requests[0]?.seq).toBe(2);
+  });
+});
+
+describe('the end of a VOD presentation', () => {
+  // 100 segments of 4 s: the presentation ends at 400.
+  it('a playhead at the very end fetches the last segment', () => {
+    const result = schedule(input({ currentTime: 400, duration: 400 }));
+    expect(result.requests[0]?.seq).toBe(99);
+  });
+
+  it('the playhead alone never reaches the end', () => {
+    expect(reachesEnd([], 400, 400, 0.25)).toBe(false);
+    // Buffered up to 390 from the start: a skip to the end has nothing there.
+    expect(reachesEnd([{ start: 0, end: 390 }], 400, 400, 0.25)).toBe(false);
+  });
+
+  it('media buffered from the playhead through the duration reaches it', () => {
+    expect(reachesEnd([{ start: 396, end: 400 }], 400, 400, 0.25)).toBe(true);
+    expect(
+      reachesEnd(
+        [
+          { start: 380, end: 392 },
+          { start: 392.1, end: 400 },
+        ],
+        385,
+        400,
+        0.25,
+      ),
+    ).toBe(true);
+    // A gap on the way does not.
+    expect(
+      reachesEnd(
+        [
+          { start: 380, end: 390 },
+          { start: 396, end: 400 },
+        ],
+        385,
+        400,
+        0.25,
+      ),
+    ).toBe(false);
   });
 });
 

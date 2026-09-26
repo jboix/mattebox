@@ -37,7 +37,7 @@ import {
   withDeadGroups,
 } from './rendition-select.js';
 import type { ScheduleTrackInput } from './scheduler.js';
-import { bufferedEndFrom, schedule } from './scheduler.js';
+import { bufferedEndFrom, reachesEnd, schedule } from './scheduler.js';
 import type { MediaContentType } from './sinks/mse-sink.js';
 import { sbIdFor } from './sinks/mse-sink.js';
 import { reconciledOffset, segmentAtTime } from './timeline.js';
@@ -1668,8 +1668,10 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
   const leadPending =
     initFetches.some((pending) => pending.sbId === leadSbId) ||
     [...state.scheduling.inflight.values()].some((request) => request.sbId === leadSbId);
+  const vodDuration = state.presentation.isLive ? undefined : state.presentation.duration;
   const result = schedule({
     currentTime: state.playback.currentTime,
+    ...(vodDuration === undefined ? {} : { duration: vodDuration }),
     bufferGoal: state.scheduling.bufferGoal,
     tokenSeq: state.scheduling.tokenSeq + initFetches.length,
     tracks,
@@ -1742,9 +1744,9 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
     inflight.set(request.token, request);
   }
 
-  // VOD end: every track has nothing left to fetch and the buffers reach
-  // the announced duration. endOfStream is safe to re-emit; the handler
-  // no-ops once the source has left 'open'.
+  // VOD end: every track has nothing left to fetch and its buffer holds
+  // media from the playhead to the announced duration. endOfStream is safe
+  // to re-emit; the handler no-ops once the source has left 'open'.
   // Only SourceBuffer tracks gate the end: a subtitle playlist shorter
   // than the video must not hold the stream open.
   const mediaTracks = tracks.filter((track) => track.sbId !== undefined);
@@ -1753,10 +1755,18 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
     initFetches.length === 0 &&
     result.effects.length === 0 &&
     mediaTracks.length > 0 &&
-    mediaTracks.every((track) => {
-      const end = bufferedEndFrom(track.ranges, state.playback.currentTime, 0.25);
-      return end >= (state.presentation?.duration ?? 0) - 0.5;
-    })
+    // A fetch still in flight would append past the end, reopen the source,
+    // and leave the stream open with nothing left to end it.
+    mediaTracks.every(
+      (track) =>
+        track.inflight.length === 0 &&
+        reachesEnd(
+          track.ranges,
+          state.playback.currentTime,
+          state.presentation?.duration ?? 0,
+          0.25,
+        ),
+    )
   ) {
     effects.push({ kind: 'endOfStream' });
   }

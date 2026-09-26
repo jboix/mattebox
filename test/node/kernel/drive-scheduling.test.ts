@@ -289,3 +289,80 @@ describe('what a buffer remembers receiving', () => {
     expect(fx.filter((e) => e.kind === 'schedule')).toEqual([]);
   });
 });
+
+describe('ending a VOD stream', () => {
+  // An 8 s presentation: video and audio have two 4 s segments each, ending at the duration.
+  const short: Presentation = {
+    ...vodFixture,
+    duration: 8,
+    periods: vodFixture.periods.map((period) => ({
+      ...period,
+      tracks: period.tracks.map((track) => ({
+        ...track,
+        renditions: track.renditions.map((rendition) => ({
+          ...rendition,
+          segments: [0, 1].map((seq) => ({
+            seq,
+            start: seq * 4,
+            duration: 4,
+            url: `https://cdn.example/${track.id}/${seq}.m4s`,
+          })),
+        })),
+      })),
+    })),
+  };
+
+  /** Ready at `currentTime`, the video buffer at `video`, the audio at `audio`, nothing in flight. */
+  function at(
+    currentTime: number,
+    video: ReadonlyArray<{ start: number; end: number }>,
+    audio: ReadonlyArray<{ start: number; end: number }>,
+  ): KernelState {
+    const { state } = ready(short);
+    return {
+      ...state,
+      playback: { ...state.playback, currentTime },
+      scheduling: { ...state.scheduling, inflight: new Map() },
+      buffers: new Map([
+        ['sb:video', { codecs: 'avc1', ranges: video, pendingAppends: 0, initFor: 'v-1' }],
+        ['sb:audio', { codecs: 'mp4a', ranges: audio, pendingAppends: 0, initFor: 'a-1' }],
+      ]),
+    };
+  }
+
+  function ends(state: KernelState): boolean {
+    const [, fx] = reduce(deepFreeze(structuredClone(state)), {
+      type: 'TIME_UPDATE',
+      currentTime: state.playback.currentTime,
+      buffered: [],
+    });
+    return fx.some((e) => e.kind === 'endOfStream');
+  }
+
+  it('ends once both buffers hold media through the duration', () => {
+    expect(ends(at(7.9, [{ start: 0, end: 8 }], [{ start: 0, end: 8 }]))).toBe(true);
+  });
+
+  it('does not end on a playhead at the end with nothing buffered there', () => {
+    // Ending here would cut the duration down to what is buffered.
+    expect(ends(at(8, [{ start: 0, end: 2 }], [{ start: 0, end: 2 }]))).toBe(false);
+  });
+
+  it('does not end while a fetch is in flight, which would append past the end', () => {
+    const state = at(7.9, [{ start: 0, end: 8 }], [{ start: 0, end: 7.8 }]);
+    const request = {
+      token: 't9:a:1',
+      trackId: 'a',
+      seq: 1,
+      url: 'https://cdn.example/a/1.m4s',
+      renditionId: 'a-1',
+      sbId: 'sb:audio',
+    };
+    expect(
+      ends({
+        ...state,
+        scheduling: { ...state.scheduling, inflight: new Map([[request.token, request]]) },
+      }),
+    ).toBe(false);
+  });
+});
