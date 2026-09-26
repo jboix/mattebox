@@ -13,7 +13,7 @@ import { compose } from './kernel/loader.js';
 import { normalizeMimeType } from './kernel/mime.js';
 import { createMseController, decodable } from './kernel/mse.js';
 import { createSegmentPreparer } from './kernel/prepare.js';
-import { findTrackSite } from './kernel/presentation.js';
+import { findTrackSite, isTrick } from './kernel/presentation.js';
 import { createReducer, initialState, resolveConfig } from './kernel/reducer.js';
 import { availableGroups, createArbiter } from './kernel/rendition-select.js';
 import { createMseSink } from './kernel/sinks/mse-sink.js';
@@ -234,7 +234,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
     const activeId = state.tracks.active.get('video');
     for (const period of state.presentation.periods) {
       for (const track of period.tracks) {
-        if (track.contentType !== 'video') continue;
+        if (track.contentType !== 'video' || isTrick(track)) continue;
         if (activeId === undefined || track.id === activeId) return track.renditions;
       }
     }

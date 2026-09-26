@@ -195,6 +195,8 @@ export interface Rendition {
   readonly pathway?: string;
   /** The tile grid of an image rendition whose segments are sprite sheets. */
   readonly tiles?: TileGrid;
+  /** The highest playback rate a trick-play rendition is made for (DASH @maxPlayoutRate). */
+  readonly maxPlayoutRate?: number;
 }
 
 /**
@@ -206,7 +208,11 @@ export interface Track {
   readonly contentType: ContentType;
   readonly mimeType: string;
   readonly lang?: string;
-  /** Free-form role, such as 'main', 'alternate', 'subtitle', 'caption'. */
+  /**
+   * Free-form role, such as 'main', 'alternate', 'subtitle', 'caption'.
+   * 'trick' marks an I-frame-only video track: it is kept for fast forward
+   * and frame previews, and never selected for normal playback.
+   */
   readonly role?: string;
   /**
    * Mandatory even when no DRM stage is loaded, so adding DRM later does not

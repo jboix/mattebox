@@ -163,7 +163,8 @@ interface TemplateInfo {
 /**
  * A trick-mode AdaptationSet: the DASH-IF trickmode EssentialProperty, or a
  * representation declaring a playout rate other than 1. Both mark an
- * I-frame-only set meant for scrubbing, never for normal playback.
+ * I-frame-only set meant for fast forward and previews, never for normal
+ * playback.
  */
 function isTrickMode(adaptationSet: Element): boolean {
   for (const property of children(adaptationSet, 'EssentialProperty')) {
@@ -395,17 +396,19 @@ export function parse(text: string, baseUrl: string): ParseResult {
   const adaptationSets = children(periodElement, 'AdaptationSet');
   for (let asIndex = 0; asIndex < adaptationSets.length; asIndex += 1) {
     const adaptationSet = adaptationSets[asIndex] as Element;
-    // DASH-IF IOP: an AdaptationSet carrying an EssentialProperty the client
-    // does not understand must be ignored. The only one seen in the wild
-    // here is trick mode, an I-frame-only set for scrubbing whose segments
-    // hold one frame each; chosen as the video track it never fills a
-    // buffer and the scheduling breaker halts playback.
-    if (isTrickMode(adaptationSet)) continue;
+    // DASH-IF IOP §3.2.9: a trick-mode set is I-frame only, for fast forward
+    // and previews. It becomes a track with role 'trick', which normal
+    // playback never selects: chosen as the video track, its one-frame
+    // segments never fill a buffer and the scheduling breaker halts playback.
+    const trick = isTrickMode(adaptationSet);
+    const asPlayoutRate = numberAttr(adaptationSet, 'maxPlayoutRate');
     const asBase = applyBaseUrl(adaptationSet, periodBase);
     const asMime = attr(adaptationSet, 'mimeType');
     const asCodecs = attr(adaptationSet, 'codecs');
     const lang = attr(adaptationSet, 'lang');
-    const role = children(adaptationSet, 'Role')[0]?.getAttribute('value') ?? null;
+    const role = trick
+      ? 'trick'
+      : (children(adaptationSet, 'Role')[0]?.getAttribute('value') ?? null);
     const protectionSchemes = parseProtection(children(adaptationSet, 'ContentProtection'));
 
     const renditions: Rendition[] = [];
@@ -525,6 +528,9 @@ export function parse(text: string, baseUrl: string): ParseResult {
       const width = numberAttr(representation, 'width');
       const height = numberAttr(representation, 'height');
       const tiles = tileGridOf(representation, adaptationSet, width, height);
+      const playoutRate = trick
+        ? (numberAttr(representation, 'maxPlayoutRate') ?? asPlayoutRate)
+        : null;
       renditions.push({
         id,
         bitrate: bandwidth,
@@ -536,6 +542,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
         ...(height !== null ? { height } : {}),
         ...(frameRate !== null ? { frameRate } : {}),
         ...(tiles !== null ? { tiles } : {}),
+        ...(playoutRate !== null ? { maxPlayoutRate: playoutRate } : {}),
       });
     }
 

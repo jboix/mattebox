@@ -66,7 +66,14 @@ export default function tsTransmux(options: TransmuxRunnerOptions = {}): Stage {
               renditionId: meta.renditionId,
             });
           }
-          return result.bytes ?? data;
+          // A transport stream that yields nothing must not reach the buffer as
+          // raw TS: the parser would fail the element. Failing the segment
+          // lets recovery skip it.
+          if (result.bytes === null) {
+            if (result.empty) throw new RangeError('transport stream segment holds no media');
+            return data;
+          }
+          return result.bytes;
         },
       });
       return () => runner.dispose();

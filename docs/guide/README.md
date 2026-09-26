@@ -20,6 +20,7 @@ order the first time, then use the table.
 | [13 Builds and targets](13-builds-and-targets.md)             | The three build outputs, the modern build, TV targets   |
 | [14 CDN](14-cdn.md)                                           | Script tags from jsDelivr, pinning, integrity, ESM      |
 | [15 Chapters](15-chapters.md)                                 | Chapters from the manifest or a file, `engine.chapters` |
+| [16 Trick play](16-trick-play.md)                             | Fast forward and rewind, `engine.trick`                 |
 
 The [architecture document](../architecture.md) covers the internals, for
 writing your own stage.

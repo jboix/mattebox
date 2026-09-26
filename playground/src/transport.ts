@@ -43,6 +43,13 @@ interface LiveView {
 interface PdtView {
   toWallClock(presentationTime: number): number | null;
 }
+interface TrickView {
+  readonly available: boolean;
+  readonly rate: number;
+  setRate(rate: number): void;
+}
+/** The scan rates the menu offers: rewind, normal, fast forward. Scans start past 2x either way. */
+const SCAN_RATES = [-8, -4, 1, 4, 8];
 interface ChapterView {
   readonly id: string;
   readonly start: number;
@@ -105,6 +112,9 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
       </div>
       <span id="tpEnd" class="tp-time tp-end"></span>
       <span id="tpNow" class="tp-now"></span>
+      <select id="tpScan" class="tp-select tp-scan" hidden aria-label="Fast forward and rewind" title="Fast forward and rewind through the I-frame track (engine.trick.setRate). The speed menu sets playback speed.">
+        ${SCAN_RATES.map((r) => `<option value="${r}"${r === 1 ? ' selected' : ''}>${r < 0 ? `◀◀ ${-r}×` : r === 1 ? '1×' : `▶▶ ${r}×`}</option>`).join('')}
+      </select>
       <button id="tpLive" class="small go-live" type="button" hidden title="Jump to the live edge (engine.live.seekToEdge). Appears once the playhead has fallen behind it.">Go live</button>
       <button id="tpMute" class="tp-mute" type="button" title="Mute or unmute the video element"></button>
       <input id="tpVolume" type="range" min="0" max="100" value="100" step="1" class="tp-volume" aria-label="Volume" title="Volume of the video element">
@@ -161,6 +171,11 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
   const thumb = host.querySelector('#tpThumb') as HTMLElement;
   const thumbTile = host.querySelector('#tpThumbTile') as HTMLElement;
   const goLive = host.querySelector('#tpLive') as HTMLButtonElement;
+  const scan = host.querySelector('#tpScan') as HTMLSelectElement;
+  function trickApi(): TrickView | null {
+    return (deps.engine() as { trick?: TrickView } | null)?.trick ?? null;
+  }
+  scan.addEventListener('change', () => trickApi()?.setRate(Number(scan.value)));
   const mute = host.querySelector('#tpMute') as HTMLButtonElement;
   const volume = host.querySelector('#tpVolume') as HTMLInputElement;
   const nativeToggle = host.querySelector('#tpNativeToggle') as HTMLInputElement;
@@ -306,6 +321,7 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
     hover.hidden = true;
   });
   goLive.addEventListener('click', () => liveApi()?.seekToEdge());
+  // The menu follows the engine: scanning ends on its own at the edge or the start.
   mute.addEventListener('click', () => {
     video.muted = !video.muted;
     poll();
@@ -542,6 +558,14 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
 
     // Latency itself reads in the status row below; here only the way back.
     goLive.hidden = live === null || live.edge === null || live.atEdge;
+    // Scanning needs an I-frame track; without one the speed dial is the only control.
+    const trick = trickApi();
+    scan.hidden = trick === null || !trick.available;
+    if (trick?.available) {
+      if (document.activeElement !== scan && scan.value !== String(trick.rate)) {
+        scan.value = String(trick.rate);
+      }
+    }
   }
 
   for (const type of ['play', 'pause', 'timeupdate', 'volumechange', 'durationchange', 'seeked']) {

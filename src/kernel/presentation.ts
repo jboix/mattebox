@@ -16,6 +16,11 @@ export interface RenditionSite extends TrackSite {
   readonly rendition: Rendition;
 }
 
+/** An I-frame-only video track, kept for trick play and never selected for normal playback. */
+export function isTrick(track: Track): boolean {
+  return track.role === 'trick';
+}
+
 export function findTrackSite(
   presentation: Presentation | null,
   trackId: string,

@@ -313,7 +313,7 @@ describe('URL resolution at parse time', () => {
 });
 
 describe('trick mode', () => {
-  it('skips an I-frame-only AdaptationSet so it never becomes the video track', () => {
+  it('keeps an I-frame-only AdaptationSet as a trick track, apart from the video track', () => {
     const mpd = `<?xml version="1.0" encoding="utf-8"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT60S" profiles="urn:mpeg:dash:profile:isoff-live:2011">
   <Period start="PT0S" id="1">
@@ -338,9 +338,12 @@ describe('trick mode', () => {
     const result = parse(mpd, 'https://cdn.example/live/index.mpd');
     expect(result.error).toBeNull();
     const tracks = result.presentation?.periods[0]?.tracks ?? [];
-    const video = tracks.filter((t) => t.contentType === 'video');
+    const video = tracks.filter((t) => t.contentType === 'video' && t.role !== 'trick');
     expect(video).toHaveLength(1);
     expect(video[0]?.renditions.map((r) => r.id)).toEqual(['main']);
+    const trick = tracks.find((t) => t.role === 'trick');
+    expect(trick).toMatchObject({ id: 'as-9', contentType: 'video' });
+    expect(trick?.renditions[0]).toMatchObject({ id: 'trick', maxPlayoutRate: 50 });
     expect(tracks.some((t) => t.contentType === 'audio')).toBe(true);
   });
 });

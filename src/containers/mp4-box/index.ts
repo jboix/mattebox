@@ -317,3 +317,173 @@ export function earliestDecodeTime(
   }
   return earliest;
 }
+
+// tfhd and trun flags. ISO/IEC 14496-12 §8.8.7 and §8.8.8.
+const TFHD_BASE_DATA_OFFSET = 0x000001;
+const TFHD_SAMPLE_DESCRIPTION = 0x000002;
+const TFHD_DEFAULT_DURATION = 0x000008;
+const TFHD_DEFAULT_SIZE = 0x000010;
+const TFHD_DEFAULT_FLAGS = 0x000020;
+const TFHD_DEFAULT_BASE_IS_MOOF = 0x020000;
+const TRUN_DATA_OFFSET = 0x000001;
+const TRUN_FIRST_SAMPLE_FLAGS = 0x000004;
+const TRUN_DURATION = 0x000100;
+const TRUN_SIZE = 0x000200;
+const TRUN_FLAGS = 0x000400;
+const TRUN_CTS = 0x000800;
+
+/** A track's sample defaults from an init segment's trex, for fragments that leave them out. */
+export interface SampleDefaults {
+  readonly duration: number;
+  readonly size: number;
+  readonly flags: number;
+}
+
+/** The trex defaults of an init segment, by track ID. ISO/IEC 14496-12 §8.8.3. */
+export function trexDefaults(init: Uint8Array): Map<number, SampleDefaults> {
+  const out = new Map<number, SampleDefaults>();
+  const mvex = findBox(init, 'moov/mvex');
+  for (const trex of mvex === null ? [] : findBoxes(mvex.payload, 'trex')) {
+    const body = fullBox(trex.payload)?.body;
+    if (body === undefined || body.byteLength < 20) continue;
+    const v = viewOf(body);
+    out.set(v.getUint32(0), {
+      duration: v.getUint32(8),
+      size: v.getUint32(12),
+      flags: v.getUint32(16),
+    });
+  }
+  return out;
+}
+
+/** One sample of a track fragment, located in the segment bytes. */
+export interface FragmentSample {
+  /** Byte offset of the sample data in the segment. */
+  readonly offset: number;
+  readonly size: number;
+  /** Duration in the track timescale. */
+  readonly duration: number;
+  /** Composition-time offset in the track timescale. */
+  readonly cts: number;
+  /** Decode time in the track timescale. */
+  readonly decodeTime: number;
+  /** A sync sample (sample_is_non_sync_sample clear): it decodes on its own. */
+  readonly isKeyframe: boolean;
+}
+
+/** One track fragment (traf) of a media segment. */
+export interface TrackFragmentSamples {
+  readonly trackId: number;
+  /** The tfdt decode time, or null when the traf has none. */
+  readonly baseMediaDecodeTime: number | null;
+  readonly samples: readonly FragmentSample[];
+}
+
+/**
+ * Every track fragment of a media segment with its samples located. Offsets
+ * follow the tfhd base rules: the moof with default-base-is-moof, an
+ * explicit base offset, else the end of the previous traf's data. Decode
+ * times continue across trafs of one track without a tfdt. A sample may
+ * point past the end of `data`; callers check `offset + size`.
+ */
+export function fragmentSamples(
+  data: Uint8Array,
+  defaults: ReadonlyMap<number, SampleDefaults> = new Map(),
+): TrackFragmentSamples[] {
+  const out: TrackFragmentSamples[] = [];
+  const nextDecode = new Map<number, number>();
+  for (const moof of findBoxes(data, 'moof')) {
+    let previousEnd = moof.start;
+    for (const traf of findBoxes(moof.payload, 'traf')) {
+      const tfhdBox = findBox(traf.payload, 'tfhd');
+      const tfhd = tfhdBox === null ? null : fullBox(tfhdBox.payload);
+      if (tfhd === null || tfhd.body.byteLength < 4) continue;
+      const tfhdView = viewOf(tfhd.body);
+      const trackId = tfhdView.getUint32(0);
+      const fallback = defaults.get(trackId);
+      let at = 4;
+      let base = tfhd.flags & TFHD_DEFAULT_BASE_IS_MOOF ? moof.start : previousEnd;
+      if (tfhd.flags & TFHD_BASE_DATA_OFFSET) {
+        base = Number(tfhdView.getBigUint64(at));
+        at += 8;
+      }
+      if (tfhd.flags & TFHD_SAMPLE_DESCRIPTION) at += 4;
+      let defaultDuration = fallback?.duration ?? 0;
+      let defaultSize = fallback?.size ?? 0;
+      let defaultFlags = fallback?.flags ?? 0;
+      if (tfhd.flags & TFHD_DEFAULT_DURATION) {
+        defaultDuration = tfhdView.getUint32(at);
+        at += 4;
+      }
+      if (tfhd.flags & TFHD_DEFAULT_SIZE) {
+        defaultSize = tfhdView.getUint32(at);
+        at += 4;
+      }
+      if (tfhd.flags & TFHD_DEFAULT_FLAGS) defaultFlags = tfhdView.getUint32(at);
+
+      const tfdt = findBox(traf.payload, 'tfdt');
+      const tfdtTime =
+        tfdt === null ? null : (parseTfdt(tfdt.payload)?.baseMediaDecodeTime ?? null);
+      let decode = tfdtTime ?? nextDecode.get(trackId) ?? 0;
+      const samples: FragmentSample[] = [];
+      let cursor = base;
+      for (const trunBox of findBoxes(traf.payload, 'trun')) {
+        const trun = fullBox(trunBox.payload);
+        if (trun === null || trun.body.byteLength < 4) continue;
+        const trunView = viewOf(trun.body);
+        const count = trunView.getUint32(0);
+        let p = 4;
+        if (trun.flags & TRUN_DATA_OFFSET) {
+          cursor = base + trunView.getInt32(p);
+          p += 4;
+        }
+        let firstFlags: number | null = null;
+        if (trun.flags & TRUN_FIRST_SAMPLE_FLAGS) {
+          firstFlags = trunView.getUint32(p);
+          p += 4;
+        }
+        // Each sample's table entry is 4 bytes per field present; a count past
+        // the table is malformed, and reading stops at the last whole entry.
+        const entry =
+          4 * [TRUN_DURATION, TRUN_SIZE, TRUN_FLAGS, TRUN_CTS].filter((f) => trun.flags & f).length;
+        for (let i = 0; i < count && p + entry <= trun.body.byteLength; i += 1) {
+          let duration = defaultDuration;
+          let size = defaultSize;
+          let flags = i === 0 && firstFlags !== null ? firstFlags : defaultFlags;
+          let cts = 0;
+          if (trun.flags & TRUN_DURATION) {
+            duration = trunView.getUint32(p);
+            p += 4;
+          }
+          if (trun.flags & TRUN_SIZE) {
+            size = trunView.getUint32(p);
+            p += 4;
+          }
+          if (trun.flags & TRUN_FLAGS) {
+            flags = trunView.getUint32(p);
+            p += 4;
+          }
+          if (trun.flags & TRUN_CTS) {
+            cts = trun.version === 1 ? trunView.getInt32(p) : trunView.getUint32(p);
+            p += 4;
+          }
+          samples.push({
+            offset: cursor,
+            size,
+            duration,
+            cts,
+            decodeTime: decode,
+            // sample_is_non_sync_sample, bit 16 of the sample flags. §8.8.3.1.
+            isKeyframe: (flags & 0x10000) === 0,
+          });
+          cursor += size;
+          decode += duration;
+        }
+      }
+      previousEnd = cursor;
+      nextDecode.set(trackId, decode);
+      out.push({ trackId, baseMediaDecodeTime: tfdtTime, samples });
+    }
+  }
+  return out;
+}

@@ -25,7 +25,7 @@ import type { Command, Effect, Fact, Message, Serializable } from '../types/mess
 import type { MediaTimeProbe } from '../types/stage.js';
 import { tickAfter } from './effects.js';
 import { normalizeMimeType, typeString } from './mime.js';
-import { findRendition, findTrackSite } from './presentation.js';
+import { findRendition, findTrackSite, isTrick } from './presentation.js';
 import { applyRefresh } from './refresh.js';
 import type { AbrChooser, SwitchPolicy } from './rendition-select.js';
 import {
@@ -742,6 +742,7 @@ function loadPresentation(
     for (const track of period.tracks) {
       if (
         (track.contentType === 'video' || track.contentType === 'audio') &&
+        !isTrick(track) &&
         !active.has(track.contentType) &&
         track.renditions.some((r) => !undecodableIds.has(r.id))
       ) {
@@ -800,7 +801,10 @@ function reduceFact(
     case 'MANIFEST_LOADED': {
       if (hooks.decodable === undefined) return loadPresentation(state, msg.presentation);
       const excluded = undecodable(msg.presentation, hooks.decodable);
-      const tracks = msg.presentation.periods.flatMap((period) => period.tracks);
+      // A trick track cannot stand in for the stream: it is never selected.
+      const tracks = msg.presentation.periods
+        .flatMap((period) => period.tracks)
+        .filter((track) => !isTrick(track));
       const lead = (['video', 'audio'] as const).find((c) =>
         tracks.some((t) => t.contentType === c),
       );

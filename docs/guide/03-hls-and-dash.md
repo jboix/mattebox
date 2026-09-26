@@ -119,6 +119,16 @@ group. The adapter splits that up and records which audio and text tracks
 each video rendition needs, and the engine keeps them consistent on quality
 changes. DASH already separates them.
 
+Two kinds of track never play in the video element.
+
+| Track            | `contentType` | `role`  | HLS source                 | DASH source                                | Used by             |
+| ---------------- | ------------- | ------- | -------------------------- | ------------------------------------------ | ------------------- |
+| Thumbnail images | `image`       |         | `EXT-X-IMAGE-STREAM-INF`   | `AdaptationSet` with `contentType="image"` | `engine.thumbnails` |
+| I-frame video    | `video`       | `trick` | `EXT-X-I-FRAME-STREAM-INF` | trick-mode `AdaptationSet`                 | `engine.trick`      |
+
+Both appear in `engine.tracks.available`. `engine.quality.renditions` never
+lists I-frame renditions, and selecting the I-frame track is rejected.
+
 ## List tracks and renditions
 
 After the manifest loads, read them from `engine.tracks` and

@@ -46,6 +46,7 @@ import textCea608 from '../../src/stages/text-cea608/index.js';
 import textWebvtt from '../../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../../src/stages/text-webvtt-segmented/index.js';
 import thumbnails from '../../src/stages/thumbnails/index.js';
+import trickPlay from '../../src/stages/trick-play/index.js';
 import type { Requirement } from '../../src/types/stage.js';
 
 export interface CatalogueEntry {
@@ -100,6 +101,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('stages', cmcd),
   built('stages', thumbnails),
   built('stages', chapters),
+  built('stages', trickPlay),
 ];
 
 /**
@@ -141,6 +143,11 @@ export const TOPICS: readonly StreamTopic[] = [
     id: 'previews',
     title: 'Thumbnails and chapters',
     hint: 'hover the seek bar; open the chapter menu in the bar',
+  },
+  {
+    id: 'trick',
+    title: 'Fast forward and rewind',
+    hint: 'HLS I-frame playlists and DASH trick-mode sets; use the ▶▶ menu next to the seek bar',
   },
   { id: 'live', title: 'Live', hint: 'sliding windows, DVR, go live' },
   {
@@ -236,12 +243,41 @@ export const STREAMS: readonly StreamEntry[] = [
     tags: ['TS', 'CEA-608'],
   },
   {
-    // Apple's advanced example lists I-frame playlists, which the engine
-    // keeps as a trick track (engine.tracks.available) and never plays.
-    label: 'Apple · advanced fMP4',
+    // I-frame playlists are byte ranges into the normal fMP4 fragments; the
+    // trick-play stage rebuilds each as one key frame lasting its slot.
+    label: 'Apple · advanced example, fMP4',
     url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
-    topic: 'vod',
+    topic: 'trick',
     tags: ['I-frame playlists', 'alternate audio', 'subtitles'],
+  },
+  {
+    // The same content in TS: each I-frame range starts past the program
+    // tables, which the stage takes from the start of the file.
+    label: 'Apple · advanced example, TS',
+    url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8',
+    topic: 'trick',
+    tags: ['TS', 'I-frame playlists', 'alternate audio', 'subtitles'],
+  },
+  {
+    // DASH-IF trick mode: an AdaptationSet with the trickmode
+    // EssentialProperty, one frame per 2 s segment, maxPlayoutRate 60.
+    label: 'DASH-IF livesim · trick mode, on demand',
+    url: 'https://livesim2.dashif.org/vod/testpic_2s/Manifest_trickmode.mpd',
+    topic: 'trick',
+    tags: ['trick-mode AdaptationSet'],
+  },
+  {
+    // Live: scanning forward stops at the live edge.
+    label: 'DASH-IF livesim · trick mode, live',
+    url: 'https://livesim2.dashif.org/livesim2/testpic_2s/Manifest_trickmode.mpd',
+    topic: 'trick',
+    tags: ['live', 'trick-mode AdaptationSet'],
+  },
+  {
+    label: 'Apple · bipbop 16x9',
+    url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8',
+    topic: 'trick',
+    tags: ['TS', 'I-frame playlists', 'CEA-608'],
   },
   {
     label: 'Unified Streaming · Tears of Steel',
