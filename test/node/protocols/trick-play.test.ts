@@ -198,3 +198,67 @@ describe('normal playback ignores the trick track', () => {
     expect(fetchUrls(a.effects)).toEqual(fetchUrls(b.effects));
   });
 });
+
+describe('RESOLVE_RENDITION', () => {
+  it('HLS fetches the playlist of a rendition that is not playing', () => {
+    const reduce = compose([hlsCmaf()]);
+    const booted = boot(reduce, HLS_BASE, fixture('apple-advanced-fmp4-master.m3u8'));
+    const [state, effects] = reduce(booted.state, {
+      type: 'RESOLVE_RENDITION',
+      renditionId: 't-640x360',
+    });
+    expect(state.tracks.resolve?.has('t-640x360')).toBe(true);
+    expect(state.tracks.active.get('video')).toBe('video-main');
+    expect(fetchUrls(effects)).toEqual(['https://cdn.example/hls/v3/iframe_index.m3u8']);
+  });
+
+  it('an unknown rendition is rejected', () => {
+    const reduce = compose([hlsCmaf()]);
+    const booted = boot(reduce, HLS_BASE, fixture('apple-advanced-fmp4-master.m3u8'));
+    const [, effects] = reduce(booted.state, { type: 'RESOLVE_RENDITION', renditionId: 'nope' });
+    expect(effects).toContainEqual({
+      kind: 'emit',
+      event: 'command:rejected',
+      payload: { command: 'RESOLVE_RENDITION', reason: 'unknown rendition: nope' },
+    });
+  });
+});
+
+describe('switching to and from the trick track', () => {
+  function withVideoBuffer(state: ReturnType<typeof initialState>) {
+    return {
+      ...state,
+      buffers: new Map([
+        ['sb:video', { codecs: 'avc1', ranges: [{ start: 0, end: 60 }], pendingAppends: 0 }],
+      ]),
+    };
+  }
+
+  it('SEEK records its target at once, for a switch in the same turn', () => {
+    const reduce = compose([dashCmaf()]);
+    const { state } = boot(reduce, DASH_BASE, mpd(true));
+    const [seeked] = reduce(state, { type: 'SEEK', to: 42 });
+    expect(seeked.playback.currentTime).toBe(42);
+  });
+
+  it('clears the whole video buffer both ways, and restarts the decoder at the playhead', () => {
+    const reduce = compose([dashCmaf()]);
+    const { state } = boot(reduce, DASH_BASE, mpd(true));
+    const [seeked] = reduce(withVideoBuffer(state), { type: 'SEEK', to: 30 });
+    const [trick, toTrick] = reduce(seeked, { type: 'SELECT_TRACK', trackId: 'as-9' });
+    expect(toTrick).toContainEqual({
+      kind: 'remove',
+      sbId: 'sb:video',
+      start: 0,
+      end: Number.POSITIVE_INFINITY,
+    });
+    expect(toTrick).toContainEqual({ kind: 'seekElement', to: 30 });
+    const [, back] = reduce(withVideoBuffer(trick), { type: 'SELECT_TRACK', trackId: 'as-1' });
+    expect(back).toContainEqual({
+      kind: 'remove',
+      sbId: 'sb:video',
+      start: 0,
+      end: Number.POSITIVE_INFINITY,
+    });
+  });
+});

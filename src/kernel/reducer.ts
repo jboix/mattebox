@@ -443,8 +443,15 @@ function reduceCommand(
         state.live === null
           ? msg.to
           : Math.min(Math.max(msg.to, state.live.span.start), state.live.edge);
+      // The target is the position from now on: a command that follows in
+      // the same turn (a track switch) plans around it, not around the time
+      // the element last reported.
       return [
-        { ...next, scheduling: clearRepeat(next.scheduling) },
+        {
+          ...next,
+          playback: { ...next.playback, currentTime: to, seeking: true },
+          scheduling: clearRepeat(next.scheduling),
+        },
         [...aborts, { kind: 'seekElement', to }],
       ];
     }
@@ -509,21 +516,34 @@ function reduceCommand(
       ) {
         const sbId = sbIdFor(track.contentType);
         const buffer = state.buffers.get(sbId);
+        // Trick frames and normal frames never share the buffer: a switch
+        // to or from an I-frame track clears all of it, behind the playhead
+        // too, and restarts the decoder where the playhead is.
+        const trickSwitch =
+          track.contentType === 'video' &&
+          (isTrick(track) || (previousTrack !== null && isTrick(previousTrack)));
         if (buffer !== undefined) {
-          const plan = planPinApply({
-            strategy: msg.apply ?? 'now',
-            currentTime: state.playback.currentTime,
-            ranges: buffer.ranges,
-            sbId,
-            trackId: track.id,
-            inflightTokens: [],
-            period: site.period,
-            rendition: flushRendition,
-            tokenSeq: state.scheduling.tokenSeq,
-          });
-          for (const effect of plan.effects) {
-            if (effect.kind !== 'seekElement' || track.contentType === 'video') {
-              effects.push(effect);
+          if (trickSwitch) {
+            effects.push(
+              { kind: 'remove', sbId, start: 0, end: Number.POSITIVE_INFINITY },
+              { kind: 'seekElement', to: state.playback.currentTime },
+            );
+          } else {
+            const plan = planPinApply({
+              strategy: msg.apply ?? 'now',
+              currentTime: state.playback.currentTime,
+              ranges: buffer.ranges,
+              sbId,
+              trackId: track.id,
+              inflightTokens: [],
+              period: site.period,
+              rendition: flushRendition,
+              tokenSeq: state.scheduling.tokenSeq,
+            });
+            for (const effect of plan.effects) {
+              if (effect.kind !== 'seekElement' || track.contentType === 'video') {
+                effects.push(effect);
+              }
             }
           }
           // Force an init re-fetch for the new track: its initFor no
@@ -684,6 +704,19 @@ function reduceCommand(
       return [{ ...state, scheduling: { ...state.scheduling, bufferGoal: msg.seconds } }, []];
     }
 
+    case 'RESOLVE_RENDITION': {
+      if (findRendition(state.presentation, msg.renditionId) === null) {
+        return reject(state, msg.type, `unknown rendition: ${msg.renditionId}`);
+      }
+      if (state.tracks.resolve?.has(msg.renditionId)) return [state, []];
+      const resolve = new Set(state.tracks.resolve ?? []).add(msg.renditionId);
+      // The quality version moves so the adapters look at the selection again.
+      return [
+        { ...state, tracks: { ...state.tracks, resolve }, quality: bumped(state.quality) },
+        [],
+      ];
+    }
+
     case 'ABORT_INFLIGHT': {
       return abortInflight(state, msg.trackId);
     }
@@ -755,7 +788,7 @@ function loadPresentation(
     lifecycle: { phase },
     presentation,
     scheduling: { ...state.scheduling, inflight },
-    tracks: { active, available },
+    tracks: { ...state.tracks, active, available },
     quality: bumped(state.quality),
   };
   // Every playlist merge lands here too; the track list only changed if
@@ -1778,6 +1811,7 @@ const COMMAND_TYPES: Record<Command['type'], true> = {
   CONSTRAIN: true,
   RELEASE_CONSTRAINT: true,
   SET_BUFFER_GOAL: true,
+  RESOLVE_RENDITION: true,
   ABORT_INFLIGHT: true,
 };
 

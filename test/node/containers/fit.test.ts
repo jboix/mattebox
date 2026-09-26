@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { fitFragment } from '../../../src/containers/fmp4/fit.js';
 import { concat } from '../../../src/containers/fmp4/writer.js';
 import {
+  decoderConfigBox,
   findBox,
   fragmentSamples,
   parseTfdt,
@@ -107,4 +108,17 @@ describe('fitting a trick-play fragment', () => {
       expect(key.decodeTime + key.duration).toBe(slotStart + Math.round(slot * 90000));
     });
   }
+});
+
+describe('decoder configuration for WebCodecs', () => {
+  it('reads the avcC of an init segment', () => {
+    const config = decoderConfigBox(segment('apple-iframe-init.mp4'));
+    expect(config?.format).toBe('avc1');
+    // AVCDecoderConfigurationRecord: configurationVersion 1, then the profile.
+    expect(config?.description[0]).toBe(1);
+  });
+
+  it('is null for an audio init', () => {
+    expect(decoderConfigBox(segment('init-a.mp4'))).toBeNull();
+  });
 });

@@ -9,6 +9,7 @@
  * after the intersection. Arbitration never yields zero playable
  * renditions.
  */
+
 import type {
   ContentType,
   Coupling,
@@ -29,6 +30,7 @@ import type {
   Constraint,
   SwitchVerdict,
 } from '../types/quality.js';
+import { findRendition } from './presentation.js';
 import { bufferedEndFrom } from './scheduler.js';
 import { segmentAtTime } from './timeline.js';
 
@@ -189,6 +191,7 @@ export function availableGroups(kernel: Readonly<KernelState>): ReadonlySet<stri
  * content type by content type in `types` order: for video the ladder
  * neighbours of `videoId`, for the others every rendition of the active
  * track. A track id repeated across periods yields each period's copy.
+ * Renditions asked for with RESOLVE_RENDITION follow.
  */
 export function activeRenditions(
   kernel: Readonly<KernelState>,
@@ -209,6 +212,12 @@ export function activeRenditions(
         for (const rendition of candidates) out.push({ contentType, rendition });
       }
     }
+  }
+  // Renditions asked for with RESOLVE_RENDITION, after the playing ones.
+  for (const id of kernel.tracks.resolve ?? []) {
+    if (out.some((entry) => entry.rendition.id === id)) continue;
+    const site = findRendition(kernel.presentation, id);
+    if (site !== null) out.push({ contentType: site.track.contentType, rendition: site.rendition });
   }
   return out;
 }
