@@ -187,7 +187,8 @@ export function segmentAt(
       const text = String(name === 'Number' ? seq : startUnits);
       return width === undefined ? text : text.padStart(Number(width), '0');
     })
-    .replaceAll('$$', '$');
+    // A regex, not replaceAll (Chromium 85): the engine runs on 2021 TVs.
+    .replace(/\$\$/g, () => '$');
   return {
     seq,
     start: periodStart + (startUnits - pto) / timescale,

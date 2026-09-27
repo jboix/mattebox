@@ -246,7 +246,7 @@ export function reconcileCodecs(
   if (manifestContentType === null) {
     return { contentType: probe.mimeType, mismatch: false };
   }
-  const normalize = (s: string) => s.toLowerCase().replaceAll(/\s+/g, '');
+  const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, '');
   return {
     contentType: probe.mimeType,
     mismatch: normalize(manifestContentType) !== normalize(probe.mimeType),

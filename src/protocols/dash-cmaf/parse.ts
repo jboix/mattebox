@@ -117,7 +117,7 @@ function parseProtection(elements: readonly Element[]): readonly ProtectionSchem
     if (attr(element, 'schemeIdUri')?.toLowerCase() === MP4_PROTECTION) {
       commonScheme = attr(element, 'value')?.toLowerCase() ?? null;
       const kid = attr(element, 'cenc:default_KID') ?? attr(element, 'default_KID');
-      commonKeyId = kid !== null ? kid.replaceAll('-', '').toLowerCase() : null;
+      commonKeyId = kid !== null ? kid.replace(/-/g, '').toLowerCase() : null;
     }
   }
   const schemes: ProtectionScheme[] = [];
