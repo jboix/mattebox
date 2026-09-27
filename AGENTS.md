@@ -32,6 +32,8 @@ Place this at the repository root. It applies to every stage.
 
 9. **Hot paths stay out of the message loop.** Byte processing is plain functions over `Uint8Array` called from effect handlers. Never dispatch per NAL unit or per PES packet.
 
+10. **The floor is Chromium 76.** The engine runs on 2021 TVs: Samsung Tizen 6.0 (Chromium 76) and LG webOS 6 (Chromium 79). Do not call a web API newer than Chromium 76. The default build lowers the syntax to ES2015, but it does not replace API calls. `lint/floor/js.grit` fails the lint on the known ones, and `lint/floor/README.md` lists each with its replacement.
+
 ## Before writing code
 
 - Read the layer document for the layer you are working in.

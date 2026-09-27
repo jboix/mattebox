@@ -1,0 +1,40 @@
+language js
+
+or {
+  `$node.replaceChildren($args)` as $m where {
+    register_diagnostic(span=$m, message="replaceChildren() needs Chromium 86. Remove the children in a loop, then append. The TV floor is Chromium 76 (AGENTS.md, rule 10; lint/floor/README.md).")
+  },
+  `$text.replaceAll($a, $b)` as $m where {
+    register_diagnostic(span=$m, message="String.replaceAll() needs Chromium 85. Use replace() with a global regular expression. The TV floor is Chromium 76 (AGENTS.md, rule 10; lint/floor/README.md).")
+  },
+  `$list.at($index)` as $m where {
+    register_diagnostic(span=$m, message="Array.at() and String.at() need Chromium 92. Index from the length. The TV floor is Chromium 76 (AGENTS.md, rule 10; lint/floor/README.md).")
+  },
+  `structuredClone($value)` as $m where {
+    register_diagnostic(span=$m, message="structuredClone() needs Chromium 98. The TV floor is Chromium 76 (AGENTS.md, rule 10; lint/floor/README.md).")
+  },
+  `Object.hasOwn($object, $key)` as $m where {
+    register_diagnostic(span=$m, message="Object.hasOwn() needs Chromium 93. Use Object.prototype.hasOwnProperty.call(). The TV floor is Chromium 76 (AGENTS.md, rule 10; lint/floor/README.md).")
+  },
+  or {
+    `$list.findLast($fn)`,
+    `$list.findLastIndex($fn)`
+  } as $m where {
+    register_diagnostic(span=$m, message="findLast() and findLastIndex() need Chromium 97. The TV floor is Chromium 76 (AGENTS.md, rule 10; lint/floor/README.md).")
+  },
+  or {
+    `$list.toSorted($args)`,
+    `$list.toReversed()`
+  } as $m where {
+    register_diagnostic(span=$m, message="toSorted() and toReversed() need Chromium 110. Sort or reverse a copy. The TV floor is Chromium 76 (AGENTS.md, rule 10; lint/floor/README.md).")
+  },
+  `Promise.any($list)` as $m where {
+    register_diagnostic(span=$m, message="Promise.any() needs Chromium 85. The TV floor is Chromium 76 (AGENTS.md, rule 10; lint/floor/README.md).")
+  },
+  `AbortSignal.timeout($ms)` as $m where {
+    register_diagnostic(span=$m, message="AbortSignal.timeout() needs Chromium 103. The TV floor is Chromium 76 (AGENTS.md, rule 10; lint/floor/README.md).")
+  },
+  `$node.checkVisibility($args)` as $m where {
+    register_diagnostic(span=$m, message="checkVisibility() needs Chromium 105. The TV floor is Chromium 76 (AGENTS.md, rule 10; lint/floor/README.md).")
+  }
+}

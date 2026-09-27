@@ -22,6 +22,12 @@
       "quoteStyle": "single"
     }
   },
+  "overrides": [
+    {
+      "includes": ["src/**"],
+      "plugins": ["./lint/floor/js.grit"]
+    }
+  ],
   "assist": {
     "actions": {
       "source": {
