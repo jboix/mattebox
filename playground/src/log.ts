@@ -95,6 +95,7 @@ const EVENT_NAMES = [
   'drm:encrypted',
   'drm:keysystem',
   'drm:keystatus',
+  'drm:renewing',
   'codecprobe:detected',
   'tracks:changed',
   'presentation:protection',
@@ -329,6 +330,8 @@ function describeEvent(name: string, payload: unknown): { message: string; level
         message: `key ${String(p.keyId ?? '')} status ${String(p.status ?? '')}`,
         level: p.status === 'usable' ? 'info' : 'warn',
       };
+    case 'drm:renewing':
+      return { message: `license renewal for ${String(p.keyIds ?? '')}`, level: 'warn' };
     case 'drm:encrypted':
       return { message: `encrypted media detected (${String(p.initDataType ?? '')})`, level };
     case 'codecprobe:detected':

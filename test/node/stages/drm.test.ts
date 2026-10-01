@@ -243,3 +243,175 @@ describe('eme-core certificate fetch', () => {
     }
   });
 });
+
+describe('eme-core license renewal', () => {
+  const SYSTEM_ID = '5e629af5-38da-4063-8977-97ffbd9902d4';
+  const KEY_ID = new Uint8Array(16).fill(7).buffer;
+
+  /** A session that answers each license with the next queued key status. */
+  class FakeSession extends EventTarget {
+    readonly keyStatuses = new Map<ArrayBuffer, string>();
+    readonly updates: unknown[] = [];
+    closed = false;
+    constructor(private readonly onUpdate: () => string) {
+      super();
+    }
+    async generateRequest(): Promise<void> {
+      this.message('license-request');
+    }
+    async update(license: unknown): Promise<void> {
+      this.updates.push(license);
+      this.setStatus(this.onUpdate());
+    }
+    async close(): Promise<void> {
+      this.closed = true;
+    }
+    message(messageType: string): void {
+      const event = Object.assign(new Event('message'), {
+        messageType,
+        message: bytes(messageType),
+      });
+      this.dispatchEvent(event);
+    }
+    setStatus(status: string): void {
+      this.keyStatuses.set(KEY_ID, status);
+      this.dispatchEvent(new Event('keystatuseschange'));
+    }
+  }
+
+  async function setup(licenseStatuses: string[]) {
+    registerKeySystem({
+      keySystem: 'com.example.renewal-test',
+      systemIds: [SYSTEM_ID],
+      initDataTypes: ['cenc'],
+      buildLicenseRequest: (m) => m,
+      parseLicenseResponse: (r) => r,
+    });
+    const sessions: FakeSession[] = [];
+    const posts: string[] = [];
+    const errors: Array<{ code?: string }> = [];
+    const renewals: unknown[] = [];
+    const element = Object.assign(new EventTarget(), {
+      paused: false,
+      setMediaKeys: async () => undefined,
+    });
+    const original = navigator.requestMediaKeySystemAccess;
+    Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+      configurable: true,
+      value: async (keySystem: string) => {
+        if (keySystem !== 'com.example.renewal-test') throw new Error('unsupported');
+        return {
+          createMediaKeys: async () => ({
+            createSession: () => {
+              const session = new FakeSession(() => licenseStatuses.shift() ?? 'usable');
+              sessions.push(session);
+              return session;
+            },
+          }),
+        };
+      },
+    });
+    let onProtection: ((payload: unknown) => void) | null = null;
+    const dispose = emeCore({ licenseUrl: 'https://license.example/' }).install({
+      element,
+      registerNamespace: () => undefined,
+      request: async (_url: string, init: { body?: ArrayBuffer | Uint8Array | string }) => {
+        posts.push(new TextDecoder().decode(init.body as ArrayBuffer));
+        return new Response(new Uint8Array([1]));
+      },
+      emit: (event: string, payload: unknown) => {
+        if (event === 'error') errors.push(payload as { code?: string });
+        if (event === 'drm:renewing') renewals.push(payload);
+      },
+      on: (event: string, fn: (payload: unknown) => void) => {
+        if (event === 'presentation:protection') onProtection = fn;
+        return () => undefined;
+      },
+    } as unknown as StageContext);
+    (onProtection as unknown as (payload: unknown) => void)([
+      {
+        systemId: SYSTEM_ID,
+        scheme: null,
+        keyId: null,
+        licenseUrl: null,
+        initData: bytes('pssh'),
+        initDataType: 'cenc',
+      },
+    ]);
+    await vi.waitFor(() => expect(sessions[0]?.updates).toHaveLength(1));
+    const restore = () => {
+      if (typeof dispose === 'function') dispose();
+      Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+        configurable: true,
+        value: original,
+      });
+    };
+    return { sessions, posts, errors, renewals, element, restore };
+  }
+
+  it('an expired key during playback opens a new session and closes the old one', async () => {
+    const t = await setup(['usable', 'usable']);
+    try {
+      (t.sessions[0] as FakeSession).setStatus('expired');
+      await vi.waitFor(() => expect(t.sessions[1]?.updates).toHaveLength(1));
+      expect(t.renewals).toHaveLength(1);
+      expect(t.posts).toEqual(['license-request', 'license-request']);
+      expect(t.sessions[0]?.closed).toBe(true);
+      expect(t.sessions[1]?.closed).toBe(false);
+      expect(t.errors).toEqual([]);
+    } finally {
+      t.restore();
+    }
+  });
+
+  it('a key that expires while paused renews on the next play', async () => {
+    const t = await setup(['usable', 'usable']);
+    try {
+      t.element.paused = true;
+      (t.sessions[0] as FakeSession).setStatus('expired');
+      await Promise.resolve();
+      expect(t.sessions).toHaveLength(1);
+      expect(t.posts).toHaveLength(1);
+      t.element.paused = false;
+      t.element.dispatchEvent(new Event('play'));
+      await vi.waitFor(() => expect(t.sessions[1]?.updates).toHaveLength(1));
+      expect(t.sessions[0]?.closed).toBe(true);
+    } finally {
+      t.restore();
+    }
+  });
+
+  it('a license that arrives expired reports DRM_KEY_EXPIRED instead of renewing again', async () => {
+    const t = await setup(['usable', 'expired']);
+    try {
+      (t.sessions[0] as FakeSession).setStatus('expired');
+      await vi.waitFor(() => expect(t.errors).toHaveLength(1));
+      expect(t.errors[0]).toMatchObject({ code: 'DRM_KEY_EXPIRED', fatal: false });
+      expect(t.sessions).toHaveLength(2);
+      // The old session stays open: nothing usable replaced it.
+      expect(t.sessions[0]?.closed).toBe(false);
+    } finally {
+      t.restore();
+    }
+  });
+
+  it('a renewal message from the CDM is posted on the same session', async () => {
+    const t = await setup(['usable', 'usable']);
+    try {
+      (t.sessions[0] as FakeSession).message('license-renewal');
+      await vi.waitFor(() => expect(t.sessions[0]?.updates).toHaveLength(2));
+      expect(t.posts).toEqual(['license-request', 'license-renewal']);
+      expect(t.sessions).toHaveLength(1);
+    } finally {
+      t.restore();
+    }
+  });
+
+  it('dispose closes every open session, a renewal included', async () => {
+    const t = await setup(['usable', 'usable']);
+    (t.sessions[0] as FakeSession).setStatus('expired');
+    await vi.waitFor(() => expect(t.sessions[1]?.updates).toHaveLength(1));
+    t.restore();
+    expect(t.sessions.every((s) => s.closed)).toBe(true);
+  });
+});

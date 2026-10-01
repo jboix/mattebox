@@ -11,6 +11,12 @@
  * 'error' event that reaches engine.error) and exposes engine.drm; the
  * trace stays complete for everything the reducer can see.
  *
+ * An expired key renews: eme-core opens a new session with the same init
+ * data, which fetches a fresh license, and closes the old session once the
+ * new key is usable. Renewal waits for playback, so a paused or suspended
+ * element makes no license request. A renewal message the CDM sends on
+ * its own (Widevine `license-renewal`) takes the normal license path.
+ *
  * ClearKey is built in — it is the only key system testable headlessly.
  * Widevine, PlayReady, and FairPlay arrive as handlers eme-cenc and
  * eme-fairplay register through drm-shared.
@@ -48,6 +54,18 @@ declare module '../../index.js' {
 }
 
 const CLEARKEY = 'org.w3.clearkey';
+
+/** What a session was opened with, and its place in a renewal. */
+interface SessionRecord {
+  readonly initDataType: string;
+  readonly initData: ArrayBuffer;
+  /** The expired session this one replaces; closed once a key here is usable. */
+  replaces: MediaKeySession | null;
+  /** Whether any key in this session has been usable. */
+  usable: boolean;
+  /** Whether a replacement session has been started for this one. */
+  renewing?: boolean;
+}
 
 /** A ClearKey handler: the license is a JSON the app answers from its keys. */
 function clearKeyHandler(clearKeys: Readonly<Record<string, string>>): KeySystemHandler {
@@ -100,10 +118,14 @@ export default function emeCore(options: EmeOptions = {}): Stage {
       let keySystem: string | null = null;
       let handler: KeySystemHandler | null = null;
       let licenseUrl = options.licenseUrl ?? null;
-      // Dedup by key id: one session per key, whichever route delivered it.
-      const sessionsByKey = new Map<string, MediaKeySession>();
       const statuses = new Map<string, string>();
+      // Dedup by init data: one session per blob, whichever route delivered it.
       const initDataSeen = new Set<string>();
+      // Every open session with the init data that opened it, so an expired
+      // session can be renewed with the same request.
+      const open = new Map<MediaKeySession, SessionRecord>();
+      // Expired sessions waiting for playback before they renew.
+      const pendingRenewals = new Set<MediaKeySession>();
       let disposed = false;
 
       const api: DrmApi = {
@@ -191,6 +213,12 @@ export default function emeCore(options: EmeOptions = {}): Stage {
         const fingerprint = `${initDataType}:${bytesToBase64(new Uint8Array(initData), true)}`;
         if (initDataSeen.has(fingerprint)) return;
         initDataSeen.add(fingerprint);
+        await startSession({ initDataType, initData, replaces: null, usable: false });
+      }
+
+      /** Creates a session and sends its license request. */
+      async function startSession(record: SessionRecord): Promise<void> {
+        if (mediaKeys === null || disposed) return;
         let session: MediaKeySession;
         try {
           session = mediaKeys.createSession('temporary');
@@ -198,15 +226,41 @@ export default function emeCore(options: EmeOptions = {}): Stage {
           fail('DRM_SESSION_FAILED', false, err);
           return;
         }
+        open.set(session, record);
         session.addEventListener('message', (event) => {
           void onMessage(session, event as MediaKeyMessageEvent);
         });
         session.addEventListener('keystatuseschange', () => onKeyStatus(session));
         try {
-          await session.generateRequest(initDataType, initData);
+          await session.generateRequest(record.initDataType, record.initData);
         } catch (err) {
           fail('DRM_INIT_DATA_INVALID', false, err);
         }
+      }
+
+      /** Replaces an expired session with a new one on the same init data. */
+      function renew(session: MediaKeySession): void {
+        const record = open.get(session);
+        if (record === undefined || record.renewing === true) return;
+        record.renewing = true;
+        const keyIds: string[] = [];
+        session.keyStatuses.forEach((_status, keyIdBuffer) => {
+          keyIds.push(bytesToBase64(new Uint8Array(keyIdBuffer as ArrayBuffer), true));
+        });
+        ctx.emit('drm:renewing', { keyIds });
+        void startSession({
+          initDataType: record.initDataType,
+          initData: record.initData,
+          replaces: session,
+          usable: false,
+        });
+      }
+
+      /** Closes a session and forgets it; its later events are ignored. */
+      function retire(session: MediaKeySession): void {
+        open.delete(session);
+        pendingRenewals.delete(session);
+        void session.close().catch(() => {});
       }
 
       async function onMessage(
@@ -246,16 +300,44 @@ export default function emeCore(options: EmeOptions = {}): Stage {
       }
 
       function onKeyStatus(session: MediaKeySession): void {
+        const record = open.get(session);
+        // A retired session reports its keys released on close; the
+        // session that replaced it owns those keys now.
+        if (record === undefined) return;
+        let expired = false;
         session.keyStatuses.forEach((status, keyIdBuffer) => {
           const keyId = bytesToBase64(new Uint8Array(keyIdBuffer as ArrayBuffer), true);
           statuses.set(keyId, status);
-          sessionsByKey.set(keyId, session);
           ctx.emit('drm:keystatus', { keyId, status });
-          if (status === 'expired') fail('DRM_KEY_EXPIRED', true);
+          if (status === 'usable') record.usable = true;
+          else if (status === 'expired') expired = true;
           else if (status === 'output-restricted') fail('DRM_OUTPUT_RESTRICTED', false);
           else if (status === 'internal-error') fail('DRM_KEY_STATUS_ERROR', false);
         });
+        if (record.usable && record.replaces !== null) {
+          retire(record.replaces);
+          record.replaces = null;
+        }
+        if (!expired) return;
+        // A license that arrives expired would expire again on every
+        // renewal, so only a key that was once usable renews.
+        if (!record.usable) {
+          fail('DRM_KEY_EXPIRED', true);
+          return;
+        }
+        if (element.paused) pendingRenewals.add(session);
+        else renew(session);
       }
+
+      // Renewal waits for playback: a paused or suspended element needs no
+      // key, and a license request then could count against a stream limit.
+      const onPlay = (): void => {
+        for (const session of [...pendingRenewals]) {
+          pendingRenewals.delete(session);
+          renew(session);
+        }
+      };
+      element.addEventListener('play', onPlay);
 
       // The media route: the element fires `encrypted` with init data.
       const onEncrypted = (event: Event): void => {
@@ -287,8 +369,9 @@ export default function emeCore(options: EmeOptions = {}): Stage {
       return () => {
         disposed = true;
         element.removeEventListener('encrypted', onEncrypted);
+        element.removeEventListener('play', onPlay);
         offManifest();
-        for (const session of sessionsByKey.values()) void session.close().catch(() => {});
+        for (const session of [...open.keys()]) retire(session);
         // Only after negotiation set keys: a browser build without EME has
         // no setMediaKeys, and a clear stream never called it.
         if (mediaKeys !== null) void element.setMediaKeys(null).catch(() => {});

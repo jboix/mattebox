@@ -115,9 +115,9 @@ playlists first and rejoins at the live edge, the way a fresh load does, so
 `engine.live.edge` reads null while suspended.
 
 Suspend does not close DRM key sessions and does not refresh signed URLs. A
-license or a token that expires during the freeze behaves on resume the
-way it does after a long pause today: the key reports `DRM_KEY_EXPIRED`
-and playback waits, or the next request fails.
+license that expires during the freeze renews when playback resumes (see
+[chapter 07](07-drm.md#license-renewal)). A token that expires makes the
+next request fail.
 
 ## Example
 

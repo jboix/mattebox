@@ -68,6 +68,19 @@ engine.drm.setLicenseUrl('https://license.example.com/widevine?token=abc');
 License requests go through the transport, so the request hooks from
 [chapter 11](11-network-and-cdn.md) apply to them.
 
+## License renewal
+
+`eme-core` renews a license when a key expires. It opens a new session with
+the same init data, sends a new license request, and closes the old session
+once the new key is usable. Playback continues when the new key arrives.
+
+- Renewal waits for playback. A key that expires while the element is paused
+  or the engine is suspended renews on the next `play` event.
+- A renewal message the CDM sends on its own, such as Widevine's
+  `license-renewal`, goes to the same license server.
+- A license that arrives already expired reports `DRM_KEY_EXPIRED`. The
+  engine does not request it again.
+
 ## ClearKey
 
 ClearKey needs no server. Give the stage the keys and it answers license
@@ -90,6 +103,7 @@ engine.drm.sessions;  // [{ keyId, status }]
 | `drm:encrypted` | Init data arrived from the media                      |
 | `drm:keysystem` | A key system was selected                             |
 | `drm:keystatus` | A key's status changed, such as `usable` or `expired` |
+| `drm:renewing`  | An expired license is being renewed, with `keyIds`    |
 | `error`         | With category `drm` when a step fails                 |
 
 A license failure is fatal. Output restrictions and expired keys carry their
