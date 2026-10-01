@@ -1173,3 +1173,32 @@ describe('an init segment that lands before its SourceBuffer', () => {
     expect(fx.filter((e) => e.kind === 'fetch' && e.url === INIT_URL)).toHaveLength(1);
   });
 });
+
+describe('buffer errors', () => {
+  it('the error event carries what the buffer layer knew', () => {
+    const reduce = createReducer();
+    const [, effects] = reduce(initialState(), {
+      type: 'SOURCEBUFFER_ERROR',
+      sbId: 'video',
+      error: {
+        category: 'media',
+        code: 'MEDIA_APPEND_FAILED',
+        fatal: true,
+        recoverable: false,
+        context: {
+          declaredType: 'video/mp4; codecs="avc1.4d401f"',
+          probedType: 'video/mp4; codecs="avc1.64001f"',
+        },
+      },
+    });
+    const event = effects.find((e) => e.kind === 'emit' && e.event === 'error');
+    expect(event?.kind === 'emit' ? event.payload : undefined).toMatchObject({
+      code: 'MEDIA_APPEND_FAILED',
+      fatal: true,
+      context: {
+        declaredType: 'video/mp4; codecs="avc1.4d401f"',
+        probedType: 'video/mp4; codecs="avc1.64001f"',
+      },
+    });
+  });
+});

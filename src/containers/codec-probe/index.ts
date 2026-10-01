@@ -252,3 +252,84 @@ export function reconcileCodecs(
     mismatch: normalize(manifestContentType) !== normalize(probe.mimeType),
   };
 }
+
+/** How a declared codec differs from the one the init segment holds. */
+export interface CodecMismatch {
+  /** `family`: another codec (HEVC for AVC). `profile`: the same codec, another profile (High for Main). */
+  readonly kind: 'family' | 'profile';
+  readonly declared: string;
+  readonly probed: string;
+}
+
+interface CodecParts {
+  readonly kind: 'video' | 'audio';
+  readonly family: string;
+  /** The profile fields; level and tier are left out. */
+  readonly profile: string;
+}
+
+/** Splits an RFC 6381 codec string into the parts a mismatch is judged on. */
+function codecParts(codec: string): CodecParts | null {
+  const fields = codec.trim().toLowerCase().split('.');
+  const [fourcc = '', ...rest] = fields;
+  switch (fourcc) {
+    // ISO/IEC 14496-15: avc1.PPCCLL, profile_idc then constraint flags then level.
+    case 'avc1':
+    case 'avc3':
+      return { kind: 'video', family: 'avc', profile: (rest[0] ?? '').slice(0, 2) };
+    // hvc1.P.C.Tx.B: general profile first, then compatibility, then tier and level.
+    case 'hvc1':
+    case 'hev1':
+      return { kind: 'video', family: 'hevc', profile: rest[0] ?? '' };
+    // VP9 codec string: vp09.PP.LL.DD, profile, level, bit depth.
+    case 'vp09':
+      return { kind: 'video', family: 'vp9', profile: `${rest[0] ?? ''}.${rest[2] ?? ''}` };
+    // AV1 codec string: av01.P.LLT.DD, profile, level and tier, bit depth.
+    case 'av01':
+      return { kind: 'video', family: 'av1', profile: `${rest[0] ?? ''}.${rest[2] ?? ''}` };
+    // mp4a.OTI.AOT: the object type names the codec (40 AAC, a5 AC-3, a6 E-AC-3).
+    case 'mp4a': {
+      const oti = rest[0] ?? '';
+      if (oti === 'a5') return { kind: 'audio', family: 'ac-3', profile: '' };
+      if (oti === 'a6') return { kind: 'audio', family: 'ec-3', profile: '' };
+      if (oti === '69' || oti === '6b') return { kind: 'audio', family: 'mp3', profile: '' };
+      return { kind: 'audio', family: `mp4a.${oti}`, profile: rest[1] ?? '' };
+    }
+    case 'ac-3':
+    case 'ec-3':
+    case 'opus':
+    case 'flac':
+      return { kind: 'audio', family: fourcc, profile: '' };
+    default:
+      return null;
+  }
+}
+
+/**
+ * The first codec the init segment holds that the manifest declared as
+ * another codec or another profile, matched by kind: video against video,
+ * audio against audio. A level-only difference is no mismatch: browsers
+ * decode a stream whose declared level is off. A kind the manifest did not
+ * declare, or a codec this does not recognize, is left alone.
+ */
+export function codecMismatch(declared: string, probed: readonly string[]): CodecMismatch | null {
+  const declaredCodecs = declared
+    .split(',')
+    .map((codec) => codec.trim())
+    .filter((codec) => codec !== '');
+  for (const probedCodec of probed) {
+    const actual = codecParts(probedCodec);
+    if (actual === null) continue;
+    const sameKind = declaredCodecs.filter((codec) => codecParts(codec)?.kind === actual.kind);
+    if (sameKind.length === 0) continue;
+    const parts = sameKind.map((codec) => codecParts(codec) as CodecParts);
+    if (!parts.some((p) => p.family === actual.family)) {
+      return { kind: 'family', declared: sameKind[0] as string, probed: probedCodec };
+    }
+    const index = parts.findIndex((p) => p.family === actual.family);
+    if (!parts.some((p) => p.family === actual.family && p.profile === actual.profile)) {
+      return { kind: 'profile', declared: sameKind[index] as string, probed: probedCodec };
+    }
+  }
+  return null;
+}

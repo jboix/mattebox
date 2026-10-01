@@ -1360,6 +1360,11 @@ function reduceFact(
             recoverable: msg.error.recoverable,
             sbId: msg.sbId,
             ...(fatal && !msg.error.fatal ? { consecutiveFailures: count } : {}),
+            // What the buffer layer knew: the failed operation, and for an
+            // append the declared and probed types when they differ.
+            ...(msg.error.context !== undefined
+              ? { context: msg.error.context as Serializable }
+              : {}),
           },
         },
       ];

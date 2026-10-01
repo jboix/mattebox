@@ -112,6 +112,12 @@ export function createMseController(options: MseControllerOptions): MseControlle
   const deferred = new Map<SbId, string>();
   /** Appends that arrived while their buffer's create was still pending. */
   const heldAppends = new Map<SbId, ArrayBuffer[]>();
+  /**
+   * Per buffer, the type it was created or last switched with, and the type
+   * the probe read from its last init segment. A failed append names both
+   * when they differ, so a manifest that declared the wrong codec shows.
+   */
+  const types = new Map<SbId, { declared: string; probed: string | null }>();
   let objectUrl: string | null = null;
   let liveObjectUrls = 0;
   /** The `<source>` children this controller added, to take back on detach. */
@@ -238,10 +244,30 @@ export function createMseController(options: MseControllerOptions): MseControlle
 
   function createQueue(sbId: SbId, sb: SourceBuffer): AppendQueue {
     return createAppendQueue(sbId, sb, {
-      absorb,
+      absorb: (fact) => absorb(withTypes(sbId, fact)),
       onQuota,
       onIdle: () => runDeferredGlobalOps(),
     });
+  }
+
+  /** The codec list of a content type, lowercase, for comparing two types. */
+  function codecsOf(type: string): string {
+    const match = /codecs\s*=\s*"?([^";]*)/i.exec(type);
+    return (match?.[1] ?? '').toLowerCase().replace(/\s+/g, '');
+  }
+
+  /** A failed append names the declared and the probed type when they differ. */
+  function withTypes(sbId: SbId, fact: Fact): Fact {
+    if (fact.type !== 'SOURCEBUFFER_ERROR' || fact.error.code !== 'MEDIA_APPEND_FAILED')
+      return fact;
+    const known = types.get(sbId);
+    if (known?.probed == null || codecsOf(known.probed) === codecsOf(known.declared)) return fact;
+    const context = {
+      ...fact.error.context,
+      declaredType: known.declared,
+      probedType: known.probed,
+    };
+    return { ...fact, error: { ...fact.error, context } };
   }
 
   function trimAllBackBuffers(): void {
@@ -379,6 +405,7 @@ export function createMseController(options: MseControllerOptions): MseControlle
     buffers.clear();
     deferred.clear();
     heldAppends.clear();
+    types.clear();
     pendingCreates.length = 0;
 
     if (ms !== null && ms.readyState === 'open') {
@@ -426,6 +453,7 @@ export function createMseController(options: MseControllerOptions): MseControlle
     try {
       // `type` is the full content type, e.g. 'video/mp4; codecs="avc1.42c01e"'.
       const sb = ms.addSourceBuffer(type);
+      types.set(sbId, { declared: type, probed: null });
       const queue = createQueue(sbId, sb);
       buffers.set(sbId, { sb, queue });
       // Bytes that arrived while this buffer was opening go in first, in
@@ -461,10 +489,14 @@ export function createMseController(options: MseControllerOptions): MseControlle
    * it opens. Bytes for a buffer that was never requested are dropped.
    */
   function enqueueAppend(sbId: SbId, data: ArrayBuffer): void {
+    // The probe reads init segments only; a media segment answers null.
+    const probed = options.inferType?.(new Uint8Array(data)) ?? null;
+    const known = types.get(sbId);
+    if (probed !== null && known !== undefined) types.set(sbId, { ...known, probed });
     const bare = deferred.get(sbId);
     if (bare !== undefined && !buffers.has(sbId)) {
       deferred.delete(sbId);
-      const type = options.inferType?.(new Uint8Array(data)) ?? bare;
+      const type = probed ?? bare;
       if (!open(sbId, type)) return;
     }
     if (!buffers.has(sbId) && pendingCreates.some((create) => create.sbId === sbId)) {
@@ -552,6 +584,8 @@ export function createMseController(options: MseControllerOptions): MseControlle
 
     runner.register('changeType', (effect) => {
       buffers.get(effect.sbId)?.queue.enqueue({ op: 'changeType', type: effect.codecs });
+      const known = types.get(effect.sbId);
+      if (known !== undefined) types.set(effect.sbId, { declared: effect.codecs, probed: null });
       return undefined;
     });
 

@@ -9,10 +9,13 @@
  * It also registers the composition's type probe: a rendition the manifest
  * left codec-less (a bare media playlist) gets its SourceBuffer typed from
  * its first segment instead of the bare `video/mp4` Chrome refuses. A
- * manifest that does declare codecs still creates the buffer as declared;
- * a mismatch with the probe surfaces on the event for a follow-up stage.
+ * manifest that does declare codecs still creates the buffer as declared.
+ * When the init segment holds another codec or another profile, the stage
+ * reports it once per rendition as a non-fatal MEDIA_CODEC_MISMATCH error:
+ * Chrome can refuse the appends of a buffer typed with the wrong profile.
  */
-import { probeInitSegment } from '../../containers/codec-probe/index.js';
+import { codecMismatch, probeInitSegment } from '../../containers/codec-probe/index.js';
+import { findRendition } from '../../kernel/presentation.js';
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage } from '../../types/stage.js';
 
@@ -47,6 +50,27 @@ export default function codecProbe(): Stage {
     install(ctx) {
       let detected: readonly string[] = [];
       let mimeType: string | null = null;
+      // One report per source, rendition, and probed codec.
+      const reported = new Set<string>();
+
+      /** Reports an init segment whose codec is not the one its rendition declares. */
+      function checkDeclared(codecs: readonly string[], renditionId: string): void {
+        const presentation = ctx.getState().presentation;
+        const declared = findRendition(presentation, renditionId)?.rendition.codecs ?? null;
+        if (presentation === null || declared === null) return;
+        const mismatch = codecMismatch(declared, codecs);
+        if (mismatch === null) return;
+        const key = `${presentation.id}|${renditionId}|${mismatch.probed}`;
+        if (reported.has(key)) return;
+        reported.add(key);
+        ctx.emit('error', {
+          category: 'media',
+          code: 'MEDIA_CODEC_MISMATCH',
+          fatal: false,
+          recoverable: true,
+          context: { renditionId, ...mismatch },
+        });
+      }
       ctx.registerNamespace('codecProbe', {
         get detected() {
           return detected;
@@ -72,6 +96,7 @@ export default function codecProbe(): Stage {
             detected = result.codecs;
             mimeType = result.mimeType;
             ctx.emit('codecprobe:detected', { codecs: result.codecs, mimeType: result.mimeType });
+            checkDeclared(result.codecs, meta.renditionId);
           }
           return data;
         },

@@ -429,6 +429,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
         code: summary.code ?? 'INTERNAL_ASSERTION',
         fatal: true,
         recoverable: summary.recoverable ?? false,
+        ...(summary.context !== undefined ? { context: summary.context } : {}),
         trace: bus.trace(),
       };
       // A failed engine starts nothing new (the reducer drops those

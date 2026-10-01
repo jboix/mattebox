@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { probeInitSegment, reconcileCodecs } from '../../../src/containers/codec-probe/index.js';
+import {
+  codecMismatch,
+  probeInitSegment,
+  reconcileCodecs,
+} from '../../../src/containers/codec-probe/index.js';
 
 const FIXTURES = join(import.meta.dirname, '../../fixtures/segments');
 
@@ -124,3 +128,39 @@ function box(type: string, payload: Uint8Array): Uint8Array {
 function wrap(type: string, inner: Uint8Array): Uint8Array {
   return box(type, inner);
 }
+
+describe('codecMismatch', () => {
+  it('reports another codec as a family mismatch', () => {
+    expect(codecMismatch('avc1.640028', ['hvc1.1.6.L93.B0'])).toEqual({
+      kind: 'family',
+      declared: 'avc1.640028',
+      probed: 'hvc1.1.6.L93.B0',
+    });
+    expect(codecMismatch('mp4a.40.2', ['ec-3'])?.kind).toBe('family');
+  });
+
+  it('reports another profile of the same codec: Main declared for High', () => {
+    expect(codecMismatch('avc1.4d401f', ['avc1.64001f'])).toEqual({
+      kind: 'profile',
+      declared: 'avc1.4d401f',
+      probed: 'avc1.64001f',
+    });
+    // HE-AAC declared for AAC-LC is another object type of the same codec.
+    expect(codecMismatch('mp4a.40.5', ['mp4a.40.2'])?.kind).toBe('profile');
+  });
+
+  it('stays quiet about a level-only difference and about the case', () => {
+    expect(codecMismatch('avc1.64001f', ['avc1.640028'])).toBeNull();
+    expect(codecMismatch('AVC1.64001F', ['avc1.64001f'])).toBeNull();
+    expect(codecMismatch('hvc1.1.6.L93.B0', ['hev1.1.6.L120.B0'])).toBeNull();
+    expect(codecMismatch('mp4a.a6', ['ec-3'])).toBeNull();
+  });
+
+  it('matches video against video and audio against audio in a muxed declaration', () => {
+    expect(codecMismatch('avc1.4d401f,mp4a.40.2', ['avc1.4d401e', 'mp4a.40.2'])).toBeNull();
+    expect(codecMismatch('avc1.4d401f,mp4a.40.2', ['avc1.64001f'])?.declared).toBe('avc1.4d401f');
+    // A kind the manifest did not declare, or a codec this does not know, is left alone.
+    expect(codecMismatch('avc1.4d401f', ['mp4a.40.2'])).toBeNull();
+    expect(codecMismatch('avc1.4d401f', ['xyz1.0'])).toBeNull();
+  });
+});

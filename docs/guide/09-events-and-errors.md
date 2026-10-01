@@ -41,14 +41,14 @@ engine.on('error', (error) => {
 });
 ```
 
-| Category   | Codes                                                                                                                                                                 |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `network`  | `NETWORK_FAILED`, `NETWORK_TIMEOUT`, `NETWORK_HTTP_STATUS`, `NETWORK_ABORTED`                                                                                         |
-| `manifest` | `MANIFEST_PARSE_FAILED`, `MANIFEST_UNSUPPORTED`, `MANIFEST_EMPTY`, `MANIFEST_REFRESH_FAILED`                                                                          |
-| `media`    | `MEDIA_APPEND_FAILED`, `MEDIA_CONTAINER_INVALID`, `MEDIA_QUOTA_EXCEEDED`, `MEDIA_CODEC_UNSUPPORTED`, `MEDIA_DECODE_ERROR`, `MEDIA_SOURCE_CLOSED`                      |
-| `drm`      | `DRM_KEY_SYSTEM_UNAVAILABLE`, `DRM_LICENSE_FAILED`, `DRM_KEY_EXPIRED`, `DRM_KEY_STATUS_ERROR`, `DRM_OUTPUT_RESTRICTED`, `DRM_SESSION_FAILED`, `DRM_INIT_DATA_INVALID` |
-| `config`   | `CONFIG_INVALID`, `CONFIG_STAGE_REQUIREMENT_MISSING`, `CONFIG_ELEMENT_OCCUPIED`                                                                                       |
-| `internal` | `INTERNAL_ASSERTION`                                                                                                                                                  |
+| Category   | Codes                                                                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `network`  | `NETWORK_FAILED`, `NETWORK_TIMEOUT`, `NETWORK_HTTP_STATUS`, `NETWORK_ABORTED`                                                                                            |
+| `manifest` | `MANIFEST_PARSE_FAILED`, `MANIFEST_UNSUPPORTED`, `MANIFEST_EMPTY`, `MANIFEST_REFRESH_FAILED`                                                                             |
+| `media`    | `MEDIA_APPEND_FAILED`, `MEDIA_CONTAINER_INVALID`, `MEDIA_QUOTA_EXCEEDED`, `MEDIA_CODEC_UNSUPPORTED`, `MEDIA_CODEC_MISMATCH`, `MEDIA_DECODE_ERROR`, `MEDIA_SOURCE_CLOSED` |
+| `drm`      | `DRM_KEY_SYSTEM_UNAVAILABLE`, `DRM_LICENSE_FAILED`, `DRM_KEY_EXPIRED`, `DRM_KEY_STATUS_ERROR`, `DRM_OUTPUT_RESTRICTED`, `DRM_SESSION_FAILED`, `DRM_INIT_DATA_INVALID`    |
+| `config`   | `CONFIG_INVALID`, `CONFIG_STAGE_REQUIREMENT_MISSING`, `CONFIG_ELEMENT_OCCUPIED`                                                                                          |
+| `internal` | `INTERNAL_ASSERTION`                                                                                                                                                     |
 
 `fatal` means playback halted. `recoverable` means the recovery stage could
 act on it.
@@ -59,6 +59,20 @@ video Content-Type on the manifest response, or bytes none of them
 recognizes. A manifest fetch that fails after retries is fatal too, with its
 network code. [Chapter 03](03-hls-and-dash.md) shows the fallback to native
 playback.
+
+`MEDIA_CODEC_MISMATCH` is a warning, never fatal. The `codec-probe` stage
+reports it once per rendition when an init segment holds another codec than
+the manifest declares. Its `context` has `kind`, `declared`, and `probed`.
+
+| `kind`    | The manifest declares             | Example                       |
+| --------- | --------------------------------- | ----------------------------- |
+| `family`  | Another codec                     | `avc1.640028` for HEVC        |
+| `profile` | The same codec in another profile | `avc1.4d401f` (Main) for High |
+
+A difference in level only is not reported. Chrome can refuse the appends
+of a buffer typed with the wrong profile. When an append fails after such a
+mismatch, the `MEDIA_APPEND_FAILED` error's `context` has `declaredType` and
+`probedType`, and `engine.error` keeps them.
 
 ## Fatal errors
 
