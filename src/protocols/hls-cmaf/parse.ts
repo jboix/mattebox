@@ -621,6 +621,10 @@ export function parse(text: string, baseUrl: string): ParseResult {
       variants.find((v) => v.attributes.AUDIO === entry.groupId)?.attributes.CODECS,
     );
     const mimeType = contentType === 'audio' ? 'audio/mp4' : 'text/vtt';
+    const characteristics = (entry.attributes.CHARACTERISTICS ?? '')
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag !== '');
     tracks.push({
       id: `${entry.groupId}:${entry.name}`,
       contentType,
@@ -628,6 +632,9 @@ export function parse(text: string, baseUrl: string): ParseResult {
       protection: sessionProtection,
       ...(entry.attributes.LANGUAGE !== undefined ? { lang: entry.attributes.LANGUAGE } : {}),
       ...(entry.attributes.DEFAULT === 'YES' ? { role: 'main' } : { role: 'alternate' }),
+      ...(characteristics.length > 0 ? { characteristics } : {}),
+      // RFC 8216bis §4.4.6.1: FORCED is valid on SUBTITLES only.
+      ...(contentType === 'text' && entry.attributes.FORCED === 'YES' ? { forced: true } : {}),
       renditions: [
         {
           id: `${entry.groupId}:${entry.name}`,

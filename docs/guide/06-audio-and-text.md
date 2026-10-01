@@ -20,6 +20,20 @@ t.deselect('text');   // stop the subtitle pipeline and clear its cues
 A track is listed but not selectable until a stage handles its content
 type. Text tracks need a text stage.
 
+You label a track in a menu from these fields.
+
+| Field             | Meaning                                              | HLS source        | DASH source                                               |
+| ----------------- | ---------------------------------------------------- | ----------------- | --------------------------------------------------------- |
+| `lang`            | Language tag                                         | `LANGUAGE`        | `@lang`                                                   |
+| `role`            | `main` or `alternate` in HLS; the first role in DASH | `DEFAULT`         | first `Role`                                              |
+| `roles`           | Every role, such as `main`, `dub`, `commentary`      | none              | every `Role`                                              |
+| `characteristics` | Media characteristic tags, such as audio description | `CHARACTERISTICS` | `Accessibility` `AudioPurposeCS` 1 and 2, as the HLS tags |
+| `forced`          | `true` on a forced-subtitle track                    | `FORCED=YES`      | `Role` `forced-subtitle`                                  |
+
+The engine copies HLS `CHARACTERISTICS` as written, such as
+`public.accessibility.describes-video` (audio description) or
+`public.original-content` (original-language audio).
+
 A switch through `select` takes effect from the segment under the playhead:
 the previous track is flushed from there and the new one refills it. A group
 switch that follows a video rendition change lets the previous group play out

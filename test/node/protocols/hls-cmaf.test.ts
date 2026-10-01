@@ -361,3 +361,37 @@ describe('legacy AVC codec normalization', () => {
     expect(normalizeAvcCodec('hvc1.1.6.L93.B0')).toBe('hvc1.1.6.L93.B0');
   });
 });
+
+describe('rendition characteristics and forced subtitles', () => {
+  const master = [
+    '#EXTM3U',
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,CHARACTERISTICS="public.original-content",URI="en.m3u8"',
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English AD",LANGUAGE="en",AUTOSELECT=YES,CHARACTERISTICS="public.accessibility.describes-video, public.machine-generated",FORCED=YES,URI="en-ad.m3u8"',
+    '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="English",LANGUAGE="en",AUTOSELECT=YES,URI="en.vtt.m3u8"',
+    '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="English forced",LANGUAGE="en",AUTOSELECT=YES,FORCED=YES,URI="en-forced.vtt.m3u8"',
+    '#EXT-X-STREAM-INF:BANDWIDTH=800000,CODECS="avc1.4d401f,mp4a.40.2",AUDIO="a",SUBTITLES="s"',
+    'v.m3u8',
+  ].join('\n');
+
+  function track(id: string) {
+    const result = parse(master, BASE);
+    expect(result.error).toBeNull();
+    return result.presentation?.periods[0]?.tracks.find((t) => t.id === id);
+  }
+
+  it('keeps every CHARACTERISTICS tag, trimmed, in order', () => {
+    expect(track('a:English')?.characteristics).toEqual(['public.original-content']);
+    expect(track('a:English AD')?.characteristics).toEqual([
+      'public.accessibility.describes-video',
+      'public.machine-generated',
+    ]);
+    expect(track('s:English')?.characteristics).toBeUndefined();
+  });
+
+  it('marks FORCED=YES subtitles forced, and ignores FORCED on audio', () => {
+    expect(track('s:English forced')?.forced).toBe(true);
+    expect(track('s:English')?.forced).toBeUndefined();
+    // RFC 8216bis §4.4.6.1: FORCED must not appear unless TYPE is SUBTITLES.
+    expect(track('a:English AD')?.forced).toBeUndefined();
+  });
+});

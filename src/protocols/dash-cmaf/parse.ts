@@ -161,6 +161,27 @@ interface TemplateInfo {
 }
 
 /**
+ * DVB-DASH (ETSI TS 103 285, A168 Table 5) audio purposes, as the HLS
+ * characteristic tags that mean the same, so players read one vocabulary.
+ */
+const AUDIO_PURPOSE_SCHEME = 'urn:tva:metadata:cs:AudioPurposeCS:2007';
+const AUDIO_PURPOSES: Readonly<Record<string, string>> = {
+  '1': 'public.accessibility.describes-video',
+  '2': 'public.accessibility.enhances-speech-intelligibility',
+};
+
+/** The characteristic tags an audio AdaptationSet's Accessibility descriptors declare. */
+function audioCharacteristics(adaptationSet: Element): string[] {
+  const tags: string[] = [];
+  for (const descriptor of children(adaptationSet, 'Accessibility')) {
+    if (attr(descriptor, 'schemeIdUri') !== AUDIO_PURPOSE_SCHEME) continue;
+    const tag = AUDIO_PURPOSES[attr(descriptor, 'value') ?? ''];
+    if (tag !== undefined && !tags.includes(tag)) tags.push(tag);
+  }
+  return tags;
+}
+
+/**
  * A trick-mode AdaptationSet: the DASH-IF trickmode EssentialProperty, or a
  * representation declaring a playout rate other than 1. Both mark an
  * I-frame-only set meant for fast forward and previews, never for normal
@@ -406,9 +427,10 @@ export function parse(text: string, baseUrl: string): ParseResult {
     const asMime = attr(adaptationSet, 'mimeType');
     const asCodecs = attr(adaptationSet, 'codecs');
     const lang = attr(adaptationSet, 'lang');
-    const role = trick
-      ? 'trick'
-      : (children(adaptationSet, 'Role')[0]?.getAttribute('value') ?? null);
+    const roles = children(adaptationSet, 'Role')
+      .map((element) => attr(element, 'value'))
+      .filter((value): value is string => value !== null);
+    const role = trick ? 'trick' : (roles[0] ?? null);
     const protectionSchemes = parseProtection(children(adaptationSet, 'ContentProtection'));
 
     const renditions: Rendition[] = [];
@@ -548,14 +570,24 @@ export function parse(text: string, baseUrl: string): ParseResult {
 
     if (renditions.length === 0) continue;
     const mimeType = trackMime ?? 'video/mp4';
+    const contentType = contentTypeOf(adaptationSet, mimeType);
+    const characteristics = contentType === 'audio' ? audioCharacteristics(adaptationSet) : [];
+    // ISO/IEC 23009-1 names the role forced-subtitle; early packagers wrote
+    // forced_subtitle, which Shaka Player also accepts.
+    const forced =
+      contentType === 'text' &&
+      (roles.includes('forced-subtitle') || roles.includes('forced_subtitle'));
     tracks.push({
       id: attr(adaptationSet, 'id') !== null ? `as-${attr(adaptationSet, 'id')}` : `as-i${asIndex}`,
-      contentType: contentTypeOf(adaptationSet, mimeType),
+      contentType,
       mimeType,
       protection: protectionSchemes.length > 0 ? { schemes: protectionSchemes } : null,
       renditions,
       ...(lang !== null ? { lang } : {}),
       ...(role !== null ? { role } : {}),
+      ...(roles.length > 0 ? { roles } : {}),
+      ...(characteristics.length > 0 ? { characteristics } : {}),
+      ...(forced ? { forced: true } : {}),
     });
   }
 

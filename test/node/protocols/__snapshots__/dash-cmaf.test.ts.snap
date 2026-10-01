@@ -395,6 +395,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-akamai-
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
       ],
     },
@@ -658,6 +661,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-bbb-4-t
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "image",
@@ -952,6 +958,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-bbb-mul
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "image",
@@ -1269,6 +1278,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-bbb-til
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "image",
@@ -1353,6 +1365,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-livesim
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "video",
@@ -1383,6 +1398,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-livesim
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
       ],
     },
@@ -1436,6 +1454,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-livesim
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "video",
@@ -1466,6 +1487,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-livesim
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "image",
@@ -1723,6 +1747,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > edge-multitrac
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "audio",
@@ -1751,6 +1778,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > edge-multitrac
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "text",
@@ -1776,6 +1806,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > edge-multitrac
             },
           ],
           "role": "subtitle",
+          "roles": [
+            "subtitle",
+          ],
         },
       ],
     },
@@ -2141,6 +2174,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "text",
@@ -2545,6 +2581,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "audio",
@@ -3615,6 +3654,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "audio",
@@ -5626,6 +5668,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > unified-tears.
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
         {
           "contentType": "video",
@@ -5796,6 +5841,9 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > unified-tears.
             },
           ],
           "role": "main",
+          "roles": [
+            "main",
+          ],
         },
       ],
     },

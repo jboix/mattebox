@@ -214,6 +214,20 @@ export interface Track {
    * and frame previews, and never selected for normal playback.
    */
   readonly role?: string;
+  /** Every DASH Role value, in document order; `role` keeps the first. */
+  readonly roles?: readonly string[];
+  /**
+   * Media characteristic tags, such as 'public.accessibility.describes-video'
+   * (RFC 8216bis §4.4.6.1 CHARACTERISTICS). DASH accessibility descriptors map
+   * to the same tags, so a player checks one vocabulary.
+   */
+  readonly characteristics?: readonly string[];
+  /**
+   * A forced-subtitle track: text the content needs where the audio does not
+   * carry it, such as translated signs (HLS FORCED=YES, DASH role
+   * forced-subtitle).
+   */
+  readonly forced?: boolean;
   /**
    * Mandatory even when no DRM stage is loaded, so adding DRM later does not
    * touch every adapter. Null means the track is clear.

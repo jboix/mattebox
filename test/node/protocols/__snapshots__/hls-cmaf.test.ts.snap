@@ -3106,6 +3106,10 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-rts-vod-mas
           "role": "alternate",
         },
         {
+          "characteristics": [
+            "public.accessibility.describes-spoken-dialog",
+            "public.accessibility.describes-music-and-sound",
+          ],
           "contentType": "text",
           "id": "subs0:Français (SDH)",
           "lang": "fr",
@@ -5255,6 +5259,9 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-srf-style-m
           "role": "alternate",
         },
         {
+          "characteristics": [
+            "public.accessibility.describes-spoken-dialog",
+          ],
           "contentType": "text",
           "id": "subs0:Deutsch (SDH)",
           "lang": "de",

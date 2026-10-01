@@ -347,3 +347,69 @@ describe('trick mode', () => {
     expect(tracks.some((t) => t.contentType === 'audio')).toBe(true);
   });
 });
+
+describe('roles, accessibility, and forced subtitles', () => {
+  const mpd = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1M">
+  <Period>
+    <AdaptationSet id="v" contentType="video" mimeType="video/mp4" codecs="avc1.4d401f">
+      <SegmentTemplate media="v-$Number$.m4s" initialization="v-init.mp4" duration="6" timescale="1"/>
+      <Representation id="v1" bandwidth="800000"/>
+    </AdaptationSet>
+    <AdaptationSet id="dub" contentType="audio" lang="de" mimeType="audio/mp4" codecs="mp4a.40.2">
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="main"/>
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="dub"/>
+      <SegmentTemplate media="de-$Number$.m4s" initialization="de-init.mp4" duration="6" timescale="1"/>
+      <Representation id="de" bandwidth="128000"/>
+    </AdaptationSet>
+    <AdaptationSet id="ad" contentType="audio" lang="en" mimeType="audio/mp4" codecs="mp4a.40.2">
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="alternate"/>
+      <Accessibility schemeIdUri="urn:tva:metadata:cs:AudioPurposeCS:2007" value="1"/>
+      <Accessibility schemeIdUri="urn:tva:metadata:cs:AudioPurposeCS:2007" value="2"/>
+      <Accessibility schemeIdUri="urn:tva:metadata:cs:AudioPurposeCS:2007" value="7"/>
+      <SegmentTemplate media="ad-$Number$.m4s" initialization="ad-init.mp4" duration="6" timescale="1"/>
+      <Representation id="en-ad" bandwidth="128000"/>
+    </AdaptationSet>
+    <AdaptationSet id="forced" contentType="text" lang="en" mimeType="text/vtt">
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="forced-subtitle"/>
+      <Accessibility schemeIdUri="urn:tva:metadata:cs:AudioPurposeCS:2007" value="1"/>
+      <Representation id="en-forced" bandwidth="0"><BaseURL>en-forced.vtt</BaseURL></Representation>
+    </AdaptationSet>
+    <AdaptationSet id="forced-old" contentType="text" lang="fr" mimeType="text/vtt">
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="forced_subtitle"/>
+      <Representation id="fr-forced" bandwidth="0"><BaseURL>fr-forced.vtt</BaseURL></Representation>
+    </AdaptationSet>
+    <AdaptationSet id="subs" contentType="text" lang="en" mimeType="text/vtt">
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>
+      <Representation id="en-subs" bandwidth="0"><BaseURL>en.vtt</BaseURL></Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+
+  function track(id: string): Track | undefined {
+    const result = parse(mpd, BASE);
+    expect(result.error).toBeNull();
+    return result.presentation?.periods[0]?.tracks.find((t) => t.id === `as-${id}`);
+  }
+
+  it('keeps every Role value in order; role stays the first', () => {
+    expect(track('dub')?.roles).toEqual(['main', 'dub']);
+    expect(track('dub')?.role).toBe('main');
+    expect(track('v')?.roles).toBeUndefined();
+  });
+
+  it('maps AudioPurposeCS 1 and 2 on audio to the HLS characteristic tags', () => {
+    expect(track('ad')?.characteristics).toEqual([
+      'public.accessibility.describes-video',
+      'public.accessibility.enhances-speech-intelligibility',
+    ]);
+    // An audio purpose on a text set describes no audio.
+    expect(track('forced')?.characteristics).toBeUndefined();
+  });
+
+  it('marks forced-subtitle text forced, in both spellings', () => {
+    expect(track('forced')?.forced).toBe(true);
+    expect(track('forced-old')?.forced).toBe(true);
+    expect(track('subs')?.forced).toBeUndefined();
+  });
+});
