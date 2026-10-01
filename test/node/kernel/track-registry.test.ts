@@ -6,8 +6,9 @@ import { createReducer, initialState } from '../../../src/kernel/reducer.js';
 import { createTrackRegistry } from '../../../src/kernel/track-registry.js';
 import { vodFixture } from './helpers.js';
 
-function stack(sinks: ContentType[]) {
-  const bus = createBus({ reducer: createReducer(), initial: initialState(), now: () => 0 });
+function stack(sinks: ContentType[], decodable?: (type: string) => boolean) {
+  const reducer = createReducer([], undefined, decodable !== undefined ? { decodable } : {});
+  const bus = createBus({ reducer, initial: initialState(), now: () => 0 });
   const runner = createEffectRunner();
   runner.register('emit', (effect) => {
     bus.emitEvent(effect.event, effect.payload);
@@ -90,5 +91,30 @@ describe('track registry', () => {
     bus.on('command:rejected', (payload) => rejections.push(payload));
     registry.select('ghost');
     expect(rejections).toEqual([{ command: 'SELECT_TRACK', reason: 'unknown track: ghost' }]);
+  });
+
+  it('a track the browser cannot decode is enumerated but not selectable', () => {
+    // A browser without AC-3: the AC-3 audio track stays listed for diagnostics.
+    const { bus, registry } = stack(['video', 'audio'], (type) => !type.includes('ac-3'));
+    const period = vodFixture.periods[0] as (typeof vodFixture.periods)[number];
+    const audio = period.tracks[1] as (typeof period.tracks)[number];
+    const ac3 = {
+      ...audio,
+      id: 'a-ac3',
+      renditions: audio.renditions.map((r) => ({ ...r, id: 'a-ac3-1', codecs: 'ac-3' })),
+    };
+    const trick = { ...(period.tracks[0] as typeof audio), id: 'v-trick', role: 'trick' };
+    bus.absorb({
+      type: 'MANIFEST_LOADED',
+      presentation: {
+        ...vodFixture,
+        periods: [{ ...period, tracks: [...period.tracks, ac3, trick] }],
+      },
+    });
+    expect(registry.available.map((t) => t.id)).toEqual(['v', 'a', 'a-ac3', 'v-trick']);
+    expect(registry.selectable('a')).toBe(true);
+    expect(registry.selectable('a-ac3')).toBe(false);
+    expect(registry.selectable('v-trick')).toBe(false);
+    expect(registry.selectable('missing')).toBe(false);
   });
 });

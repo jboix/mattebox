@@ -476,11 +476,7 @@ function reduceCommand(
         return reject(state, msg.type, `unknown track: ${msg.trackId}`);
       }
       // A track the browser cannot decode would fail its buffer.
-      const undecodableIds = state.quality.constraints.get(CODECS)?.excludeIds ?? [];
-      if (
-        track.renditions.length > 0 &&
-        track.renditions.every((r) => undecodableIds.includes(r.id))
-      ) {
+      if (isUndecodable(state, track)) {
         return reject(state, msg.type, `undecodable track: ${msg.trackId}`);
       }
       const previous = state.tracks.active.get(track.contentType);
@@ -725,6 +721,12 @@ function reduceCommand(
 
 /** The constraint source for renditions this browser cannot decode. */
 const CODECS = 'codecs';
+
+/** Whether the browser decodes none of a track's renditions, from the codec filter. */
+export function isUndecodable(state: Readonly<KernelState>, track: Track): boolean {
+  const excluded = state.quality.constraints.get(CODECS)?.excludeIds ?? [];
+  return track.renditions.length > 0 && track.renditions.every((r) => excluded.includes(r.id));
+}
 
 /**
  * The renditions this browser cannot play: a declared codec it does not

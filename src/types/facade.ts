@@ -17,6 +17,12 @@ import type { Listener, Stage, TransportRequestDraftView, Unsubscribe } from './
 export interface TracksApi {
   readonly available: readonly Track[];
   active(contentType: ContentType): Track | null;
+  /**
+   * Whether `select` can play the track: false for an unknown track, an
+   * I-frame track, a content type no stage renders, and a track the browser
+   * cannot decode. A menu lists the tracks this answers true for.
+   */
+  selectable(trackId: TrackId): boolean;
   select(trackId: TrackId): void;
   /** Stops a cue pipeline and clears its cues. Valid for text and metadata; video and audio always keep a selection. */
   deselect(contentType: ContentType): void;

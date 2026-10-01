@@ -13,7 +13,7 @@
  * stream without a date anchor shows presentation seconds, so the two cases
  * are visibly different.
  */
-import type { Mattebox } from '../../src/index.js';
+import type { Mattebox, Track } from '../../src/index.js';
 import { collapseGroups, trackName } from './dock.js';
 import type { ThumbnailsView } from './thumb.js';
 import { paintThumb } from './thumb.js';
@@ -499,12 +499,22 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
     if (signature === tracksSignature) return;
     tracksSignature = signature;
 
-    audioSelect.replaceChildren(
-      ...audio.map((t) => new Option(trackName(t), t.id, false, t.id === activeAudio)),
-    );
+    // A track nothing here can play stays listed, disabled, for diagnosis.
+    const option = (t: Track, active: string | undefined): HTMLOptionElement => {
+      const playable = engine?.tracks.selectable(t.id) ?? true;
+      const node = new Option(
+        playable ? trackName(t) : `${trackName(t)} (not playable)`,
+        t.id,
+        false,
+        t.id === active,
+      );
+      node.disabled = !playable;
+      return node;
+    };
+    audioSelect.replaceChildren(...audio.map((t) => option(t, activeAudio)));
     textSelect.replaceChildren(
       new Option('Off', '', false, activeText === undefined),
-      ...text.map((t) => new Option(trackName(t), t.id, false, t.id === activeText)),
+      ...text.map((t) => option(t, activeText)),
     );
     // One audio track is a fact, not a choice.
     audioWrap.hidden = audio.length < 2;

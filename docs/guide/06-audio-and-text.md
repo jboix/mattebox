@@ -12,13 +12,16 @@ selected. Text and metadata can be deselected.
 const t = engine.tracks;
 
 t.available;          // every track the manifest declared
+t.selectable('a:ac3'); // false when nothing here can play it
 t.active('audio');    // the selected audio track, or null
 t.select('audio:de'); // switch by track id
 t.deselect('text');   // stop the subtitle pipeline and clear its cues
 ```
 
 A track is listed but not selectable until a stage handles its content
-type. Text tracks need a text stage.
+type. Text tracks need a text stage. A track the browser cannot decode,
+such as AC-3 audio in a browser without AC-3, is listed but not selectable
+either. A menu lists the tracks `selectable` answers true for.
 
 You label a track in a menu from these fields.
 

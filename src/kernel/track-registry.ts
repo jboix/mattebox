@@ -1,8 +1,9 @@
 /**
  * Generic track enumeration and selection, the engine.tracks surface.
- * Tracks whose content type has no registered sink are enumerated but not
- * selectable: that is how a deployment without text-webvtt degrades
- * gracefully instead of crashing.
+ * Every track is enumerated. One whose content type has no registered sink,
+ * or that the browser cannot decode, is not selectable: that is how a
+ * deployment without text-webvtt degrades gracefully instead of crashing,
+ * and how a menu leaves out an AC-3 track in a browser without AC-3.
  */
 
 import type { TracksApi } from '../types/facade.js';
@@ -10,6 +11,7 @@ import type { ContentType, Track, TrackId } from '../types/ir.js';
 import type { KernelState } from '../types/kernel.js';
 import type { Command } from '../types/messages.js';
 import { findTrackSite, isTrick } from './presentation.js';
+import { isUndecodable } from './reducer.js';
 
 export interface TrackRegistryDeps {
   getState(): KernelState;
@@ -19,16 +21,12 @@ export interface TrackRegistryDeps {
   hasSink(contentType: ContentType): boolean;
 }
 
-export interface TrackRegistry extends TracksApi {
-  selectable(trackId: TrackId): boolean;
-}
-
 function allTracks(state: KernelState): readonly Track[] {
   if (state.presentation === null) return [];
   return state.presentation.periods.flatMap((period) => period.tracks);
 }
 
-export function createTrackRegistry(deps: TrackRegistryDeps): TrackRegistry {
+export function createTrackRegistry(deps: TrackRegistryDeps): TracksApi {
   function find(trackId: TrackId): Track | null {
     return findTrackSite(deps.getState().presentation, trackId)?.track ?? null;
   }
@@ -44,7 +42,12 @@ export function createTrackRegistry(deps: TrackRegistryDeps): TrackRegistry {
     },
     selectable(trackId) {
       const track = find(trackId);
-      return track !== null && deps.hasSink(track.contentType);
+      return (
+        track !== null &&
+        !isTrick(track) &&
+        deps.hasSink(track.contentType) &&
+        !isUndecodable(deps.getState(), track)
+      );
     },
     select(trackId) {
       const track = find(trackId);
