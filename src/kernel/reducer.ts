@@ -716,7 +716,39 @@ function reduceCommand(
     case 'ABORT_INFLIGHT': {
       return abortInflight(state, msg.trackId);
     }
+
+    case 'ADD_TRACK': {
+      if (state.presentation === null) {
+        return reject(state, msg.type, 'no source');
+      }
+      if (findTrack(state.presentation, msg.track.id) !== null) {
+        return reject(state, msg.type, `track exists: ${msg.track.id}`);
+      }
+      const added = [...(state.tracks.added ?? []), msg.track];
+      const presentation = withAdded(state.presentation, added);
+      const available = presentation.periods.flatMap((period) => period.tracks.map((t) => t.id));
+      return [
+        { ...state, presentation, tracks: { ...state.tracks, added, available } },
+        [{ kind: 'emit', event: 'tracks:changed', payload: { available } }],
+      ];
+    }
   }
+}
+
+/**
+ * Joins the tracks ADD_TRACK added to every period that lacks them. A
+ * playlist merge hands the reducer the adapter's presentation, which knows
+ * nothing of them.
+ */
+function withAdded(presentation: Presentation, added: readonly Track[] | undefined): Presentation {
+  if (added === undefined || added.length === 0) return presentation;
+  return {
+    ...presentation,
+    periods: presentation.periods.map((period) => {
+      const missing = added.filter((track) => !period.tracks.some((t) => t.id === track.id));
+      return missing.length === 0 ? period : { ...period, tracks: [...period.tracks, ...missing] };
+    }),
+  };
 }
 
 /** The constraint source for renditions this browser cannot decode. */
@@ -757,9 +789,10 @@ function undecodable(
  */
 function loadPresentation(
   state: KernelState,
-  presentation: Presentation,
+  merged: Presentation,
   undecodableIds: ReadonlySet<string> = new Set(),
 ): Reduction {
+  const presentation = withAdded(merged, state.tracks.added);
   const available: string[] = [];
   for (const period of presentation.periods) {
     for (const track of period.tracks) available.push(track.id);
@@ -1825,6 +1858,7 @@ const COMMAND_TYPES: Record<Command['type'], true> = {
   SET_BUFFER_GOAL: true,
   RESOLVE_RENDITION: true,
   ABORT_INFLIGHT: true,
+  ADD_TRACK: true,
 };
 
 export function isCommand(msg: Message): msg is Command {

@@ -635,6 +635,16 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
         },
         {
           "contentType": "text",
+          "id": "cc1:English",
+          "instreamId": "CC1",
+          "lang": "en",
+          "mimeType": "application/cea-608",
+          "protection": null,
+          "renditions": [],
+          "role": "caption",
+        },
+        {
+          "contentType": "text",
           "id": "sub1:English",
           "lang": "en",
           "mimeType": "text/vtt",

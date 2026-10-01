@@ -19,6 +19,18 @@ export interface TrackRegistryDeps {
   emitEvent(event: string, payload: unknown): void;
   /** Whether a sink is registered for the content type, from the bus registry. */
   hasSink(contentType: ContentType): boolean;
+  /** Whether a stage declares it plays the format, from the composition's capabilities. */
+  plays(contentType: ContentType, mimeType: string): boolean;
+}
+
+/**
+ * Cue tracks need a stage for their format, not only a sink: one text sink
+ * serves every subtitle format, and a WebVTT stage cannot read TTML. Media
+ * formats are the browser's to decode, which the codec filter answers.
+ */
+function formatPlays(deps: TrackRegistryDeps, track: Track): boolean {
+  if (track.contentType !== 'text' && track.contentType !== 'metadata') return true;
+  return deps.plays(track.contentType, track.mimeType);
 }
 
 function allTracks(state: KernelState): readonly Track[] {
@@ -46,6 +58,7 @@ export function createTrackRegistry(deps: TrackRegistryDeps): TracksApi {
         track !== null &&
         !isTrick(track) &&
         deps.hasSink(track.contentType) &&
+        formatPlays(deps, track) &&
         !isUndecodable(deps.getState(), track)
       );
     },
@@ -66,6 +79,13 @@ export function createTrackRegistry(deps: TrackRegistryDeps): TracksApi {
         deps.emitEvent('command:rejected', {
           command: 'SELECT_TRACK',
           reason: `no sink registered for '${track.contentType}'`,
+        });
+        return;
+      }
+      if (track !== null && !formatPlays(deps, track)) {
+        deps.emitEvent('command:rejected', {
+          command: 'SELECT_TRACK',
+          reason: `no stage plays '${track.mimeType}'`,
         });
         return;
       }

@@ -181,6 +181,40 @@ function audioCharacteristics(adaptationSet: Element): string[] {
   return tags;
 }
 
+const CEA608_SCHEME = 'urn:scte:dash:cc:cea-608:2015';
+
+/**
+ * SCTE 214-1: an Accessibility descriptor with the CEA-608 scheme names the
+ * in-band caption channels of a video AdaptationSet, as "CC1=eng;CC3=fre",
+ * "1=eng", or bare languages. Bare languages take CC1 and CC3 when there
+ * are two, else CC1 to CC4 in order; an empty value means CC1. This is the
+ * reading Shaka Player applies.
+ */
+function captionChannels(adaptationSet: Element): Array<readonly [string, string | null]> {
+  const out: Array<readonly [string, string | null]> = [];
+  for (const descriptor of children(adaptationSet, 'Accessibility')) {
+    if (attr(descriptor, 'schemeIdUri') !== CEA608_SCHEME) continue;
+    const value = (attr(descriptor, 'value') ?? '').trim();
+    if (value === '') {
+      out.push(['CC1', null]);
+      continue;
+    }
+    const entries = value.split(';');
+    let next = 1;
+    for (const entry of entries) {
+      const [left, right] = entry.split('=') as [string, string | undefined];
+      if (right === undefined) {
+        out.push([`CC${next}`, left.trim() || null]);
+        next += entries.length === 2 ? 2 : 1;
+      } else {
+        const channel = left.trim().startsWith('CC') ? left.trim() : `CC${left.trim()}`;
+        out.push([channel, right.trim() || null]);
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * A trick-mode AdaptationSet: the DASH-IF trickmode EssentialProperty, or a
  * representation declaring a playout rate other than 1. Both mark an
@@ -589,6 +623,27 @@ export function parse(text: string, baseUrl: string): ParseResult {
       ...(characteristics.length > 0 ? { characteristics } : {}),
       ...(forced ? { forced: true } : {}),
     });
+  }
+
+  // In-band captions ride the video: one text track per channel the
+  // AdaptationSets declare, with no segments; the caption stage reads them.
+  // Without a video track there is nothing to carry them.
+  const hasVideo = tracks.some((t) => t.contentType === 'video');
+  for (const adaptationSet of hasVideo ? adaptationSets : []) {
+    for (const [instreamId, lang] of captionChannels(adaptationSet)) {
+      const id = `cea608:${instreamId}`;
+      if (!/^CC[1-4]$/.test(instreamId) || tracks.some((t) => t.id === id)) continue;
+      tracks.push({
+        id,
+        contentType: 'text',
+        mimeType: 'application/cea-608',
+        protection: null,
+        ...(lang !== null ? { lang } : {}),
+        role: 'caption',
+        instreamId,
+        renditions: [],
+      });
+    }
   }
 
   if (tracks.length === 0) {

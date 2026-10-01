@@ -413,3 +413,54 @@ describe('roles, accessibility, and forced subtitles', () => {
     expect(track('subs')?.forced).toBeUndefined();
   });
 });
+
+describe('CEA-608 accessibility', () => {
+  function captions(values: readonly string[]): Array<{ id: string; lang?: string }> {
+    const descriptors = values
+      .map(
+        (value) => `<Accessibility schemeIdUri="urn:scte:dash:cc:cea-608:2015" value="${value}"/>`,
+      )
+      .join('');
+    const mpd = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1M">
+  <Period>
+    <AdaptationSet id="v" contentType="video" mimeType="video/mp4" codecs="avc1.4d401f">
+      ${descriptors}
+      <Accessibility schemeIdUri="urn:scte:dash:cc:cea-708:2015" value="1=lang:eng"/>
+      <SegmentTemplate media="v-$Number$.m4s" initialization="v-init.mp4" duration="6" timescale="1"/>
+      <Representation id="v1" bandwidth="800000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+    const result = parse(mpd, BASE);
+    expect(result.error).toBeNull();
+    return (result.presentation?.periods[0]?.tracks ?? [])
+      .filter((t) => t.role === 'caption')
+      .map((t) => ({ id: t.id, ...(t.lang !== undefined ? { lang: t.lang } : {}) }));
+  }
+
+  it('reads explicit channels, with or without the CC prefix', () => {
+    expect(captions(['CC1=eng;3=fra'])).toEqual([
+      { id: 'cea608:CC1', lang: 'eng' },
+      { id: 'cea608:CC3', lang: 'fra' },
+    ]);
+  });
+
+  it('gives two bare languages CC1 and CC3, more in order, and an empty value CC1', () => {
+    expect(captions(['eng;fra'])).toEqual([
+      { id: 'cea608:CC1', lang: 'eng' },
+      { id: 'cea608:CC3', lang: 'fra' },
+    ]);
+    expect(captions(['eng;fra;deu']).map((c) => c.id)).toEqual([
+      'cea608:CC1',
+      'cea608:CC2',
+      'cea608:CC3',
+    ]);
+    expect(captions([''])).toEqual([{ id: 'cea608:CC1' }]);
+  });
+
+  it('declares each channel once and leaves CEA-708 out', () => {
+    expect(captions(['CC1=eng', 'CC1=eng'])).toEqual([{ id: 'cea608:CC1', lang: 'eng' }]);
+    expect(captions([])).toEqual([]);
+  });
+});

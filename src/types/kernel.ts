@@ -10,6 +10,7 @@ import type {
   RenditionId,
   TimeRange,
   TimeRangesSnapshot,
+  Track,
   TrackId,
 } from './ir.js';
 import type { Command, Effect, Fact, Message } from './messages.js';
@@ -228,6 +229,8 @@ export interface KernelState {
     readonly available: readonly TrackId[];
     /** Renditions not playing whose segments the adapters resolve anyway (RESOLVE_RENDITION). */
     readonly resolve?: ReadonlySet<RenditionId>;
+    /** Tracks added with ADD_TRACK, re-joined to every merged presentation. */
+    readonly added?: readonly Track[];
   };
   readonly quality: QualityState;
   readonly stats: StatsState;

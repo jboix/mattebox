@@ -229,6 +229,12 @@ export interface Track {
    */
   readonly forced?: boolean;
   /**
+   * The in-band caption channel a track names, such as CC1: captions carried
+   * inside the video bitstream, with no segments of their own (HLS
+   * INSTREAM-ID, DASH cea-608 Accessibility).
+   */
+  readonly instreamId?: string;
+  /**
    * Mandatory even when no DRM stage is loaded, so adding DRM later does not
    * touch every adapter. Null means the track is clear.
    */

@@ -223,6 +223,12 @@ export function mattebox(options: MatteboxOptions): Mattebox {
     dispatch: (cmd) => bus.dispatch(cmd),
     emitEvent: (event, payload) => bus.emitEvent(event, payload),
     hasSink: (contentType) => bus.sinkFor(contentType) !== undefined,
+    plays: (contentType, mimeType) =>
+      bus
+        .capabilities()
+        .some(
+          (c) => typeof c !== 'string' && c.contentType === contentType && c.mimeType === mimeType,
+        ),
   });
 
   const arbiter = createArbiter();

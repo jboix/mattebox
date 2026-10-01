@@ -395,3 +395,42 @@ describe('rendition characteristics and forced subtitles', () => {
     expect(track('a:English AD')?.forced).toBeUndefined();
   });
 });
+
+describe('closed captions', () => {
+  it('turns CEA-608 CLOSED-CAPTIONS renditions into caption tracks with no segments', () => {
+    const master = [
+      '#EXTM3U',
+      '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="English",LANGUAGE="en",INSTREAM-ID="CC1"',
+      '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="Español",LANGUAGE="es",INSTREAM-ID="CC3",CHARACTERISTICS="public.accessibility.transcribes-spoken-dialog"',
+      '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="708",LANGUAGE="en",INSTREAM-ID="SERVICE1"',
+      '#EXT-X-STREAM-INF:BANDWIDTH=800000,CODECS="avc1.4d401f,mp4a.40.2",CLOSED-CAPTIONS="cc"',
+      'v.m3u8',
+    ].join('\n');
+    const result = parse(master, BASE);
+    expect(result.error).toBeNull();
+    const captions = result.presentation?.periods[0]?.tracks.filter((t) => t.role === 'caption');
+    expect(captions).toEqual([
+      {
+        id: 'cc:English',
+        contentType: 'text',
+        mimeType: 'application/cea-608',
+        protection: null,
+        lang: 'en',
+        role: 'caption',
+        instreamId: 'CC1',
+        renditions: [],
+      },
+      {
+        id: 'cc:Español',
+        contentType: 'text',
+        mimeType: 'application/cea-608',
+        protection: null,
+        lang: 'es',
+        role: 'caption',
+        characteristics: ['public.accessibility.transcribes-spoken-dialog'],
+        instreamId: 'CC3',
+        renditions: [],
+      },
+    ]);
+  });
+});

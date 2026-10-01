@@ -292,6 +292,38 @@ function mediaContentType(type: string): 'audio' | 'text' | null {
   return null;
 }
 
+/** The CHARACTERISTICS tags of a rendition, as written, in order. */
+function characteristicsOf(entry: MediaEntry): string[] {
+  return (entry.attributes.CHARACTERISTICS ?? '')
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter((tag) => tag !== '');
+}
+
+/**
+ * RFC 8216bis §4.4.6.1: a CLOSED-CAPTIONS rendition names an in-band
+ * CEA-608 channel (INSTREAM-ID CC1 to CC4) inside the video. It becomes a
+ * text track with no segments; the caption stage reads the cues from the
+ * video. CEA-708 services (SERVICEn) are left out until a stage decodes them.
+ */
+function captionTrack(entry: MediaEntry): Track | null {
+  if (entry.type !== 'CLOSED-CAPTIONS') return null;
+  const instreamId = entry.attributes['INSTREAM-ID'];
+  if (instreamId === undefined || !/^CC[1-4]$/.test(instreamId)) return null;
+  const characteristics = characteristicsOf(entry);
+  return {
+    id: `${entry.groupId}:${entry.name}`,
+    contentType: 'text',
+    mimeType: 'application/cea-608',
+    protection: null,
+    ...(entry.attributes.LANGUAGE !== undefined ? { lang: entry.attributes.LANGUAGE } : {}),
+    role: 'caption',
+    ...(characteristics.length > 0 ? { characteristics } : {}),
+    instreamId,
+    renditions: [],
+  };
+}
+
 /**
  * The rendition fields a tag with a URI attribute declares: the Roku
  * EXT-X-IMAGE-STREAM-INF and the RFC 8216 §4.3.4.3 EXT-X-I-FRAME-STREAM-INF.
@@ -615,16 +647,18 @@ export function parse(text: string, baseUrl: string): ParseResult {
   }
 
   for (const entry of mediaEntries) {
+    const caption = captionTrack(entry);
+    if (caption !== null) {
+      tracks.push(caption);
+      continue;
+    }
     const contentType = mediaContentType(entry.type);
     if (contentType === null || entry.uri === null) continue;
     const { audio } = splitCodecs(
       variants.find((v) => v.attributes.AUDIO === entry.groupId)?.attributes.CODECS,
     );
     const mimeType = contentType === 'audio' ? 'audio/mp4' : 'text/vtt';
-    const characteristics = (entry.attributes.CHARACTERISTICS ?? '')
-      .split(',')
-      .map((tag) => tag.trim())
-      .filter((tag) => tag !== '');
+    const characteristics = characteristicsOf(entry);
     tracks.push({
       id: `${entry.groupId}:${entry.name}`,
       contentType,

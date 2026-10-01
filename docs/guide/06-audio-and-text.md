@@ -162,9 +162,22 @@ import textCea608 from 'mattebox/stages/text-cea608';
 const engine = mattebox({ stages: [hlsCmaf(), nalScan(), textCea608()] });
 ```
 
-The caption track appears on the element as `CC1`, hidden until the viewer
-turns it on. If your packager can emit WebVTT sidecars instead, skip these
-stages.
+The captions are a text track like any subtitle, with `role: 'caption'`
+and `mimeType: 'application/cea-608'`. Select it with `engine.tracks`, and
+a menu lists it.
+
+- The manifest declares it: HLS `EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS` with
+  `INSTREAM-ID="CC1"`, or DASH `Accessibility` with
+  `urn:scte:dash:cc:cea-608:2015`.
+- A stream that declares none gets the track `cea608:CC1` when its first
+  caption arrives, with a `tracks:changed` event.
+- The decoder reads CC1. Declared CC2 to CC4 tracks are listed and show
+  nothing.
+
+On the element, the cues go to a native caption track labelled `CC1`. It
+shows while the caption track is selected, and a pick in the browser's
+caption menu selects it in the engine. If your packager can emit WebVTT
+sidecars instead, skip these stages.
 
 ## ID3 metadata
 

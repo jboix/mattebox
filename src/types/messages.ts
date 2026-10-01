@@ -18,6 +18,7 @@ import type {
   SegmentRef,
   TileGrid,
   TimeRangesSnapshot,
+  Track,
   TrackId,
 } from './ir.js';
 import type { ApplyStrategy, Constraint } from './quality.js';
@@ -100,7 +101,14 @@ export type Command =
    * the I-frame track this way while the normal stream plays.
    */
   | { readonly type: 'RESOLVE_RENDITION'; readonly renditionId: string }
-  | { readonly type: 'ABORT_INFLIGHT'; readonly trackId?: TrackId };
+  | { readonly type: 'ABORT_INFLIGHT'; readonly trackId?: TrackId }
+  /**
+   * Adds a track the media revealed and the manifest did not declare, such
+   * as in-band captions found in the video. It joins every period and stays
+   * across playlist merges until the source changes. Rejected without a
+   * presentation, or when a track with the same id exists.
+   */
+  | { readonly type: 'ADD_TRACK'; readonly track: Track };
 
 /** The world reporting what already happened, entering through `absorb`. Never rejectable. */
 export type Fact =

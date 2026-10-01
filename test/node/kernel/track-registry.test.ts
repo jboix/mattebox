@@ -6,7 +6,11 @@ import { createReducer, initialState } from '../../../src/kernel/reducer.js';
 import { createTrackRegistry } from '../../../src/kernel/track-registry.js';
 import { vodFixture } from './helpers.js';
 
-function stack(sinks: ContentType[], decodable?: (type: string) => boolean) {
+function stack(
+  sinks: ContentType[],
+  decodable?: (type: string) => boolean,
+  formats: ReadonlyArray<readonly [ContentType, string]> = [],
+) {
   const reducer = createReducer([], undefined, decodable !== undefined ? { decodable } : {});
   const bus = createBus({ reducer, initial: initialState(), now: () => 0 });
   const runner = createEffectRunner();
@@ -20,6 +24,7 @@ function stack(sinks: ContentType[], decodable?: (type: string) => boolean) {
     dispatch: (cmd) => bus.dispatch(cmd),
     emitEvent: (event, payload) => bus.emitEvent(event, payload),
     hasSink: (contentType) => sinks.includes(contentType),
+    plays: (contentType, mimeType) => formats.some(([c, m]) => c === contentType && m === mimeType),
   });
   return { bus, registry };
 }
@@ -116,5 +121,42 @@ describe('track registry', () => {
     expect(registry.selectable('a-ac3')).toBe(false);
     expect(registry.selectable('v-trick')).toBe(false);
     expect(registry.selectable('missing')).toBe(false);
+  });
+
+  it('a cue track needs a stage for its format, not only a sink', () => {
+    // A text sink and a WebVTT stage: a TTML track is listed but not selectable.
+    const { bus, registry } = stack(['video', 'audio', 'text'], undefined, [['text', 'text/vtt']]);
+    const period = vodFixture.periods[0] as (typeof vodFixture.periods)[number];
+    const text = (id: string, mimeType: string) => ({
+      id,
+      contentType: 'text' as const,
+      mimeType,
+      protection: null,
+      renditions: [],
+    });
+    bus.absorb({
+      type: 'MANIFEST_LOADED',
+      presentation: {
+        ...vodFixture,
+        periods: [
+          {
+            ...period,
+            tracks: [
+              ...period.tracks,
+              text('t-vtt', 'text/vtt'),
+              text('t-ttml', 'application/ttml+xml'),
+            ],
+          },
+        ],
+      },
+    });
+    expect(registry.selectable('t-vtt')).toBe(true);
+    expect(registry.selectable('t-ttml')).toBe(false);
+    const rejections: unknown[] = [];
+    bus.on('command:rejected', (payload) => rejections.push(payload));
+    registry.select('t-ttml');
+    expect(rejections).toEqual([
+      { command: 'SELECT_TRACK', reason: "no stage plays 'application/ttml+xml'" },
+    ]);
   });
 });

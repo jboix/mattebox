@@ -9,6 +9,9 @@
  * manifest on, so the browser's caption menu lists all of them; the active
  * one is `showing`, the rest `disabled`. A pick in that menu selects in the
  * engine, and switching captions off there deselects.
+ *
+ * It mirrors only its own format. In-band captions are text tracks too, and
+ * text-cea608 mirrors those into the caption track it fills itself.
  */
 
 import { parseVtt } from '../../containers/webvtt.js';
@@ -18,6 +21,8 @@ import type { CueDescriptor } from '../../types/messages.js';
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage } from '../../types/stage.js';
 
+const MIME = 'text/vtt';
+
 function parseSegment(data: Uint8Array, _meta: SegmentMeta): readonly CueDescriptor[] {
   return parseVtt(new TextDecoder().decode(data)).cues;
 }
@@ -25,21 +30,21 @@ function parseSegment(data: Uint8Array, _meta: SegmentMeta): readonly CueDescrip
 export default function textWebvtt(): Stage {
   return {
     name: 'text-webvtt',
-    provides: ['text-webvtt', { contentType: 'text', mimeType: 'text/vtt' }],
+    provides: ['text-webvtt', { contentType: 'text', mimeType: MIME }],
     requires: ['scheduler'],
     install(ctx) {
       const { element } = ctx;
       // One sink per attach, built here rather than in the factory so the
       // mirror below can declare tracks before any segment is fetched.
       const sink = createTextTrackSink({ element, parse: parseSegment });
-      ctx.registerParser('text/vtt', parseSegment);
+      ctx.registerParser(MIME, parseSegment);
       ctx.registerSink('text', () => sink);
 
       function textTracks(): readonly Track[] {
         const presentation = ctx.getState().presentation;
         if (presentation === null) return [];
         return presentation.periods.flatMap((period) =>
-          period.tracks.filter((track) => track.contentType === 'text'),
+          period.tracks.filter((track) => track.contentType === 'text' && track.mimeType === MIME),
         );
       }
       function activeId(): string | undefined {
@@ -70,7 +75,8 @@ export default function textWebvtt(): Stage {
         );
         if (showing !== undefined) {
           if (showing.id !== active) ctx.dispatch({ type: 'SELECT_TRACK', trackId: showing.id });
-        } else if (active !== undefined) {
+        } else if (textTracks().some((track) => track.id === active)) {
+          // Only a track of this stage went off; another stage's track is its own to mirror.
           ctx.dispatch({ type: 'DESELECT_TRACK', contentType: 'text' });
         }
       }
