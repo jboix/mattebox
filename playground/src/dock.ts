@@ -4,7 +4,8 @@
  * an open <select> is never torn down under the pointer by the half-second
  * refresh.
  */
-import type { Constraint, Mattebox, Rendition } from '../../src/index.js';
+import type { Constraint, Mattebox, Rendition, Track } from '../../src/index.js';
+import { isAudioDescription, isOriginal, isSdh } from '../../src/index.js';
 import { escapeHtml } from './html.js';
 
 /** The constraint source every cap chosen here is registered under. */
@@ -241,9 +242,17 @@ export function renderQuality(host: HTMLElement, deps: DockDeps): void {
 
 // ---- tracks ---------------------------------------------------------------
 
-export function trackName(t: { id: string; lang?: string; role?: string }): string {
+/** The language, then the role and the standard marks, so same-language tracks read apart. */
+export function trackName(t: Track): string {
   const base = t.lang ?? t.id;
-  return t.role !== undefined && t.role !== 'main' ? `${base} (${t.role})` : base;
+  const marks = [
+    ...(t.role !== undefined && t.role !== 'main' ? [t.role] : []),
+    ...(t.forced === true ? ['forced'] : []),
+    ...(isSdh(t) ? ['SDH'] : []),
+    ...(isAudioDescription(t) ? ['AD'] : []),
+    ...(isOriginal(t) ? ['original'] : []),
+  ];
+  return marks.length > 0 ? `${base} (${marks.join(', ')})` : base;
 }
 
 /** The HLS group id in a track id such as "aud-lo:English", or the whole id. */
@@ -257,7 +266,7 @@ function groupOf(id: string): string {
  * group, say), which reads as duplicates. One button per name; behind it
  * the track from the active group, so a click never forces a group switch.
  */
-export function collapseGroups<T extends { id: string; lang?: string; role?: string }>(
+export function collapseGroups<T extends Track>(
   tracks: readonly T[],
   activeId: string | undefined,
 ): T[] {

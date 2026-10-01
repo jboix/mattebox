@@ -103,11 +103,19 @@ EOF
 EOF
 }
 
-# The flavor's master with its subtitle playlist listed a second time as a
-# forced track, for the forced-subtitles stage.
-forced_master() { # flavor
-  sed 's|^#EXT-X-MEDIA:TYPE=SUBTITLES,.*$|&\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English forced",LANGUAGE="en",AUTOSELECT=YES,FORCED=YES,URI="subs.m3u8"|' \
-    "$OUT/$1/master.m3u8" > "$OUT/$1/master-forced.m3u8"
+# The flavor's master with the standard track signals added, for the
+# forced-subtitles stage and the track label functions. The added tracks
+# reuse the flavor's playlists, so only their labels and selection differ:
+# English audio marked original, an English audio description twin, an SDH
+# subtitle track, and forced English and French subtitles.
+accessibility_master() { # flavor
+  sed \
+    -e '/^#EXT-X-MEDIA:TYPE=AUDIO,.*NAME="English"/{s|AUTOSELECT=YES|AUTOSELECT=YES,CHARACTERISTICS="public.original-content"|;p;s|NAME="English"|NAME="English (AD)"|;s|,DEFAULT=YES||;s|public.original-content|public.accessibility.describes-video|;}' \
+    -e '/^#EXT-X-MEDIA:TYPE=SUBTITLES,/a\
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English (SDH)",LANGUAGE="en",AUTOSELECT=YES,CHARACTERISTICS="public.accessibility.transcribes-spoken-dialog,public.accessibility.describes-music-and-sound",URI="subs.m3u8"\
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English forced",LANGUAGE="en",AUTOSELECT=YES,FORCED=YES,URI="subs.m3u8"\
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="French forced",LANGUAGE="fr",AUTOSELECT=YES,FORCED=YES,URI="subs.m3u8"' \
+    "$OUT/$1/master.m3u8" > "$OUT/$1/master-accessibility.m3u8"
 }
 
 if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
@@ -115,7 +123,7 @@ if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
    [ -f "$OUT/ts/master.m3u8" ] && [ -f "$OUT/aac/master.m3u8" ]; then
   [ -f "$OUT/h264-images/chapters/chapters.json" ] || images_flavor
   for flavor in h264 vp9; do
-    [ -f "$OUT/$flavor/master-forced.m3u8" ] || forced_master "$flavor"
+    [ -f "$OUT/$flavor/master-accessibility.m3u8" ] || accessibility_master "$flavor"
   done
   echo "streams present, skipping generation"
   exit 0
@@ -210,7 +218,7 @@ high.m3u8
 #EXT-X-STREAM-INF:BANDWIDTH=600000,RESOLUTION=640x360,CODECS="$top,$astring",AUDIO="aud-hi",SUBTITLES="subs"
 top.m3u8
 EOF
-  forced_master "$flavor"
+  accessibility_master "$flavor"
   subs "$flavor"
 }
 

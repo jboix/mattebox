@@ -91,8 +91,8 @@ const sources: Record<Source, () => string> = {
   aac: () => '/streams/aac/master.m3u8',
   // A media playlist alone: no master, so no CODECS for the SourceBuffer.
   bare: () => `/streams/${flavor}/low.m3u8`,
-  // The HLS stream with its subtitle playlist also listed as a forced track.
-  forced: () => `/streams/${flavor}/master-forced.m3u8`,
+  // The HLS stream with forced, SDH, audio description and original tracks added.
+  forced: () => `/streams/${flavor}/master-accessibility.m3u8`,
 };
 
 const live: Array<{ player: Player; stop: () => void }> = [];

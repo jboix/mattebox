@@ -208,6 +208,18 @@ const LOCAL_STREAMS: readonly StreamEntry[] =
           url: local('vp9/master.m3u8'),
           topic: 'local',
         },
+        {
+          label: 'h264, forced subtitles, SDH, audio description, original audio',
+          url: local('h264/master-accessibility.m3u8'),
+          topic: 'local',
+          tags: ['generated', 'forced subtitles', 'track characteristics'],
+        },
+        {
+          label: 'vp9, forced subtitles, SDH, audio description, original audio',
+          url: local('vp9/master-accessibility.m3u8'),
+          topic: 'local',
+          tags: ['generated', 'forced subtitles', 'track characteristics'],
+        },
         { label: 'h264, three rungs', url: local('h264-dash/manifest.mpd'), topic: 'local' },
         { label: 'vp9, three rungs', url: local('vp9-dash/manifest.mpd'), topic: 'local' },
         {

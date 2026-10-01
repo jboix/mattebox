@@ -93,5 +93,11 @@ it('17. a forced track shows without a selection and returns after Off', async (
   // Off brings the forced track back.
   player.engine.tracks.deselect('text');
   await until(() => player.engine.tracks.active('text')?.forced === true, 'forced again', 5_000);
+  expect(player.engine.tracks.active('text')?.lang).toBe('en');
+  // French audio in the same group brings the French forced track.
+  const group = player.engine.tracks.active('audio')?.id.split(':')[0];
+  player.engine.tracks.select(`${group}:French`);
+  await until(() => player.engine.tracks.active('text')?.lang === 'fr', 'French forced', 5_000);
+  expect(player.engine.tracks.active('text')?.forced).toBe(true);
   expect(player.engine.error?.code ?? null).toBeNull();
 });
