@@ -34,6 +34,22 @@ The engine copies HLS `CHARACTERISTICS` as written, such as
 `public.accessibility.describes-video` (audio description) or
 `public.original-content` (original-language audio).
 
+These functions answer from the standard tags and roles. A tag outside them
+stays a string in `characteristics`, and you filter on it yourself.
+
+| Function             | True for                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `isAudioDescription` | `public.accessibility.describes-video`                                                   |
+| `isEnhancedSpeech`   | `public.accessibility.enhances-speech-intelligibility`                                   |
+| `isSdh`              | `transcribes-spoken-dialog` with `describes-music-and-sound`, or the DASH role `caption` |
+| `isOriginal`         | `public.original-content`                                                                |
+
+```ts
+import { isAudioDescription } from 'mattebox';
+
+const described = engine.tracks.available.find(isAudioDescription);
+```
+
 A switch through `select` takes effect from the segment under the playhead:
 the previous track is flushed from there and the new one refills it. A group
 switch that follows a video rendition change lets the previous group play out

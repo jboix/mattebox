@@ -24,6 +24,13 @@ import type { MatteboxBase, MatteboxOptions } from './types/facade.js';
 import type { ContentType, Rendition } from './types/ir.js';
 import type { KernelConfig, TracedError } from './types/kernel.js';
 
+// Track labels from the standard characteristic tags, for a player's menus.
+export {
+  isAudioDescription,
+  isEnhancedSpeech,
+  isOriginal,
+  isSdh,
+} from './kernel/characteristics.js';
 // Diagnosability is a project goal: the trace tooling is public API. A
 // production trace replays into a fresh reducer as a regression test.
 export { createReducer, initialState, resolveConfig } from './kernel/reducer.js';
