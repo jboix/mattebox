@@ -7,6 +7,13 @@ import type { MatteboxError } from '../types/error.js';
 import type { Presentation } from '../types/ir.js';
 import type { Message } from '../types/messages.js';
 
+/**
+ * Seconds before a media playlist or segment index that failed is tried
+ * again, the same wait as the recovery stage's readmission of a rendition
+ * whose segments failed.
+ */
+export const RETRY_SECONDS = 15;
+
 /** A parse either yields a presentation or says why not. */
 export type ParseResult =
   | { readonly presentation: Presentation; readonly error: null }

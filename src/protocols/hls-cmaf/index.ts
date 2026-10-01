@@ -10,7 +10,7 @@
  * fetch under `hls:pl:` tokens the transport correlates back by token.
  */
 
-import { scheduled } from '../../kernel/effects.js';
+import { scheduled, tickAfter } from '../../kernel/effects.js';
 import { normalizeMimeType } from '../../kernel/mime.js';
 import { activeRenditions } from '../../kernel/rendition-select.js';
 import type { MatteboxError } from '../../types/error.js';
@@ -18,11 +18,22 @@ import type { Presentation, Rendition } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
-import { manifestFact } from '../adapter-shared.js';
+import { manifestFact, RETRY_SECONDS } from '../adapter-shared.js';
 import { parse, parseMediaPlaylist, refreshFor } from './parse.js';
-import { LOAD_FAILED, unavailableMessages } from './unavailable.js';
+import { LOAD_FAILED, readmitMessage, unavailableMessages } from './unavailable.js';
 
 const PLAYLIST_TOKEN = 'hls:pl:';
+/** A failed playlist's retry, by URL: `hls:retry:<url>`. */
+const RETRY_TOKEN = 'hls:retry:';
+
+export interface HlsCmafOptions {
+  /**
+   * Seconds before a media playlist that failed or held no segment is tried
+   * again; its renditions sit out meanwhile. Infinity keeps them out until
+   * the next load. Defaults to 15.
+   */
+  readonly unavailableRetrySeconds?: number;
+}
 
 /** The playlist MIME types, RFC 8216 §4: the registered type and the three in common use. */
 const MANIFEST_TYPES: readonly string[] = [
@@ -40,8 +51,8 @@ interface HlsSlice {
   readonly pending: Readonly<Record<string, string>>;
   /**
    * Playlist URLs already answered: true when they loaded, false when they
-   * failed. Neither is fetched again by this slice; hls-live reloads a live
-   * playlist on its own cadence.
+   * failed. Neither is fetched again by this slice until a failure's retry
+   * forgets it; hls-live reloads a live playlist on its own cadence.
    */
   readonly answered: Readonly<Record<string, boolean>>;
   /** The selection last looked at, so the playlist choice runs only when it changes. */
@@ -107,135 +118,171 @@ function feed(message: Message): Effect {
   return scheduled('hls:loopback', message);
 }
 
+/** The renditions of every playlist that failed and is not being retried yet. */
+function failedRenditions(state: HlsSlice, presentation: Presentation): string[] {
+  const failed: string[] = [];
+  for (const [url, ok] of Object.entries(state.answered)) {
+    if (!ok) for (const rendition of renditionsAt(presentation, url)) failed.push(rendition.id);
+  }
+  return failed;
+}
+
 /**
  * A playlist that failed to load or parse. Its renditions are excluded,
- * so arbitration moves off them and nothing asks for the playlist again.
- * When that leaves a media track with no rendition at all, the load
- * fails: the stream cannot play, and waiting would only stall.
+ * so arbitration moves off them and nothing asks for the playlist again
+ * until its retry. When that leaves a media track with no rendition at
+ * all, the load fails: the stream cannot play, and waiting would only stall.
  */
 function unavailable(
   state: HlsSlice,
   kernel: Readonly<KernelState>,
   url: string,
   error: MatteboxError,
+  retryMs: number,
 ): [HlsSlice, Effect[]] {
-  const answered = { ...state.answered, [url]: false };
-  const next = { ...state, answered };
+  const next = { ...state, answered: { ...state.answered, [url]: false } };
   const presentation = kernel.presentation;
   if (presentation === null) return [next, []];
-  const failed: string[] = [];
-  for (const [failedUrl, ok] of Object.entries(answered)) {
-    if (!ok)
-      for (const rendition of renditionsAt(presentation, failedUrl)) failed.push(rendition.id);
+  const messages = unavailableMessages(
+    kernel,
+    LOAD_FAILED,
+    failedRenditions(next, presentation),
+    error,
+  );
+  const effects = messages.map(feed);
+  // A transient outage passes: the playlist gets another chance later.
+  if (Number.isFinite(retryMs) && !messages.some((m) => m.type === 'MANIFEST_FAILED')) {
+    effects.push(tickAfter(`${RETRY_TOKEN}${url}`, retryMs));
   }
-  return [next, unavailableMessages(kernel, LOAD_FAILED, failed, error).map(feed)];
+  return [next, effects];
 }
 
-const reduceHls: SliceReducer<HlsSlice> = (slice, msg, kernel) => {
-  const state = slice ?? INITIAL;
+/**
+ * The retry of a failed playlist: forget the failure, so its renditions
+ * return to arbitration and the selection fetches the playlist again when
+ * it needs it. Another failure excludes it again for another wait.
+ */
+function retry(state: HlsSlice, kernel: Readonly<KernelState>, url: string): [HlsSlice, Effect[]] {
+  if (state.answered[url] !== false || kernel.presentation === null) return [state, []];
+  const answered = { ...state.answered };
+  delete answered[url];
+  const next = { ...state, answered };
+  const message = readmitMessage(kernel, LOAD_FAILED, failedRenditions(next, kernel.presentation));
+  return [next, message === null ? [] : [feed(message)]];
+}
 
-  if (msg.type === 'LOAD') {
-    return [
-      {
-        ...INITIAL,
-        manifestUrl: msg.url,
-        mimeType: msg.mimeType === undefined ? null : normalizeMimeType(msg.mimeType),
-      },
-      [],
-    ];
-  }
-  if (msg.type === 'UNLOAD' || msg.type === 'DETACH') {
-    return [INITIAL, []];
-  }
+const createReduceHls =
+  (retryMs: number): SliceReducer<HlsSlice> =>
+  (slice, msg, kernel) => {
+    const state = slice ?? INITIAL;
 
-  if (msg.type === 'SEGMENT_LOADED' && msg.trackId === 'manifest' && state.manifestUrl !== null) {
-    const fact = manifestFact(msg.bytes, state.manifestUrl, (text) => claims(state, text), parse);
-    return [state, fact === null ? [] : [feed(fact)]];
-  }
-
-  let next = state;
-  const effects: Effect[] = [];
-
-  if (msg.type === 'SEGMENT_LOADED' && msg.trackId in state.pending) {
-    const url = state.pending[msg.trackId] as string;
-    const pending = { ...state.pending };
-    delete pending[msg.trackId];
-    next = { ...next, pending };
-    const media = parseMediaPlaylist(new TextDecoder().decode(msg.bytes), url);
-    const playlist = media.playlist;
-    // A complete playlist with no segment can never be played from, the
-    // same as one that does not parse.
-    const error: MatteboxError | null =
-      playlist === null
-        ? media.error
-        : playlist.endlist && playlist.segments.length === 0
-          ? { category: 'manifest', code: 'MANIFEST_EMPTY', fatal: false, recoverable: false }
-          : null;
-    if (error !== null || playlist === null || kernel.presentation === null) {
-      if (error === null) return [next, effects];
-      effects.push({
-        kind: 'emit',
-        event: 'error',
-        payload: {
-          category: error.category,
-          code: error.code,
-          fatal: false,
-          recoverable: false,
-          url,
+    if (msg.type === 'LOAD') {
+      return [
+        {
+          ...INITIAL,
+          manifestUrl: msg.url,
+          mimeType: msg.mimeType === undefined ? null : normalizeMimeType(msg.mimeType),
         },
-      });
-      const [failed, failEffects] = unavailable(next, kernel, url, error);
-      return [failed, [...effects, ...failEffects]];
+        [],
+      ];
     }
-    next = { ...next, answered: { ...next.answered, [url]: true } };
-    // One fetch serves every rendition that reads this playlist. Each
-    // merges as its own fact, into the presentation the kernel holds
-    // when the fact lands.
-    for (const rendition of renditionsAt(kernel.presentation, url)) {
-      const refresh = refreshFor(kernel.presentation, rendition.id, playlist);
-      if (refresh !== null) effects.push(feed(refresh));
+    if (msg.type === 'UNLOAD' || msg.type === 'DETACH') {
+      return [INITIAL, []];
     }
-    return [next, effects];
-  }
 
-  if (msg.type === 'SEGMENT_FAILED' && msg.trackId in state.pending) {
-    // The transport already retried under its policy; the kernel reported
-    // the failure. What is left is to stop relying on the playlist.
-    const url = state.pending[msg.trackId] as string;
-    const pending = { ...state.pending };
-    delete pending[msg.trackId];
-    return unavailable({ ...next, pending }, kernel, url, msg.error);
-  }
+    if (msg.type === 'SEGMENT_LOADED' && msg.trackId === 'manifest' && state.manifestUrl !== null) {
+      const fact = manifestFact(msg.bytes, state.manifestUrl, (text) => claims(state, text), parse);
+      return [state, fact === null ? [] : [feed(fact)]];
+    }
 
-  // Look at the selection again when it changed: a manifest, a merge, a
-  // track or quality switch, a constraint. Each bumps the quality version.
-  // A suspended engine makes no request and keeps the old key, so RESUME
-  // fills what a selection during the freeze left lacking.
-  if (kernel.lifecycle.phase !== 'ready' || kernel.presentation === null) return [next, effects];
-  const key = `${kernel.quality.version}:${kernel.quality.active}`;
-  if (key === state.seen && msg.type !== 'RESUME') return [next, effects];
-  next = { ...next, seen: key };
-  const pending = { ...next.pending };
-  for (const rendition of neededPlaylists(next, kernel)) {
-    const url = rendition.playlistUrl as string;
-    const token = `${PLAYLIST_TOKEN}${url}`;
-    pending[token] = url;
-    // The rendition rides along so a failure counts toward steering failover.
-    effects.push({ kind: 'fetch', token, url, renditionId: rendition.id });
-  }
-  return [{ ...next, pending }, effects];
-};
+    if (msg.type === 'TICK' && msg.token.startsWith(RETRY_TOKEN)) {
+      return retry(state, kernel, msg.token.slice(RETRY_TOKEN.length));
+    }
+
+    let next = state;
+    const effects: Effect[] = [];
+
+    if (msg.type === 'SEGMENT_LOADED' && msg.trackId in state.pending) {
+      const url = state.pending[msg.trackId] as string;
+      const pending = { ...state.pending };
+      delete pending[msg.trackId];
+      next = { ...next, pending };
+      const media = parseMediaPlaylist(new TextDecoder().decode(msg.bytes), url);
+      const playlist = media.playlist;
+      // A complete playlist with no segment can never be played from, the
+      // same as one that does not parse.
+      const error: MatteboxError | null =
+        playlist === null
+          ? media.error
+          : playlist.endlist && playlist.segments.length === 0
+            ? { category: 'manifest', code: 'MANIFEST_EMPTY', fatal: false, recoverable: false }
+            : null;
+      if (error !== null || playlist === null || kernel.presentation === null) {
+        if (error === null) return [next, effects];
+        effects.push({
+          kind: 'emit',
+          event: 'error',
+          payload: {
+            category: error.category,
+            code: error.code,
+            fatal: false,
+            recoverable: false,
+            url,
+          },
+        });
+        const [failed, failEffects] = unavailable(next, kernel, url, error, retryMs);
+        return [failed, [...effects, ...failEffects]];
+      }
+      next = { ...next, answered: { ...next.answered, [url]: true } };
+      // One fetch serves every rendition that reads this playlist. Each
+      // merges as its own fact, into the presentation the kernel holds
+      // when the fact lands.
+      for (const rendition of renditionsAt(kernel.presentation, url)) {
+        const refresh = refreshFor(kernel.presentation, rendition.id, playlist);
+        if (refresh !== null) effects.push(feed(refresh));
+      }
+      return [next, effects];
+    }
+
+    if (msg.type === 'SEGMENT_FAILED' && msg.trackId in state.pending) {
+      // The transport already retried under its policy; the kernel reported
+      // the failure. What is left is to stop relying on the playlist.
+      const url = state.pending[msg.trackId] as string;
+      const pending = { ...state.pending };
+      delete pending[msg.trackId];
+      return unavailable({ ...next, pending }, kernel, url, msg.error, retryMs);
+    }
+
+    // Look at the selection again when it changed: a manifest, a merge, a
+    // track or quality switch, a constraint. Each bumps the quality version.
+    // A suspended engine makes no request and keeps the old key, so RESUME
+    // fills what a selection during the freeze left lacking.
+    if (kernel.lifecycle.phase !== 'ready' || kernel.presentation === null) return [next, effects];
+    const key = `${kernel.quality.version}:${kernel.quality.active}`;
+    if (key === state.seen && msg.type !== 'RESUME') return [next, effects];
+    next = { ...next, seen: key };
+    const pending = { ...next.pending };
+    for (const rendition of neededPlaylists(next, kernel)) {
+      const url = rendition.playlistUrl as string;
+      const token = `${PLAYLIST_TOKEN}${url}`;
+      pending[token] = url;
+      // The rendition rides along so a failure counts toward steering failover.
+      effects.push({ kind: 'fetch', token, url, renditionId: rendition.id });
+    }
+    return [{ ...next, pending }, effects];
+  };
 
 /**
  * The stage factory. `mattebox({ stages: [hlsCmaf()] })` is all a consumer
  * needs for HLS-CMAF VOD.
  */
-export default function hlsCmaf(): Stage {
+export default function hlsCmaf(options: HlsCmafOptions = {}): Stage {
+  const retryMs = (options.unavailableRetrySeconds ?? RETRY_SECONDS) * 1000;
   return {
     name: 'hls-cmaf',
     provides: ['hls-cmaf', ...MANIFEST_TYPES],
     install(ctx) {
-      ctx.reduce('hls', reduceHls as SliceReducer);
+      ctx.reduce('hls', createReduceHls(retryMs) as SliceReducer);
     },
   };
 }

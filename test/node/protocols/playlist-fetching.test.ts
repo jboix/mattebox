@@ -220,6 +220,36 @@ describe('hls-cmaf fetches the media playlists the selection needs', () => {
     expect(settled.state.lifecycle.phase).toBe('ready');
   });
 
+  it('a failed playlist returns after its retry delay and is fetched again', () => {
+    const booted = boot();
+    const v2 = fetches(booted.effects, 'hls:pl:').find((f) => f.url.endsWith('v2.m3u8'));
+    if (v2 === undefined) throw new Error('v2 was not fetched');
+    const failedOnce = settle(reduce, ...reduce(booted.state, failed(v2.token)));
+    const token = `hls:retry:${BASE}v2.m3u8`;
+    expect(failedOnce.effects).toContainEqual(
+      expect.objectContaining({ kind: 'schedule', token, delayMs: 15_000 }),
+    );
+    const retried = settle(reduce, ...reduce(failedOnce.state, { type: 'TICK', token }));
+    expect(retried.state.quality.constraints.get('hls:unavailable')?.excludeIds).toEqual([]);
+    // The rung above the playing one is v2 again, so its playlist is fetched again.
+    expect(fetches(retried.effects, 'hls:pl:').map((f) => f.url)).toEqual([`${BASE}v2.m3u8`]);
+  });
+
+  it('with unavailableRetrySeconds Infinity a failed playlist stays out', () => {
+    const forever = compose(() => hlsCmaf({ unavailableRetrySeconds: Infinity }));
+    let state = initialState();
+    [state] = forever(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = forever(state, { type: 'LOAD', url: `${BASE}master.m3u8` });
+    const token = [...state.scheduling.inflight.keys()][0] as string;
+    const booted = settle(forever, ...forever(state, loaded('manifest', bytes(MASTER), token)));
+    const v2 = fetches(booted.effects, 'hls:pl:').find((f) => f.url.endsWith('v2.m3u8'));
+    const settled = settle(forever, ...forever(booted.state, failed(v2?.token as string)));
+    const retries = settled.effects.filter(
+      (e) => e.kind === 'schedule' && e.token.startsWith('hls:retry:'),
+    );
+    expect(retries).toEqual([]);
+  });
+
   it('when the playing rendition fails, the next playlist loads without waiting for time to move', () => {
     // A paused element sends no TIME_UPDATE, so nothing re-arbitrates
     // until a playlist lands. The fetch has to come from the failure.
@@ -411,6 +441,23 @@ describe('dash-cmaf resolves the indexes the selection needs', () => {
     // Rendition 12 takes the excluded rung's place.
     expect(fetches(all, 'dash:idx:').map((f) => f.token)).toContain('dash:idx:12');
   });
+
+  it('an index with no segment returns after its retry delay and is fetched again', () => {
+    const booted = boot();
+    const failedOnce = settle(
+      reduce,
+      ...reduce(booted.state, loaded('dash:idx:11', new ArrayBuffer(16))),
+    );
+    expect(failedOnce.effects).toContainEqual(
+      expect.objectContaining({ kind: 'schedule', token: 'dash:retry:11', delayMs: 15_000 }),
+    );
+    const retried = settle(
+      reduce,
+      ...reduce(failedOnce.state, { type: 'TICK', token: 'dash:retry:11' }),
+    );
+    expect(retried.state.quality.constraints.get('dash:unavailable')?.excludeIds).toEqual([]);
+    expect(fetches(retried.effects, 'dash:idx:').map((f) => f.token)).toContain('dash:idx:11');
+  });
 });
 
 describe('live reload failures are bounded', () => {
@@ -486,6 +533,59 @@ describe('live reload failures are bounded', () => {
     expect(fetches(fx, 'hls:live:refresh:').map((f) => f.token)).toEqual([
       'hls:live:refresh:v-3000000',
     ]);
+  });
+
+  it('an abandoned live variant returns after its retry delay, whatever hls-cmaf excluded since', () => {
+    const reduce = compose(hlsCmaf, hlsLive);
+    const master = [
+      '#EXTM3U',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1000000,CODECS="avc1.4d401f,mp4a.40.2"',
+      'low.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS="avc1.4d401f,mp4a.40.2"',
+      'mid.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=3000000,CODECS="avc1.4d401f,mp4a.40.2"',
+      'high.m3u8',
+    ].join('\n');
+    let state = initialState();
+    [state] = reduce(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = reduce(state, { type: 'LOAD', url: 'https://live.example/master.m3u8' });
+    const token = [...state.scheduling.inflight.keys()][0] as string;
+    let settled = settle(reduce, ...reduce(state, loaded('manifest', bytes(master), token)));
+    for (const fetch of fetches(settled.effects, 'hls:pl:')) {
+      settled = settle(
+        reduce,
+        ...reduce(settled.state, loaded(fetch.token, bytes(livePlaylist(5)))),
+      );
+    }
+    state = settled.state;
+    const abandon: Effect[] = [];
+    for (let round = 1; round <= 4; round += 1) {
+      [state] = reduce(state, { type: 'TICK', token: 'hls-live:reload' });
+      const after = settle(reduce, ...reduce(state, failed('hls:live:refresh:v-1000000')));
+      state = after.state;
+      abandon.push(...after.effects);
+    }
+    expect(abandon).toContainEqual(
+      expect.objectContaining({
+        kind: 'schedule',
+        token: 'hls-live:retry:v-1000000',
+        delayMs: 15_000,
+      }),
+    );
+    // Playing the middle rung now, hls-cmaf finds the rung above broken.
+    const high = fetches(abandon, 'hls:pl:').filter((f) => f.url.endsWith('high.m3u8'));
+    expect(high).toHaveLength(1);
+    ({ state } = settle(reduce, ...reduce(state, failed((high[0] as Fetch).token))));
+    expect(state.quality.constraints.get('hls:unavailable')?.excludeIds).toEqual(['v-3000000']);
+    // The live retry frees the abandoned variant: no source keeps it out.
+    ({ state } = settle(
+      reduce,
+      ...reduce(state, { type: 'TICK', token: 'hls-live:retry:v-1000000' }),
+    ));
+    for (const source of ['hls-live:unavailable', 'hls:unavailable']) {
+      expect(state.quality.constraints.get(source)?.excludeIds ?? []).not.toContain('v-1000000');
+    }
+    expect(state.lifecycle.phase).toBe('ready');
   });
 
   it('dash-live retries a failed MPD reload on the update period, then fails the load', () => {

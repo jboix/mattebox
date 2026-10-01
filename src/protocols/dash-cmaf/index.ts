@@ -12,7 +12,7 @@
  * resolved segments back as a PLAYLIST_REFRESHED the kernel merges.
  */
 
-import { scheduled } from '../../kernel/effects.js';
+import { scheduled, tickAfter } from '../../kernel/effects.js';
 import { normalizeMimeType } from '../../kernel/mime.js';
 import { findRendition } from '../../kernel/presentation.js';
 import { activeRenditions } from '../../kernel/rendition-select.js';
@@ -22,10 +22,21 @@ import type { Rendition, SegmentAddressing, SidxSegments } from '../../types/ir.
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
-import { manifestFact } from '../adapter-shared.js';
+import { manifestFact, RETRY_SECONDS } from '../adapter-shared.js';
 import { parse, sidxToSegments } from './parse.js';
 
 const INDEX_TOKEN = 'dash:idx:';
+/** A failed index's retry, by rendition: `dash:retry:<renditionId>`. */
+const RETRY_TOKEN = 'dash:retry:';
+
+export interface DashCmafOptions {
+  /**
+   * Seconds before a segment index that failed or held no segment is tried
+   * again; its rendition sits out meanwhile. Infinity keeps it out until the
+   * next load. Defaults to 15.
+   */
+  readonly unavailableRetrySeconds?: number;
+}
 
 /** The MPD MIME type, ISO 23009-1 §C.2. */
 const MANIFEST_TYPES: readonly string[] = ['application/dash+xml'];
@@ -45,7 +56,7 @@ interface DashSlice {
    * never asked for twice while its merge is on its way.
    */
   readonly pending: Readonly<Record<string, string>>;
-  /** Renditions whose index failed to load or held no segment. Never fetched again. */
+  /** Renditions whose index failed to load or held no segment. Not fetched again until their retry. */
   readonly failed: Readonly<Record<string, true>>;
   /** The selection last looked at, so the index choice runs only when it changes. */
   readonly seen: string;
@@ -96,14 +107,16 @@ function feed(message: Message): Effect {
 /**
  * An index that failed to load or held no segment. The rendition is
  * excluded, so arbitration moves off it and nothing asks for the index
- * again. When that leaves a media track with no rendition at all, the load
- * fails: the stream cannot play, and waiting would only stall.
+ * again until its retry. When that leaves a media track with no rendition
+ * at all, the load fails: the stream cannot play, and waiting would only
+ * stall.
  */
 function unavailable(
   state: DashSlice,
   kernel: Readonly<KernelState>,
   renditionId: string,
   error: MatteboxError,
+  retryMs: number,
 ): [DashSlice, Effect[]] {
   const failed: Record<string, true> = { ...state.failed, [renditionId]: true };
   const next = { ...state, failed };
@@ -114,8 +127,29 @@ function unavailable(
   if (track !== null && media && track.renditions.every((r) => r.id in failed)) {
     return [next, [feed({ type: 'MANIFEST_FAILED', error: { ...error, fatal: true } })]];
   }
+  const effects = [
+    feed({
+      type: 'CONSTRAIN',
+      source: UNAVAILABLE,
+      constraint: { excludeIds: Object.keys(failed) },
+    }),
+  ];
+  // A transient outage passes: the index gets another chance later.
+  if (Number.isFinite(retryMs)) effects.push(tickAfter(`${RETRY_TOKEN}${renditionId}`, retryMs));
+  return [next, effects];
+}
+
+/**
+ * The retry of a failed index: forget the failure, so the rendition returns
+ * to arbitration and the selection fetches the index again when it needs
+ * it. Another failure excludes it again for another wait.
+ */
+function retry(state: DashSlice, renditionId: string): [DashSlice, Effect[]] {
+  if (!(renditionId in state.failed)) return [state, []];
+  const failed = { ...state.failed };
+  delete failed[renditionId];
   return [
-    next,
+    { ...state, failed },
     [
       feed({
         type: 'CONSTRAIN',
@@ -126,143 +160,156 @@ function unavailable(
   ];
 }
 
-const reduceDash: SliceReducer<DashSlice> = (slice, msg, kernel) => {
-  const state = slice ?? INITIAL;
+const createReduceDash =
+  (retryMs: number): SliceReducer<DashSlice> =>
+  (slice, msg, kernel) => {
+    const state = slice ?? INITIAL;
 
-  if (msg.type === 'LOAD') {
-    return [
-      {
-        ...INITIAL,
-        manifestUrl: msg.url,
-        mimeType: msg.mimeType === undefined ? null : normalizeMimeType(msg.mimeType),
-      },
-      [],
-    ];
-  }
-  if (msg.type === 'UNLOAD' || msg.type === 'DETACH') {
-    return [INITIAL, []];
-  }
-
-  if (msg.type === 'SEGMENT_LOADED' && msg.trackId === 'manifest' && state.manifestUrl !== null) {
-    const fact = manifestFact(msg.bytes, state.manifestUrl, (text) => claims(state, text), parse);
-    return [state, fact === null ? [] : [feed(fact)]];
-  }
-
-  let next = state;
-
-  // The merge landed: the rendition is resolved in the kernel's
-  // presentation, or gone from it. Either way it is no longer pending.
-  if (msg.type === 'PLAYLIST_REFRESHED' && msg.renditionId !== undefined) {
-    const renditionId = msg.renditionId;
-    const token = `${INDEX_TOKEN}${renditionId}`;
-    if (token in next.pending) {
-      const pending = { ...next.pending };
-      delete pending[token];
-      next = { ...next, pending };
-    }
-  }
-
-  // A fetched sidx index resolves one Representation's segments.
-  if (msg.type === 'SEGMENT_LOADED' && msg.trackId in state.pending) {
-    const renditionId = state.pending[msg.trackId] as string;
-    const sidx =
-      kernel.presentation === null
-        ? null
-        : asSidx(findRendition(kernel.presentation, renditionId)?.rendition.segments);
-    const segments = sidx === null ? [] : sidxToSegments(new Uint8Array(msg.bytes), sidx);
-    if (sidx !== null && segments.length > 0) {
-      // Stays pending until the merge lands.
+    if (msg.type === 'LOAD') {
       return [
-        state,
+        {
+          ...INITIAL,
+          manifestUrl: msg.url,
+          mimeType: msg.mimeType === undefined ? null : normalizeMimeType(msg.mimeType),
+        },
+        [],
+      ];
+    }
+    if (msg.type === 'UNLOAD' || msg.type === 'DETACH') {
+      return [INITIAL, []];
+    }
+
+    if (msg.type === 'TICK' && msg.token.startsWith(RETRY_TOKEN)) {
+      return retry(state, msg.token.slice(RETRY_TOKEN.length));
+    }
+
+    if (msg.type === 'SEGMENT_LOADED' && msg.trackId === 'manifest' && state.manifestUrl !== null) {
+      const fact = manifestFact(msg.bytes, state.manifestUrl, (text) => claims(state, text), parse);
+      return [state, fact === null ? [] : [feed(fact)]];
+    }
+
+    let next = state;
+
+    // The merge landed: the rendition is resolved in the kernel's
+    // presentation, or gone from it. Either way it is no longer pending.
+    if (msg.type === 'PLAYLIST_REFRESHED' && msg.renditionId !== undefined) {
+      const renditionId = msg.renditionId;
+      const token = `${INDEX_TOKEN}${renditionId}`;
+      if (token in next.pending) {
+        const pending = { ...next.pending };
+        delete pending[token];
+        next = { ...next, pending };
+      }
+    }
+
+    // A fetched sidx index resolves one Representation's segments.
+    if (msg.type === 'SEGMENT_LOADED' && msg.trackId in state.pending) {
+      const renditionId = state.pending[msg.trackId] as string;
+      const sidx =
+        kernel.presentation === null
+          ? null
+          : asSidx(findRendition(kernel.presentation, renditionId)?.rendition.segments);
+      const segments = sidx === null ? [] : sidxToSegments(new Uint8Array(msg.bytes), sidx);
+      if (sidx !== null && segments.length > 0) {
+        // Stays pending until the merge lands.
+        return [
+          state,
+          [
+            feed({
+              type: 'PLAYLIST_REFRESHED',
+              trackId: renditionId,
+              renditionId,
+              mediaSequence: segments[0]?.seq ?? 0,
+              segments,
+            }),
+          ],
+        ];
+      }
+      const pending = { ...state.pending };
+      delete pending[msg.trackId];
+      // The rendition left the presentation (a reload replaced it): nothing to do.
+      if (sidx === null) return [{ ...state, pending }, []];
+      // An index with no segment can never be played from, and fetching the
+      // same bytes again gives the same answer.
+      const error: MatteboxError = {
+        category: 'media',
+        code: 'MEDIA_CONTAINER_INVALID',
+        fatal: false,
+        recoverable: false,
+        context: { renditionId, reason: 'sidx holds no segment' },
+      };
+      const [failed, failEffects] = unavailable(
+        { ...state, pending },
+        kernel,
+        renditionId,
+        error,
+        retryMs,
+      );
+      return [
+        failed,
         [
-          feed({
-            type: 'PLAYLIST_REFRESHED',
-            trackId: renditionId,
-            renditionId,
-            mediaSequence: segments[0]?.seq ?? 0,
-            segments,
-          }),
+          {
+            kind: 'emit',
+            event: 'error',
+            payload: {
+              category: error.category,
+              code: error.code,
+              fatal: false,
+              recoverable: false,
+              renditionId,
+            },
+          },
+          ...failEffects,
         ],
       ];
     }
-    const pending = { ...state.pending };
-    delete pending[msg.trackId];
-    // The rendition left the presentation (a reload replaced it): nothing to do.
-    if (sidx === null) return [{ ...state, pending }, []];
-    // An index with no segment can never be played from, and fetching the
-    // same bytes again gives the same answer.
-    const error: MatteboxError = {
-      category: 'media',
-      code: 'MEDIA_CONTAINER_INVALID',
-      fatal: false,
-      recoverable: false,
-      context: { renditionId, reason: 'sidx holds no segment' },
-    };
-    const [failed, failEffects] = unavailable({ ...state, pending }, kernel, renditionId, error);
-    return [
-      failed,
-      [
-        {
-          kind: 'emit',
-          event: 'error',
-          payload: {
-            category: error.category,
-            code: error.code,
-            fatal: false,
-            recoverable: false,
-            renditionId,
-          },
-        },
-        ...failEffects,
-      ],
-    ];
-  }
 
-  if (msg.type === 'SEGMENT_FAILED' && msg.trackId in state.pending) {
-    // The transport already retried under its policy; the kernel reported
-    // the failure. What is left is to stop relying on the rendition.
-    const renditionId = state.pending[msg.trackId] as string;
-    const pending = { ...state.pending };
-    delete pending[msg.trackId];
-    return unavailable({ ...state, pending }, kernel, renditionId, msg.error);
-  }
+    if (msg.type === 'SEGMENT_FAILED' && msg.trackId in state.pending) {
+      // The transport already retried under its policy; the kernel reported
+      // the failure. What is left is to stop relying on the rendition.
+      const renditionId = state.pending[msg.trackId] as string;
+      const pending = { ...state.pending };
+      delete pending[msg.trackId];
+      return unavailable({ ...state, pending }, kernel, renditionId, msg.error, retryMs);
+    }
 
-  // Look at the selection again when it changed: a manifest, a merge, a
-  // track or quality switch, a constraint. Each bumps the quality version.
-  // A suspended engine makes no request and keeps the old key, so RESUME
-  // fills what a selection during the freeze left lacking.
-  if (kernel.lifecycle.phase !== 'ready' || kernel.presentation === null) return [next, []];
-  const key = `${kernel.quality.version}:${kernel.quality.active}`;
-  if (key === next.seen && msg.type !== 'RESUME') return [next, []];
-  const effects: Effect[] = [];
-  const pending = { ...next.pending };
-  for (const rendition of neededIndexes(next, kernel)) {
-    const sidx = asSidx(rendition.segments);
-    if (sidx === null) continue;
-    const token = `${INDEX_TOKEN}${rendition.id}`;
-    pending[token] = rendition.id;
-    // The rendition rides along so a failure counts toward steering failover.
-    effects.push({
-      kind: 'fetch',
-      token,
-      url: sidx.url,
-      range: sidx.indexRange,
-      renditionId: rendition.id,
-    });
-  }
-  return [{ ...next, pending, seen: key }, effects];
-};
+    // Look at the selection again when it changed: a manifest, a merge, a
+    // track or quality switch, a constraint. Each bumps the quality version.
+    // A suspended engine makes no request and keeps the old key, so RESUME
+    // fills what a selection during the freeze left lacking.
+    if (kernel.lifecycle.phase !== 'ready' || kernel.presentation === null) return [next, []];
+    const key = `${kernel.quality.version}:${kernel.quality.active}`;
+    if (key === next.seen && msg.type !== 'RESUME') return [next, []];
+    const effects: Effect[] = [];
+    const pending = { ...next.pending };
+    for (const rendition of neededIndexes(next, kernel)) {
+      const sidx = asSidx(rendition.segments);
+      if (sidx === null) continue;
+      const token = `${INDEX_TOKEN}${rendition.id}`;
+      pending[token] = rendition.id;
+      // The rendition rides along so a failure counts toward steering failover.
+      effects.push({
+        kind: 'fetch',
+        token,
+        url: sidx.url,
+        range: sidx.indexRange,
+        renditionId: rendition.id,
+      });
+    }
+    return [{ ...next, pending, seen: key }, effects];
+  };
 
 /**
  * The stage factory. `mattebox({ stages: [dashCmaf()] })` is all a consumer
  * needs for DASH-CMAF VOD, templated or on-demand.
  */
-export default function dashCmaf(): Stage {
+export default function dashCmaf(options: DashCmafOptions = {}): Stage {
+  const retryMs = (options.unavailableRetrySeconds ?? RETRY_SECONDS) * 1000;
   return {
     name: 'dash-cmaf',
     provides: ['dash-cmaf', ...MANIFEST_TYPES],
     install(ctx) {
-      ctx.reduce('dash', reduceDash as SliceReducer);
+      ctx.reduce('dash', createReduceDash(retryMs) as SliceReducer);
     },
   };
 }

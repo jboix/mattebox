@@ -24,14 +24,26 @@ import type { Presentation, Rendition } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
+import { RETRY_SECONDS } from '../adapter-shared.js';
 import { parseMediaPlaylist, refreshFor } from '../hls-cmaf/parse.js';
-import { RELOAD_FAILED, unavailableMessages } from '../hls-cmaf/unavailable.js';
+import { RELOAD_FAILED, readmitMessage, unavailableMessages } from '../hls-cmaf/unavailable.js';
 import { registerLiveNamespace } from '../live-shared.js';
 
 export type { LiveApi } from '../live-shared.js';
 
 const REFRESH_TOKEN = 'hls:live:refresh';
 const TICK_TOKEN = 'hls-live:reload';
+/** An abandoned playlist's retry, by one of its renditions: `hls-live:retry:<renditionId>`. */
+const RETRY_TOKEN = 'hls-live:retry:';
+
+export interface HlsLiveOptions {
+  /**
+   * Seconds before a live playlist whose reloads kept failing is tried
+   * again; its renditions sit out meanwhile. Infinity keeps them out until
+   * the next load. Defaults to 15.
+   */
+  readonly unavailableRetrySeconds?: number;
+}
 
 interface ReloadTarget {
   readonly url: string;
@@ -69,7 +81,7 @@ interface HlsLiveSlice {
   readonly suspended: boolean;
   /** Consecutive failed reloads per rendition. A success clears the count. */
   readonly failures: Readonly<Record<string, number>>;
-  /** Renditions that failed FAILURE_LIMIT times in a row and are no longer reloaded. */
+  /** Renditions that failed FAILURE_LIMIT times in a row and are not reloaded until their retry. */
   readonly abandoned: readonly string[];
 }
 
@@ -278,6 +290,7 @@ function reloadFailed(
   kernel: Readonly<KernelState>,
   renditionId: string,
   error: MatteboxError,
+  retryMs: number,
 ): [HlsLiveSlice, Effect[]] {
   const count = (state.failures[renditionId] ?? 0) + 1;
   const failures = { ...state.failures, [renditionId]: count };
@@ -313,6 +326,10 @@ function reloadFailed(
   };
   const effects = messages.map(feed);
   const failed = messages.some((m) => m.type === 'MANIFEST_FAILED');
+  // An outage that passes: the playlist gets another chance later.
+  if (!failed && Number.isFinite(retryMs)) {
+    effects.push(tickAfter(`${RETRY_TOKEN}${renditionId}`, retryMs));
+  }
   // The loop goes on with a new target; the tick picks it.
   if (isTarget && !failed && !state.tickPending) {
     return [{ ...next, tickPending: true }, [...effects, tick(2)]];
@@ -320,196 +337,224 @@ function reloadFailed(
   return [next, effects];
 }
 
-const reduceHlsLive: SliceReducer<HlsLiveSlice> = (slice, msg, kernel) => {
-  const state = slice ?? INITIAL;
+/**
+ * The retry of an abandoned playlist: every rendition that reads it returns
+ * to arbitration with a clean failure count, and the reload loop picks it up
+ * when it is the window rendition or a companion again.
+ */
+function retry(
+  state: HlsLiveSlice,
+  kernel: Readonly<KernelState>,
+  renditionId: string,
+): [HlsLiveSlice, Effect[]] {
+  const presentation = kernel.presentation;
+  if (presentation === null || !state.abandoned.includes(renditionId)) return [state, []];
+  const url = findRendition(presentation, renditionId)?.rendition.playlistUrl;
+  const sharing = url === undefined ? [renditionId] : renditionIdsAt(presentation, url);
+  const abandoned = state.abandoned.filter((id) => !sharing.includes(id));
+  const failures = { ...state.failures };
+  for (const id of sharing) delete failures[id];
+  const message = readmitMessage(kernel, RELOAD_FAILED, abandoned);
+  return [{ ...state, abandoned, failures }, message === null ? [] : [feed(message)]];
+}
 
-  if (msg.type === 'LOAD') return [{ ...INITIAL, manifestUrl: msg.url }, []];
-  if (msg.type === 'UNLOAD' || msg.type === 'DETACH') return [INITIAL, []];
+const createReduceHlsLive =
+  (retryMs: number): SliceReducer<HlsLiveSlice> =>
+  (slice, msg, kernel) => {
+    const state = slice ?? INITIAL;
 
-  if (msg.type === 'SUSPEND') {
-    const effects: Effect[] = [];
-    if (state.tickPending) effects.push({ kind: 'abort', token: TICK_TOKEN });
-    if (state.inflight !== null) {
-      effects.push({ kind: 'abort', token: refreshToken(state.inflight) });
+    if (msg.type === 'LOAD') return [{ ...INITIAL, manifestUrl: msg.url }, []];
+    if (msg.type === 'UNLOAD' || msg.type === 'DETACH') return [INITIAL, []];
+
+    if (msg.type === 'SUSPEND') {
+      const effects: Effect[] = [];
+      if (state.tickPending) effects.push({ kind: 'abort', token: TICK_TOKEN });
+      if (state.inflight !== null) {
+        effects.push({ kind: 'abort', token: refreshToken(state.inflight) });
+      }
+      return [{ ...state, tickPending: false, inflight: null, suspended: true }, effects];
     }
-    return [{ ...state, tickPending: false, inflight: null, suspended: true }, effects];
-  }
 
-  if (msg.type === 'RESUME') {
-    if (!state.suspended) return [state, []];
-    const resumed = { ...state, suspended: false };
-    if (state.target === null || kernel.presentation?.isLive !== true) return [resumed, []];
-    // Every active playlist is stale, the ladder included: reload them all
-    // now, and hold the window until the target lands so the kernel never
-    // schedules against the old one. The target's answer restarts the tick.
-    const effects: Effect[] = [reload(state.target)];
-    for (const companion of state.companions) {
-      effects.push(reload(companion));
+    if (msg.type === 'RESUME') {
+      if (!state.suspended) return [state, []];
+      const resumed = { ...state, suspended: false };
+      if (state.target === null || kernel.presentation?.isLive !== true) return [resumed, []];
+      // Every active playlist is stale, the ladder included: reload them all
+      // now, and hold the window until the target lands so the kernel never
+      // schedules against the old one. The target's answer restarts the tick.
+      const effects: Effect[] = [reload(state.target)];
+      for (const companion of state.companions) {
+        effects.push(reload(companion));
+      }
+      return [{ ...resumed, inflight: state.target.renditionId, awaitingTarget: true }, effects];
     }
-    return [{ ...resumed, inflight: state.target.renditionId, awaitingTarget: true }, effects];
-  }
 
-  // The presentation changed: the multivariant playlist landed, or a
-  // playlist merged into it. Read it from the kernel, which holds every
-  // merge so far.
-  if (
-    (msg.type === 'MANIFEST_LOADED' || msg.type === 'PLAYLIST_REFRESHED') &&
-    kernel.presentation !== null
-  ) {
-    const presentation = kernel.presentation;
-    if (!presentation.isLive) {
-      return [{ ...state, target: null, companions: [], inflight: null }, []];
+    // The presentation changed: the multivariant playlist landed, or a
+    // playlist merged into it. Read it from the kernel, which holds every
+    // merge so far.
+    if (
+      (msg.type === 'MANIFEST_LOADED' || msg.type === 'PLAYLIST_REFRESHED') &&
+      kernel.presentation !== null
+    ) {
+      const presentation = kernel.presentation;
+      if (!presentation.isLive) {
+        return [{ ...state, target: null, companions: [], inflight: null }, []];
+      }
+      const rendition = windowRendition(presentation, kernel, state.abandoned);
+      const effects: Effect[] = [];
+      // The reload target: the rendition's own playlist when it has one, the
+      // manifest itself for a bare media-playlist source.
+      const url = rendition?.playlistUrl ?? state.manifestUrl;
+      const target =
+        url !== null && rendition !== null
+          ? { url, renditionId: rendition.id, ladder: false }
+          : state.target;
+      const companions = companionTargets(kernel, rendition, state.abandoned);
+      const switched =
+        state.target !== null && target !== null && target.renditionId !== state.target.renditionId;
+      let awaitingTarget = state.awaitingTarget;
+      let inflight = state.inflight;
+      if (switched && target !== null) {
+        // A quality switch moved the window onto a playlist last fetched at
+        // startup. Reload it now and hold the window until it lands. A reload
+        // of that very rendition already in flight serves the same purpose.
+        if (inflight !== target.renditionId) {
+          effects.push(reload(target));
+          inflight = target.renditionId;
+        }
+        awaitingTarget = true;
+      } else if (!awaitingTarget && rendition !== null) {
+        const window = windowFact(presentation, rendition, kernel);
+        if (window !== null) effects.push(window);
+      }
+      // Only a dead loop (startup, or after ENDLIST) starts one.
+      let tickPending = state.tickPending;
+      if (!tickPending && inflight === null && target !== null) {
+        effects.push(tick(presentation.live?.updatePeriod ?? 4));
+        tickPending = true;
+      }
+      return [{ ...state, target, companions, tickPending, inflight, awaitingTarget }, effects];
     }
-    const rendition = windowRendition(presentation, kernel, state.abandoned);
-    const effects: Effect[] = [];
-    // The reload target: the rendition's own playlist when it has one, the
-    // manifest itself for a bare media-playlist source.
-    const url = rendition?.playlistUrl ?? state.manifestUrl;
-    const target =
-      url !== null && rendition !== null
-        ? { url, renditionId: rendition.id, ladder: false }
-        : state.target;
-    const companions = companionTargets(kernel, rendition, state.abandoned);
-    const switched =
-      state.target !== null && target !== null && target.renditionId !== state.target.renditionId;
-    let awaitingTarget = state.awaitingTarget;
-    let inflight = state.inflight;
-    if (switched && target !== null) {
-      // A quality switch moved the window onto a playlist last fetched at
-      // startup. Reload it now and hold the window until it lands. A reload
-      // of that very rendition already in flight serves the same purpose.
+
+    if (msg.type === 'TICK' && msg.token.startsWith(RETRY_TOKEN)) {
+      return retry(state, kernel, msg.token.slice(RETRY_TOKEN.length));
+    }
+
+    if (msg.type === 'TICK' && msg.token === TICK_TOKEN) {
+      // A tick that fired before its abort landed reloads nothing.
+      if (state.suspended || state.target === null || kernel.presentation?.isLive !== true) {
+        return [{ ...state, tickPending: false, inflight: null }, []];
+      }
+      let target: ReloadTarget | null = state.target;
+      let awaitingTarget = state.awaitingTarget;
+      if (state.abandoned.includes(target.renditionId)) {
+        // The target was given up. Arbitration already moved off it; reload
+        // the rendition playing now and hold the window until it answers.
+        const rendition = windowRendition(kernel.presentation, kernel, state.abandoned);
+        target =
+          rendition?.playlistUrl !== undefined
+            ? { url: rendition.playlistUrl, renditionId: rendition.id, ladder: false }
+            : null;
+        if (target === null) return [{ ...state, tickPending: false, inflight: null }, []];
+        awaitingTarget = true;
+      }
+      const effects: Effect[] = [];
+      let inflight = state.inflight;
+      // One target reload at a time: a second in flight would answer twice
+      // and every answer schedules the next tick, forking the loop.
       if (inflight !== target.renditionId) {
         effects.push(reload(target));
         inflight = target.renditionId;
       }
-      awaitingTarget = true;
-    } else if (!awaitingTarget && rendition !== null) {
-      const window = windowFact(presentation, rendition, kernel);
-      if (window !== null) effects.push(window);
-    }
-    // Only a dead loop (startup, or after ENDLIST) starts one.
-    let tickPending = state.tickPending;
-    if (!tickPending && inflight === null && target !== null) {
-      effects.push(tick(presentation.live?.updatePeriod ?? 4));
-      tickPending = true;
-    }
-    return [{ ...state, target, companions, tickPending, inflight, awaitingTarget }, effects];
-  }
-
-  if (msg.type === 'TICK' && msg.token === TICK_TOKEN) {
-    // A tick that fired before its abort landed reloads nothing.
-    if (state.suspended || state.target === null || kernel.presentation?.isLive !== true) {
-      return [{ ...state, tickPending: false, inflight: null }, []];
-    }
-    let target: ReloadTarget | null = state.target;
-    let awaitingTarget = state.awaitingTarget;
-    if (state.abandoned.includes(target.renditionId)) {
-      // The target was given up. Arbitration already moved off it; reload
-      // the rendition playing now and hold the window until it answers.
-      const rendition = windowRendition(kernel.presentation, kernel, state.abandoned);
-      target =
-        rendition?.playlistUrl !== undefined
-          ? { url: rendition.playlistUrl, renditionId: rendition.id, ladder: false }
-          : null;
-      if (target === null) return [{ ...state, tickPending: false, inflight: null }, []];
-      awaitingTarget = true;
-    }
-    const effects: Effect[] = [];
-    let inflight = state.inflight;
-    // One target reload at a time: a second in flight would answer twice
-    // and every answer schedules the next tick, forking the loop.
-    if (inflight !== target.renditionId) {
-      effects.push(reload(target));
-      inflight = target.renditionId;
-    }
-    for (const companion of state.companions) {
-      if (companion.ladder && state.round % LADDER_EVERY !== 0) continue;
-      effects.push(reload(companion));
-    }
-    // The target's answer schedules the next tick.
-    return [
-      { ...state, target, awaitingTarget, round: state.round + 1, tickPending: false, inflight },
-      effects,
-    ];
-  }
-
-  if (msg.type === 'SEGMENT_FAILED') {
-    const renditionId = renditionOfToken(msg.trackId);
-    if (renditionId === null) return [state, []];
-    return reloadFailed(state, kernel, renditionId, msg.error);
-  }
-
-  if (msg.type === 'SEGMENT_LOADED') {
-    const renditionId = renditionOfToken(msg.trackId);
-    if (renditionId === null || kernel.presentation === null) return [state, []];
-    const isTarget = state.target !== null && renditionId === state.target.renditionId;
-    const url = playlistUrlFor(kernel.presentation, renditionId, state.target);
-    if (url === null) return [state, []];
-    const text = new TextDecoder().decode(msg.bytes);
-    const media = parseMediaPlaylist(text, url);
-    if (media.playlist === null) {
-      return reloadFailed(state, kernel, renditionId, media.error);
-    }
-    const failures = { ...state.failures };
-    delete failures[renditionId];
-    // Merge, never re-parse: refreshFor rebases the new window onto the
-    // running timeline, which a fresh parse of a bare media playlist would
-    // throw away, stalling live once the first window drains. The kernel
-    // merges each fact into the presentation it holds when the fact lands,
-    // so a companion and the target answering together both keep theirs.
-    // Every rendition reading this playlist takes the same window.
-    const sharing =
-      findRendition(kernel.presentation, renditionId)?.rendition.playlistUrl === undefined
-        ? [renditionId]
-        : renditionIdsAt(kernel.presentation, url);
-    const effects: Effect[] = [];
-    for (const id of sharing) {
-      const refresh = refreshFor(kernel.presentation, id, media.playlist);
-      if (refresh !== null) effects.push(feed(refresh));
-    }
-    if (!isTarget) {
-      // A companion, or the target of a moment ago: merged in, nothing
-      // else. The window and the cadence belong to the target's reload.
-      return [{ ...state, failures }, effects];
+      for (const companion of state.companions) {
+        if (companion.ladder && state.round % LADDER_EVERY !== 0) continue;
+        effects.push(reload(companion));
+      }
+      // The target's answer schedules the next tick.
+      return [
+        { ...state, target, awaitingTarget, round: state.round + 1, tickPending: false, inflight },
+        effects,
+      ];
     }
 
-    const lastSegment = media.playlist.segments[media.playlist.segments.length - 1];
-    const endSeq = lastSegment?.seq ?? -1;
-    const changed = endSeq !== state.lastEndSeq;
-    const cadence = media.playlist.targetDuration || 4;
-    // RFC 8216: full cadence after a changed reload, half after an
-    // unchanged one. A switch's reload answers while the regular tick is
-    // still pending: that tick carries on, this answer adds none. The
-    // loop dies with ENDLIST.
-    let tickPending = state.tickPending;
-    if (!media.playlist.endlist && !tickPending && !state.suspended) {
-      effects.push(tick(changed ? cadence : cadence / 2));
-      tickPending = true;
+    if (msg.type === 'SEGMENT_FAILED') {
+      const renditionId = renditionOfToken(msg.trackId);
+      if (renditionId === null) return [state, []];
+      return reloadFailed(state, kernel, renditionId, msg.error, retryMs);
     }
-    return [
-      {
-        ...state,
-        failures,
-        lastEndSeq: endSeq,
-        tickPending,
-        inflight: null,
-        awaitingTarget: false,
-      },
-      effects,
-    ];
-  }
 
-  return [state, []];
-};
+    if (msg.type === 'SEGMENT_LOADED') {
+      const renditionId = renditionOfToken(msg.trackId);
+      if (renditionId === null || kernel.presentation === null) return [state, []];
+      const isTarget = state.target !== null && renditionId === state.target.renditionId;
+      const url = playlistUrlFor(kernel.presentation, renditionId, state.target);
+      if (url === null) return [state, []];
+      const text = new TextDecoder().decode(msg.bytes);
+      const media = parseMediaPlaylist(text, url);
+      if (media.playlist === null) {
+        return reloadFailed(state, kernel, renditionId, media.error, retryMs);
+      }
+      const failures = { ...state.failures };
+      delete failures[renditionId];
+      // Merge, never re-parse: refreshFor rebases the new window onto the
+      // running timeline, which a fresh parse of a bare media playlist would
+      // throw away, stalling live once the first window drains. The kernel
+      // merges each fact into the presentation it holds when the fact lands,
+      // so a companion and the target answering together both keep theirs.
+      // Every rendition reading this playlist takes the same window.
+      const sharing =
+        findRendition(kernel.presentation, renditionId)?.rendition.playlistUrl === undefined
+          ? [renditionId]
+          : renditionIdsAt(kernel.presentation, url);
+      const effects: Effect[] = [];
+      for (const id of sharing) {
+        const refresh = refreshFor(kernel.presentation, id, media.playlist);
+        if (refresh !== null) effects.push(feed(refresh));
+      }
+      if (!isTarget) {
+        // A companion, or the target of a moment ago: merged in, nothing
+        // else. The window and the cadence belong to the target's reload.
+        return [{ ...state, failures }, effects];
+      }
+
+      const lastSegment = media.playlist.segments[media.playlist.segments.length - 1];
+      const endSeq = lastSegment?.seq ?? -1;
+      const changed = endSeq !== state.lastEndSeq;
+      const cadence = media.playlist.targetDuration || 4;
+      // RFC 8216: full cadence after a changed reload, half after an
+      // unchanged one. A switch's reload answers while the regular tick is
+      // still pending: that tick carries on, this answer adds none. The
+      // loop dies with ENDLIST.
+      let tickPending = state.tickPending;
+      if (!media.playlist.endlist && !tickPending && !state.suspended) {
+        effects.push(tick(changed ? cadence : cadence / 2));
+        tickPending = true;
+      }
+      return [
+        {
+          ...state,
+          failures,
+          lastEndSeq: endSeq,
+          tickPending,
+          inflight: null,
+          awaitingTarget: false,
+        },
+        effects,
+      ];
+    }
+
+    return [state, []];
+  };
 
 /** The stage factory. Requires hls-cmaf; the loader enforces it. */
-export default function hlsLive(): Stage {
+export default function hlsLive(options: HlsLiveOptions = {}): Stage {
+  const retryMs = (options.unavailableRetrySeconds ?? RETRY_SECONDS) * 1000;
   return {
     name: 'hls-live',
     provides: ['hls-live'],
     requires: ['hls-cmaf'],
     install(ctx) {
-      ctx.reduce('hls-live', reduceHlsLive as SliceReducer);
+      ctx.reduce('hls-live', createReduceHlsLive(retryMs) as SliceReducer);
       registerLiveNamespace(ctx);
     },
   };

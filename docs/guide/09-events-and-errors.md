@@ -103,6 +103,29 @@ recovery({
 
 Load it in production. Skip it only when you would rather see the failure.
 
+## Playlists and indexes that fail
+
+The protocol stages handle a media playlist or segment index that fails
+after the transport's retries, or that holds no segment. Its renditions sit
+out, and playback moves to the others. After 15 seconds they return, and
+the playlist or index is fetched again when the selection needs it. The
+load fails only when a video track has no rendition left.
+
+| Stage       | Fails on                                   |
+| ----------- | ------------------------------------------ |
+| `hls-cmaf`  | A media playlist that fails or is empty    |
+| `dash-cmaf` | A segment index that fails or is empty     |
+| `hls-live`  | A live playlist whose reloads keep failing |
+
+Each takes `unavailableRetrySeconds`. `Infinity` keeps the renditions out
+until the next load.
+
+```ts
+hlsCmaf({ unavailableRetrySeconds: 30 });
+dashCmaf({ unavailableRetrySeconds: 30 });
+hlsLive({ unavailableRetrySeconds: Infinity });
+```
+
 ## Example
 
 A player with a status line and a retry button.
