@@ -97,7 +97,7 @@ protected.
 Every preset except `kernel` includes the same base: on
 demand and live playback, adaptive quality with a size cap and bandwidth
 memory, recovery, content steering, alternate audio with codec switching,
-WebVTT subtitles, CEA-608 captions, CMAF live timing, program date time,
+WebVTT subtitles, forced subtitles, CEA-608 captions, CMAF live timing, program date time,
 and the codec probe. The HLS lines add AES-128 segment decryption.
 `-ts` adds the transmuxer, packed audio, and ID3 metadata. `-drm` adds the
 three EME stages. `full` is `dual-ts-drm` plus the four stages below, and

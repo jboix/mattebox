@@ -32,6 +32,7 @@ const BASE = [
   'alt-audio',
   'text-webvtt',
   'text-webvtt-segmented',
+  'forced-subtitles',
   'cmaf-timing',
   'pdt',
   'mp4-box',
@@ -71,7 +72,7 @@ describe('the preset matrix', () => {
   it('full carries every stage of the catalogue, each name once', () => {
     const names = full.stages().map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(30);
+    expect(names.length).toBe(31);
   });
 
   it('every call returns fresh stage instances', () => {

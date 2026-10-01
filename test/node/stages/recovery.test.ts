@@ -14,6 +14,7 @@ function compose(...stages: Stage[]) {
       element: {} as HTMLMediaElement,
       registerSink: () => undefined,
       registerParser: () => undefined,
+      capabilities: () => [],
       registerTransform: () => undefined,
       registerNamespace: () => undefined,
       registerChooser: () => undefined,

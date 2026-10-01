@@ -95,6 +95,7 @@ function compose(stages: readonly Stage[], hooks: Parameters<typeof createReduce
       element: {} as HTMLMediaElement,
       registerSink: () => undefined,
       registerParser: () => undefined,
+      capabilities: () => [],
       registerTransform: () => undefined,
       registerNamespace: () => undefined,
       registerChooser: () => undefined,

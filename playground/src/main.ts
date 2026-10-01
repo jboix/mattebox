@@ -229,6 +229,7 @@ function composedReducer() {
       element: video,
       registerSink: () => undefined,
       registerParser: () => undefined,
+      capabilities: () => [],
       registerTransform: () => undefined,
       registerNamespace: () => undefined,
       getState: () => initialState(),

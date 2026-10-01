@@ -78,6 +78,9 @@ export function createStageContext(deps: ContextDeps): { ctx: StageContext; tear
       deps.bus.registerSink(contentType, factory as never);
       sinkTypes.push(contentType);
     },
+    capabilities() {
+      return deps.bus.capabilities();
+    },
     registerParser(mimeType, parse) {
       deps.bus.registerParser(mimeType, parse);
       parserTypes.push(mimeType);

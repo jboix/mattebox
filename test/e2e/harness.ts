@@ -23,6 +23,7 @@ import codecSwitch from '../../src/stages/codec-switch/index.js';
 import contentSteering from '../../src/stages/content-steering/index.js';
 import emeCenc from '../../src/stages/eme-cenc/index.js';
 import emeCore from '../../src/stages/eme-core/index.js';
+import forcedSubtitles from '../../src/stages/forced-subtitles/index.js';
 import metaId3 from '../../src/stages/meta-id3/index.js';
 import mp4Box from '../../src/stages/mp4-box/index.js';
 import nalScan from '../../src/stages/nal-scan/index.js';
@@ -32,7 +33,16 @@ import textCea608 from '../../src/stages/text-cea608/index.js';
 import textWebvtt from '../../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../../src/stages/text-webvtt-segmented/index.js';
 
-export type Source = 'hls' | 'dash' | 'hls-live' | 'dash-live' | 'steer' | 'ts' | 'aac' | 'bare';
+export type Source =
+  | 'hls'
+  | 'dash'
+  | 'hls-live'
+  | 'dash-live'
+  | 'steer'
+  | 'ts'
+  | 'aac'
+  | 'bare'
+  | 'forced';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
 export interface BootOptions {
@@ -81,6 +91,8 @@ const sources: Record<Source, () => string> = {
   aac: () => '/streams/aac/master.m3u8',
   // A media playlist alone: no master, so no CODECS for the SourceBuffer.
   bare: () => `/streams/${flavor}/low.m3u8`,
+  // The HLS stream with its subtitle playlist also listed as a forced track.
+  forced: () => `/streams/${flavor}/master-forced.m3u8`,
 };
 
 const live: Array<{ player: Player; stop: () => void }> = [];
@@ -161,6 +173,7 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
   if (src === 'ts' || src === 'aac' || options.ts === true) {
     stages.push(tsTransmux(), packedAudio(), metaId3());
   }
+  if (src === 'forced') stages.push(forcedSubtitles());
   if (options.abr === true) stages.push(abr());
   if (options.capsize === true) stages.push(abrCapSize());
   if (options.drm === true) {

@@ -62,6 +62,7 @@ function composeWithAbr(options?: Parameters<typeof abr>[0]) {
     element: {} as HTMLMediaElement,
     registerSink: () => undefined,
     registerParser: () => undefined,
+    capabilities: () => [],
     registerTransform: () => undefined,
     registerNamespace: () => undefined,
     getState: () => initialState(),

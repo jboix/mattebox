@@ -101,6 +101,8 @@ export interface StageContext {
   registerNamespace(name: string, api: object): void;
   /** A read-only snapshot of kernel state, for namespace getters. Reducers receive state as an argument; this is for the impure side. */
   getState(): Readonly<KernelState>;
+  /** What the composition's stages provide, so a stage can tell which track formats something plays. */
+  capabilities(): readonly Capability[];
   /**
    * Observes and may rewrite outgoing requests (the draft's url, headers,
    * and timeout are mutable). Steering and cmcd live here. Unregistered

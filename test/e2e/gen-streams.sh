@@ -103,10 +103,20 @@ EOF
 EOF
 }
 
+# The flavor's master with its subtitle playlist listed a second time as a
+# forced track, for the forced-subtitles stage.
+forced_master() { # flavor
+  sed 's|^#EXT-X-MEDIA:TYPE=SUBTITLES,.*$|&\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English forced",LANGUAGE="en",AUTOSELECT=YES,FORCED=YES,URI="subs.m3u8"|' \
+    "$OUT/$1/master.m3u8" > "$OUT/$1/master-forced.m3u8"
+}
+
 if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
    [ -f "$OUT/h264-dash/manifest.mpd" ] && [ -f "$OUT/vp9-dash/manifest.mpd" ] &&
    [ -f "$OUT/ts/master.m3u8" ] && [ -f "$OUT/aac/master.m3u8" ]; then
   [ -f "$OUT/h264-images/chapters/chapters.json" ] || images_flavor
+  for flavor in h264 vp9; do
+    [ -f "$OUT/$flavor/master-forced.m3u8" ] || forced_master "$flavor"
+  done
   echo "streams present, skipping generation"
   exit 0
 fi
@@ -200,6 +210,7 @@ high.m3u8
 #EXT-X-STREAM-INF:BANDWIDTH=600000,RESOLUTION=640x360,CODECS="$top,$astring",AUDIO="aud-hi",SUBTITLES="subs"
 top.m3u8
 EOF
+  forced_master "$flavor"
   subs "$flavor"
 }
 

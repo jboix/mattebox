@@ -25,6 +25,7 @@ import contentSteering from '../stages/content-steering/index.js';
 import emeCenc from '../stages/eme-cenc/index.js';
 import emeCore from '../stages/eme-core/index.js';
 import emeFairplay from '../stages/eme-fairplay/index.js';
+import forcedSubtitles from '../stages/forced-subtitles/index.js';
 import metaId3 from '../stages/meta-id3/index.js';
 import mp4Box from '../stages/mp4-box/index.js';
 import nalScan from '../stages/nal-scan/index.js';
@@ -70,6 +71,7 @@ export function base(): Stage[] {
     altAudio(),
     textWebvtt(),
     textWebvttSegmented(),
+    forcedSubtitles(),
     cmafTiming(),
     pdt(),
     mp4Box(),

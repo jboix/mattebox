@@ -77,3 +77,21 @@ it('16. deselecting stops the pipeline and clears cues', async () => {
   expect(player.engine.tracks.active('text')).toBeNull();
   expect(player.engine.error?.code ?? null).toBeNull();
 });
+
+it('17. a forced track shows without a selection and returns after Off', async () => {
+  const player = await boot({ src: 'forced' });
+  await play(player, 1, 10_000);
+  // Nothing selected text: the forced track for the English audio shows.
+  await until(() => player.engine.tracks.active('text')?.forced === true, 'forced track', 5_000);
+  await until(() => trackWithCues(player.video) !== undefined, 'forced cues', 15_000);
+  // A regular subtitle replaces it.
+  const regular = player.engine.tracks.available.find(
+    (t) => t.contentType === 'text' && t.forced !== true,
+  );
+  player.engine.tracks.select(regular?.id as string);
+  await until(() => player.engine.tracks.active('text')?.id === regular?.id, 'regular', 5_000);
+  // Off brings the forced track back.
+  player.engine.tracks.deselect('text');
+  await until(() => player.engine.tracks.active('text')?.forced === true, 'forced again', 5_000);
+  expect(player.engine.error?.code ?? null).toBeNull();
+});

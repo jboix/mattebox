@@ -92,6 +92,37 @@ picking in the browser's caption menu selects in the engine. Turning
 captions off there deselects. Listen for `tracks:selected` to update your
 own menu.
 
+## Forced subtitles
+
+A forced subtitle track carries text the audio does not, such as translated
+signs. The `forced-subtitles` stage shows it while no regular subtitle is
+selected, Off included. It follows Apple's rule:
+
+- It shows the forced track whose language matches the audio, then one
+  whose primary language matches (`en` for `en-US`), then the first forced
+  track.
+- It switches the forced track when the audio language changes.
+- A regular subtitle you select replaces it.
+- It picks only a format a loaded stage plays.
+
+Every preset includes it. To keep forced subtitles off, pass
+`enabled: false`. To switch them at runtime, set
+`engine.forcedSubtitles.enabled`.
+
+```ts
+import forcedSubtitles from 'mattebox/stages/forced-subtitles';
+
+const engine = mattebox({
+  stages: [hlsCmaf(), textWebvtt(), textWebvttSegmented(), forcedSubtitles({ enabled: false })],
+});
+
+engine.forcedSubtitles.enabled = true;
+```
+
+While a forced track shows, `engine.tracks.active('text')` returns it, with
+`forced: true`. A subtitle menu lists the tracks without `forced` and shows
+Off for a forced track.
+
 ## CEA-608 captions
 
 CEA-608 captions are inside the video bitstream. `text-cea608` decodes them
