@@ -11,8 +11,11 @@
  * that group — preferring the current language so a group switch does not
  * silently change languages.
  *
- * A user language choice is remembered and re-applied on top of every
- * group switch, so `alt-audio` never fights `engine.tracks.select`.
+ * A user choice is remembered as its language and its characteristics, and
+ * re-applied on top of every group switch, so `alt-audio` never fights
+ * `engine.tracks.select`: an audio description track chosen in one group
+ * stays an audio description track in the next, not the regular track in
+ * the same language.
  */
 
 import { scheduled } from '../../kernel/effects.js';
@@ -24,14 +27,17 @@ import type { Stage } from '../../types/stage.js';
 interface AltAudioSlice {
   /** The language the user last chose, sticky across group switches. */
   readonly preferredLang: string | null;
+  /** The characteristic tags of the track the user last chose. */
+  readonly preferredCharacteristics: readonly string[];
 }
 
-const INITIAL: AltAudioSlice = { preferredLang: null };
+const INITIAL: AltAudioSlice = { preferredLang: null, preferredCharacteristics: [] };
 
 interface AudioTrackInfo {
   readonly id: string;
   readonly group: string;
   readonly lang: string | null;
+  readonly characteristics: readonly string[];
   readonly isDefault: boolean;
 }
 
@@ -45,6 +51,7 @@ function audioTracks(kernel: Readonly<KernelState>): readonly AudioTrackInfo[] {
         id: track.id,
         group: groupOf(track.id),
         lang: track.lang ?? null,
+        characteristics: track.characteristics ?? [],
         isDefault: track.role === 'main',
       });
     }
@@ -60,16 +67,27 @@ function requiredGroup(kernel: Readonly<KernelState>): string | null {
   return coupling?.requires.audio ?? null;
 }
 
-/** Picks the audio track in `group`, preferring a language, then default, then first. */
+function sameTags(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((tag) => b.includes(tag));
+}
+
+/**
+ * Picks the audio track in `group`: the preferred language with the
+ * preferred characteristics, then the language alone, then default, then
+ * first.
+ */
 function pickInGroup(
   tracks: readonly AudioTrackInfo[],
   group: string,
-  preferredLang: string | null,
+  preference: AltAudioSlice,
 ): AudioTrackInfo | null {
   const inGroup = tracks.filter((t) => t.group === group);
   if (inGroup.length === 0) return null;
+  const { preferredLang, preferredCharacteristics } = preference;
+  const sameLang = preferredLang !== null ? inGroup.filter((t) => t.lang === preferredLang) : [];
   return (
-    (preferredLang !== null ? inGroup.find((t) => t.lang === preferredLang) : undefined) ??
+    sameLang.find((t) => sameTags(t.characteristics, preferredCharacteristics)) ??
+    sameLang[0] ??
     inGroup.find((t) => t.isDefault) ??
     (inGroup[0] as AudioTrackInfo)
   );
@@ -89,11 +107,17 @@ const reduceAltAudio: SliceReducer<AltAudioSlice> = (slice, msg, kernel) => {
     return [INITIAL, []];
   }
 
-  // Remember an explicit audio selection as a language preference.
+  // Remember an explicit audio selection as a language and its characteristics.
   if (msg.type === 'SELECT_TRACK') {
     const chosen = audioTracks(kernel).find((t) => t.id === msg.trackId);
-    if (chosen?.lang != null) return [{ preferredLang: chosen.lang }, []];
-    return [state, []];
+    if (chosen === undefined) return [state, []];
+    return [
+      {
+        preferredLang: chosen.lang ?? state.preferredLang,
+        preferredCharacteristics: chosen.characteristics,
+      },
+      [],
+    ];
   }
 
   // A manifest or playlist landing, or a video rendition change, may require
@@ -109,7 +133,7 @@ const reduceAltAudio: SliceReducer<AltAudioSlice> = (slice, msg, kernel) => {
     const tracks = audioTracks(kernel);
     const activeInfo = tracks.find((t) => t.id === active);
     if (activeInfo !== undefined && activeInfo.group === group) return [state, []];
-    const target = pickInGroup(tracks, group, state.preferredLang);
+    const target = pickInGroup(tracks, group, state);
     if (target === undefined || target === null || target.id === active) return [state, []];
     return [state, [select(target.id)]];
   }

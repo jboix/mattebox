@@ -66,13 +66,20 @@ function rendition(id: string, bitrate: number, codecs: string): Rendition {
   };
 }
 
-function audioTrack(id: string, group: string, lang: string, isDefault: boolean) {
+function audioTrack(
+  id: string,
+  group: string,
+  lang: string,
+  isDefault: boolean,
+  characteristics?: readonly string[],
+) {
   return {
     id: `${group}:${id}`,
     contentType: 'audio' as const,
     mimeType: 'audio/mp4',
     lang,
     role: isDefault ? 'main' : 'alternate',
+    ...(characteristics !== undefined ? { characteristics } : {}),
     protection: null,
     renditions: [
       {
@@ -124,12 +131,16 @@ function coupledPresentation(): Presentation {
 }
 
 let versionSeq = 1;
-function ready(activeVideo: string, activeAudio: string): KernelState {
+function ready(
+  activeVideo: string,
+  activeAudio: string,
+  presentation: Presentation = coupledPresentation(),
+): KernelState {
   const base = initialState();
   return {
     ...base,
     lifecycle: { phase: 'ready' },
-    presentation: coupledPresentation(),
+    presentation,
     tracks: {
       active: new Map([
         ['video', 'video-main'],
@@ -202,6 +213,47 @@ describe('alt-audio: group following', () => {
       (e) => e.kind === 'schedule' && (e.then as Message).type === 'SELECT_TRACK',
     );
     expect((select as { then: { trackId: string } } | undefined)?.then.trackId).toBe('aud-hi:fr');
+  });
+
+  it('an audio description choice stays audio description across a group switch', () => {
+    const AD = ['public.accessibility.describes-video'];
+    const base = coupledPresentation();
+    const period = base.periods[0] as Presentation['periods'][number];
+    // Each group has an English twin that describes the picture.
+    const presentation: Presentation = {
+      ...base,
+      periods: [
+        {
+          ...period,
+          tracks: [
+            ...period.tracks,
+            audioTrack('en-ad', 'aud-lo', 'en', false, AD),
+            audioTrack('en-ad', 'aud-hi', 'en', false, AD),
+          ],
+        },
+      ],
+    };
+    let state = ready('v-lo', 'aud-lo:en', presentation);
+    [state] = reduce(state, { type: 'SELECT_TRACK', trackId: 'aud-lo:en-ad' });
+    state = {
+      ...state,
+      tracks: {
+        ...state.tracks,
+        active: new Map([
+          ['video', 'video-main'],
+          ['audio', 'aud-lo:en-ad'],
+        ]),
+      },
+      quality: { ...state.quality, active: 'v-hi' },
+    };
+    // Same language in both twins: the characteristics pick the AD one.
+    const { effects } = settle(reduce, ...reduce(state, load));
+    const select = effects.find(
+      (e) => e.kind === 'schedule' && (e.then as Message).type === 'SELECT_TRACK',
+    );
+    expect((select as { then: { trackId: string } } | undefined)?.then.trackId).toBe(
+      'aud-hi:en-ad',
+    );
   });
 });
 
