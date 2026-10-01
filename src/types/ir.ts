@@ -57,6 +57,13 @@ export interface Segment {
   readonly byteRange?: ByteRange;
   /** True when a timestamp discontinuity begins at this segment (HLS EXT-X-DISCONTINUITY). */
   readonly discontinuity?: boolean;
+  /**
+   * The HLS Discontinuity Sequence Number, on the segments that open an
+   * epoch: a playlist's first segment and each discontinuity. It names the
+   * epoch the same in every rendition (RFC 8216 §4.3.3.3), where start
+   * times summed from each playlist's durations drift apart.
+   */
+  readonly discontinuitySequence?: number;
   /** Present while an AES-128 key applies; absent after METHOD=NONE or when never keyed. */
   readonly key?: SegmentKey;
 }

@@ -12,6 +12,7 @@ import {
   segmentAtTime,
   timestampOffsetFor,
 } from '../../../src/kernel/timeline.js';
+import { parseMediaPlaylist } from '../../../src/protocols/hls-cmaf/parse.js';
 
 function listRendition(segments: Rendition['segments']): Rendition {
   return { id: 'v-1', bitrate: 1, codecs: 'avc1', mimeType: 'video/mp4', segments };
@@ -119,6 +120,48 @@ describe('media and presentation time mapping', () => {
     expect(epochKey([opening, video], opening)).toBe('p0');
     expect(epochKey([opening, video], video)).toBe('p0:20');
     expect(epochKey([opening, audio], audio)).toBe('p0:20');
+  });
+
+  it('epochKey names an epoch by its discontinuity sequence number when the manifest gives one', () => {
+    // Durations that sum to starts rounding to different seconds: 20.6 and 19.4.
+    const video = { periodId: 'p0', firstSeq: 7, presentationStart: 20.6, mediaStart: 0 };
+    const audio = { periodId: 'p0', firstSeq: 11, presentationStart: 19.4, mediaStart: 0 };
+    const opening = { periodId: 'p0', firstSeq: 0, presentationStart: 0, mediaStart: 0 };
+    expect(epochKey([opening, video], video)).not.toBe(epochKey([opening, audio], audio));
+    const numbered = (epoch: typeof video, n: number) => ({ ...epoch, discontinuitySequence: n });
+    expect(epochKey([opening, video], numbered(video, 8))).toBe('p0:d8');
+    expect(epochKey([opening, audio], numbered(audio, 8))).toBe('p0:d8');
+    expect(epochKey([opening], numbered(opening, 7))).toBe('p0:d7');
+  });
+
+  it('buildEpochs carries the number from the segment that opens each epoch', () => {
+    const playlist = parseMediaPlaylist(
+      [
+        '#EXTM3U',
+        '#EXT-X-TARGETDURATION:4',
+        '#EXT-X-DISCONTINUITY-SEQUENCE:3',
+        '#EXT-X-DISCONTINUITY',
+        '#EXTINF:4.0,',
+        'a.m4s',
+        '#EXTINF:4.0,',
+        'b.m4s',
+        '#EXT-X-DISCONTINUITY',
+        '#EXTINF:4.0,',
+        'c.m4s',
+      ].join('\n'),
+      'https://cdn.example/media.m3u8',
+    ).playlist;
+    const rendition = {
+      id: 'r',
+      bitrate: 1,
+      codecs: null,
+      mimeType: 'video/mp4',
+      segments: playlist?.segments ?? [],
+    };
+    const epochs = buildEpochs([{ period: { id: 'p0', start: 0, tracks: [] }, rendition }]);
+    // A tag on the first segment counts: it keeps its number as the window slides.
+    expect(epochs.map((e) => e.discontinuitySequence)).toEqual([4, 5]);
+    expect(epochs.map((e) => epochKey(epochs, e))).toEqual(['p0:d4', 'p0:d5']);
   });
 });
 

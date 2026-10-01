@@ -3,6 +3,7 @@
 exports[`URL resolution at parse time > merging a media playlist fills segments, init, duration, and liveness 1`] = `
 [
   {
+    "discontinuitySequence": 0,
     "duration": 6,
     "key": {
       "iv": "00000000000000000000000000000001",
@@ -73,6 +74,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
                     "end": 15318,
                     "start": 720,
                   },
+                  "discontinuitySequence": 0,
                   "duration": 2,
                   "seq": 0,
                   "start": 0,
@@ -816,6 +818,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-bipbop-basic
               "mimeType": "video/mp4",
               "segments": [
                 {
+                  "discontinuitySequence": 0,
                   "duration": 9.97667,
                   "seq": 0,
                   "start": 0,
@@ -2061,6 +2064,7 @@ exports[`golden corpus: every fixture parses to a stable IR > edge-byterange.m3u
                     "end": 100719,
                     "start": 720,
                   },
+                  "discontinuitySequence": 0,
                   "duration": 4,
                   "seq": 0,
                   "start": 0,
@@ -2120,6 +2124,7 @@ exports[`golden corpus: every fixture parses to a stable IR > edge-discontinuity
               "mimeType": "video/mp4",
               "segments": [
                 {
+                  "discontinuitySequence": 7,
                   "duration": 4,
                   "seq": 0,
                   "start": 0,
@@ -2133,6 +2138,7 @@ exports[`golden corpus: every fixture parses to a stable IR > edge-discontinuity
                 },
                 {
                   "discontinuity": true,
+                  "discontinuitySequence": 8,
                   "duration": 4,
                   "seq": 2,
                   "start": 8,
@@ -2256,6 +2262,7 @@ exports[`golden corpus: every fixture parses to a stable IR > edge-image-stream-
               "mimeType": "video/mp4",
               "segments": [
                 {
+                  "discontinuitySequence": 0,
                   "duration": 60,
                   "seq": 1,
                   "start": 0,
@@ -2418,6 +2425,7 @@ exports[`golden corpus: every fixture parses to a stable IR > edge-packed-audio-
               "mimeType": "audio/mp4",
               "segments": [
                 {
+                  "discontinuitySequence": 0,
                   "duration": 10,
                   "seq": 100,
                   "start": 0,
@@ -2574,6 +2582,7 @@ exports[`golden corpus: every fixture parses to a stable IR > equiv-local-h264-h
               "mimeType": "video/mp4",
               "segments": [
                 {
+                  "discontinuitySequence": 0,
                   "duration": 4,
                   "seq": 0,
                   "start": 0,
@@ -2718,6 +2727,7 @@ exports[`golden corpus: every fixture parses to a stable IR > equiv-local-h264-l
               "mimeType": "video/mp4",
               "segments": [
                 {
+                  "discontinuitySequence": 0,
                   "duration": 4,
                   "seq": 0,
                   "start": 0,
@@ -2946,6 +2956,7 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-rsi-style-m
               "mimeType": "video/mp4",
               "segments": [
                 {
+                  "discontinuitySequence": 0,
                   "duration": 6,
                   "key": {
                     "iv": "00000000000000000000000000000001",
@@ -3170,6 +3181,7 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-rts-vod-med
               "mimeType": "video/mp4",
               "segments": [
                 {
+                  "discontinuitySequence": 0,
                   "duration": 2,
                   "seq": 1,
                   "start": 0,

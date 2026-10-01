@@ -170,6 +170,8 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
   let pendingDuration: number | null = null;
   let pendingRange: ByteRange | null = null;
   let pendingDiscontinuity = false;
+  // RFC 8216 §4.3.3.3: the first segment's number, 0 without the tag.
+  let discontinuitySequence = 0;
   let previousRangeEnd: number | null = null;
   let start = 0;
   let seq = 0;
@@ -200,6 +202,9 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
           break;
         case 'EXT-X-DISCONTINUITY':
           pendingDiscontinuity = true;
+          break;
+        case 'EXT-X-DISCONTINUITY-SEQUENCE':
+          discontinuitySequence = Number(line.value) || 0;
           break;
         case 'EXT-X-MAP': {
           const uri = line.attributes.URI;
@@ -244,6 +249,12 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
       dateAnchor = { wallClock: pendingDate, presentationTime: start };
     }
     pendingDate = null;
+    // Each discontinuity adds one, also one on the first segment: the tag
+    // stays there until the segment leaves the window, and then the server
+    // raises the base (RFC 8216 §6.2.2), so a segment keeps its number
+    // across reloads. hls.js counts the same way.
+    if (pendingDiscontinuity) discontinuitySequence += 1;
+    const opensEpoch = segments.length === 0 || pendingDiscontinuity;
     segments.push({
       seq,
       start,
@@ -251,6 +262,7 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
       url: resolve(line.uri, baseUrl),
       ...(pendingRange !== null ? { byteRange: pendingRange } : {}),
       ...(pendingDiscontinuity ? { discontinuity: true } : {}),
+      ...(opensEpoch ? { discontinuitySequence } : {}),
       ...(pendingKey !== null ? { key: pendingKey } : {}),
     });
     previousRangeEnd = pendingRange !== null ? pendingRange.end : previousRangeEnd;

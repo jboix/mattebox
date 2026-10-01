@@ -32,6 +32,8 @@ export interface TimelineEpoch {
    * prediction once a segment lands: see `reconciledOffset`.
    */
   readonly mediaStart: number;
+  /** The number the manifest gives this epoch, the same in every rendition, when it gives one. */
+  readonly discontinuitySequence?: number;
 }
 
 export interface PeriodRendition {
@@ -86,6 +88,9 @@ export function buildEpochs(parts: readonly PeriodRendition[]): readonly Timelin
           firstSeq: segment.seq,
           presentationStart: segment.start,
           mediaStart,
+          ...(segment.discontinuitySequence !== undefined
+            ? { discontinuitySequence: segment.discontinuitySequence }
+            : {}),
         });
         open = true;
       }
@@ -117,14 +122,19 @@ export function presentationToMedia(presentationTime: number, epoch: TimelineEpo
 }
 
 /**
- * The name every track of a period shares for one epoch: the period alone
- * for the epoch that opens it, the period and the discontinuity's
- * presentation start after that. Sequence numbers are no part of it,
- * because each rendition numbers its own playlist (RFC 8216 §6.2.2 aligns
- * discontinuities across renditions in time, not in sequence). The start
- * is rounded to the second, since each playlist sums its own durations.
+ * The name every track of a period shares for one epoch. The manifest's
+ * discontinuity sequence number names it exactly, the same in every
+ * rendition (RFC 8216 §4.3.3.3). Without one: the period alone for the
+ * epoch that opens it, the period and the discontinuity's presentation
+ * start after that. Media sequence numbers are no part of it, because each
+ * rendition numbers its own playlist. The start is rounded to the second,
+ * since each playlist sums its own durations, so two starts that round
+ * apart are two names.
  */
 export function epochKey(epochs: readonly TimelineEpoch[], epoch: TimelineEpoch): string {
+  if (epoch.discontinuitySequence !== undefined) {
+    return `${epoch.periodId}:d${epoch.discontinuitySequence}`;
+  }
   const opening = epochs[0] === epoch;
   return opening ? epoch.periodId : `${epoch.periodId}:${Math.round(epoch.presentationStart)}`;
 }
