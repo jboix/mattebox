@@ -23,6 +23,7 @@ import { parse, parseMediaPlaylist } from '../../src/protocols/hls-cmaf/parse.js
 import emeCore from '../../src/stages/eme-core/index.js';
 import emeFairplay from '../../src/stages/eme-fairplay/index.js';
 import type { HdrApi } from '../../src/stages/hdr/index.js';
+import type { QoeMetrics } from '../../src/stages/qoe/index.js';
 import type { Requirement } from '../../src/types/stage.js';
 import { renderCapabilities } from './capabilities.js';
 import type { CatalogueEntry, StreamEntry } from './catalogue.js';
@@ -1535,6 +1536,15 @@ function renderEngineInfo(): void {
         if (view.source === null) return 'no HDR renditions';
         const display = view.display === null ? 'unknown' : view.display ? 'HDR' : 'SDR';
         return `${view.allowed ? 'allowed' : 'excluded'} by ${view.source} · display ${display}`;
+      })(),
+    ],
+    [
+      'qoe',
+      (() => {
+        const q = (engine as { qoe?: QoeMetrics }).qoe;
+        if (q === undefined) return 'stage not loaded';
+        const startup = q.startupTime === null ? '—' : `${q.startupTime.toFixed(2)} s`;
+        return `startup ${startup} · ${q.rebuffers} rebuffers (${q.rebufferDuration.toFixed(1)} s) · ${q.switches} switches`;
       })(),
     ],
     ['capabilities', [...engine.capabilities()].join(', ') || '(none)'],

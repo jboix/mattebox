@@ -43,6 +43,7 @@ import metaId3 from '../../src/stages/meta-id3/index.js';
 import mp4Box from '../../src/stages/mp4-box/index.js';
 import nalScan from '../../src/stages/nal-scan/index.js';
 import pdt from '../../src/stages/pdt/index.js';
+import qoe from '../../src/stages/qoe/index.js';
 import recovery from '../../src/stages/recovery/index.js';
 import textCea608 from '../../src/stages/text-cea608/index.js';
 import textCea708 from '../../src/stages/text-cea708/index.js';
@@ -112,6 +113,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('stages', textCea708),
   built('stages', textTtml),
   built('stages', () => hdr()),
+  built('stages', qoe),
 ];
 
 /**

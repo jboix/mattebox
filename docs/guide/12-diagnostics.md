@@ -13,6 +13,32 @@ engine.stats.trace();     // the entries kept, oldest first, none unless traceCa
 The snapshot holds the presentation, the buffers, the scheduling state, the
 active tracks, the quality state, and the live window.
 
+## QoE metrics
+
+The `qoe` stage measures the viewer's experience and keeps it in the page.
+Nothing is sent anywhere. It is in `full`; add it to another preset with
+`stages`.
+
+```ts
+import qoe from 'mattebox/stages/qoe';
+
+const engine = hls({ stages: [qoe()] });
+engine.on('qoe:metrics', ({ reason, startupTime, rebuffers, rebufferDuration, switches }) => {
+  analytics.record(reason, { startupTime, rebuffers, rebufferDuration, switches });
+});
+```
+
+| Field              | Meaning                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| `startupTime`      | Seconds from the load, or the first play request if later, to the first frame playing |
+| `rebuffers`        | Times playback waited for data after startup, seeks excluded                          |
+| `rebufferDuration` | Seconds spent waiting, the current wait included                                      |
+| `switches`         | Video quality changes after the first selection                                       |
+
+`qoe:metrics` fires with `reason` set to `'startup'`, `'rebuffer'`, or
+`'switch'` each time a figure changes. `engine.qoe` reads the current
+figures. A new load starts them over.
+
 ## The trace
 
 Every message the engine handles, and the effects it produced, is a trace
