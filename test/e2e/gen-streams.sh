@@ -118,6 +118,26 @@ accessibility_master() { # flavor
     "$OUT/$1/master.m3u8" > "$OUT/$1/master-accessibility.m3u8"
 }
 
+# The h264 flavor's lowest rung with CEA-608 captions on all four channels,
+# behind two masters: one declares CC1 to CC4, one declares nothing, so the
+# caption stage reveals the channels on their first cue. ffmpeg cannot write
+# 608 captions; inject-captions.mjs adds the SEI to the encoded segments.
+captions_master() {
+  local dir="$OUT/h264"
+  node "$ROOT/test/e2e/inject-captions.mjs" "$dir" low
+  local cc='#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="English",LANGUAGE="en",INSTREAM-ID="CC1"
+#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="English 2",LANGUAGE="en",INSTREAM-ID="CC2"
+#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="Español",LANGUAGE="es",INSTREAM-ID="CC3"
+#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="Español 2",LANGUAGE="es",INSTREAM-ID="CC4"'
+  local audio='#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud-lo",NAME="English",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,URI="aud-lo-en.m3u8"'
+  local codecs
+  codecs=$(grep -m1 -o 'CODECS="[^"]*"' "$dir/master.m3u8")
+  printf '#EXTM3U\n#EXT-X-VERSION:7\n%s\n%s\n#EXT-X-STREAM-INF:BANDWIDTH=150000,RESOLUTION=320x180,%s,AUDIO="aud-lo",CLOSED-CAPTIONS="cc"\ncc-low.m3u8\n' \
+    "$cc" "$audio" "$codecs" > "$dir/master-captions.m3u8"
+  printf '#EXTM3U\n#EXT-X-VERSION:7\n%s\n#EXT-X-STREAM-INF:BANDWIDTH=150000,RESOLUTION=320x180,%s,AUDIO="aud-lo"\ncc-low.m3u8\n' \
+    "$audio" "$codecs" > "$dir/master-captions-undeclared.m3u8"
+}
+
 if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
    [ -f "$OUT/h264-dash/manifest.mpd" ] && [ -f "$OUT/vp9-dash/manifest.mpd" ] &&
    [ -f "$OUT/ts/master.m3u8" ] && [ -f "$OUT/aac/master.m3u8" ]; then
@@ -125,6 +145,7 @@ if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
   for flavor in h264 vp9; do
     [ -f "$OUT/$flavor/master-accessibility.m3u8" ] || accessibility_master "$flavor"
   done
+  [ -f "$OUT/h264/master-captions.m3u8" ] || captions_master
   echo "streams present, skipping generation"
   exit 0
 fi
@@ -295,6 +316,7 @@ H_LOW=$(variant h264 low 320x180 150k libx264 -profile:v baseline)
 H_HIGH=$(variant h264 high 480x270 300k libx264 -profile:v baseline)
 H_TOP=$(variant h264 top 640x360 600k libx264 -profile:v baseline)
 master h264 "$H_LOW" "$H_HIGH" "$H_TOP" aac mp4a.40.2
+captions_master
 dash h264 libx264 -profile:v baseline
 
 V_LOW=$(variant vp9 low 320x180 150k libvpx-vp9 -deadline realtime -cpu-used 8)

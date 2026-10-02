@@ -42,7 +42,9 @@ export type Source =
   | 'ts'
   | 'aac'
   | 'bare'
-  | 'forced';
+  | 'forced'
+  | 'captions'
+  | 'captions-undeclared';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
 export interface BootOptions {
@@ -93,6 +95,9 @@ const sources: Record<Source, () => string> = {
   bare: () => `/streams/${flavor}/low.m3u8`,
   // The HLS stream with forced, SDH, audio description and original tracks added.
   forced: () => `/streams/${flavor}/master-accessibility.m3u8`,
+  // H.264 only: CEA-608 rides in H.264 SEI, which VP9 has no place for.
+  captions: () => '/streams/h264/master-captions.m3u8',
+  'captions-undeclared': () => '/streams/h264/master-captions-undeclared.m3u8',
 };
 
 const live: Array<{ player: Player; stop: () => void }> = [];

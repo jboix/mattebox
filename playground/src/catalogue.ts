@@ -220,6 +220,18 @@ const LOCAL_STREAMS: readonly StreamEntry[] =
           topic: 'local',
           tags: ['generated', 'forced subtitles', 'track characteristics'],
         },
+        {
+          label: 'h264, CEA-608 captions on CC1 to CC4, declared',
+          url: local('h264/master-captions.m3u8'),
+          topic: 'local',
+          tags: ['generated', 'in-band captions'],
+        },
+        {
+          label: 'h264, CEA-608 captions on CC1 to CC4, undeclared',
+          url: local('h264/master-captions-undeclared.m3u8'),
+          topic: 'local',
+          tags: ['generated', 'in-band captions'],
+        },
         { label: 'h264, three rungs', url: local('h264-dash/manifest.mpd'), topic: 'local' },
         { label: 'vp9, three rungs', url: local('vp9-dash/manifest.mpd'), topic: 'local' },
         {

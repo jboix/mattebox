@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
 import type { Player } from './harness.js';
-import { boot, disposeAll, play, sleep, until } from './harness.js';
+import { boot, decodesH264, disposeAll, play, sleep, until } from './harness.js';
 
 // The third pipeline, end to end: segmented WebVTT through the sink
 // interface, rendered by native TextTracks, offsets applied per segment.
@@ -100,4 +100,50 @@ it('17. a forced track shows without a selection and returns after Off', async (
   await until(() => player.engine.tracks.active('text')?.lang === 'fr', 'French forced', 5_000);
   expect(player.engine.tracks.active('text')?.forced).toBe(true);
   expect(player.engine.error?.code ?? null).toBeNull();
+});
+
+// CEA-608 in the video: the corpus injects "CCn k" on all four channels of
+// segment k, from frame 6 (CC1, CC3) and 18 (CC2, CC4) to about 3.33 s.
+function nativeCaption(video: HTMLVideoElement, label: string): TextTrack | undefined {
+  return [...video.textTracks].find((t) => t.kind === 'captions' && t.label === label);
+}
+
+it.skipIf(!decodesH264)('18. declared CC1 to CC4 are tracks, each with its own cues', async () => {
+  const player = await boot({ src: 'captions' });
+  await play(player, 2, 15_000);
+  const captions = player.engine.tracks.available.filter((t) => t.role === 'caption');
+  expect(captions.map((t) => t.instreamId)).toEqual(['CC1', 'CC2', 'CC3', 'CC4']);
+  expect(captions.every((t) => player.engine.tracks.selectable(t.id))).toBe(true);
+  for (const channel of ['CC1', 'CC2', 'CC3', 'CC4']) {
+    await until(
+      () => (nativeCaption(player.video, channel)?.cues?.length ?? 0) > 0,
+      `${channel} cues`,
+      15_000,
+    );
+    const first = nativeCaption(player.video, channel)?.cues?.[0] as VTTCue;
+    expect(first.text).toBe(`${channel} 0`);
+    expect(first.endTime).toBeCloseTo(100 / 30, 1);
+  }
+  // Selecting the Spanish channel shows it; the others stay hidden.
+  const spanish = captions.find((t) => t.instreamId === 'CC3');
+  player.engine.tracks.select(spanish?.id as string);
+  await until(() => nativeCaption(player.video, 'CC3')?.mode === 'showing', 'CC3 showing', 5_000);
+  expect(nativeCaption(player.video, 'CC3')?.language).toBe('es');
+  expect(nativeCaption(player.video, 'CC1')?.mode).toBe('hidden');
+  expect(player.engine.error?.code ?? null).toBeNull();
+});
+
+it.skipIf(!decodesH264)('19. undeclared channels become tracks on their first cue', async () => {
+  const player = await boot({ src: 'captions-undeclared' });
+  expect(player.engine.tracks.available.some((t) => t.role === 'caption')).toBe(false);
+  await play(player, 2, 15_000);
+  await until(
+    () => player.engine.tracks.available.filter((t) => t.role === 'caption').length === 4,
+    'four caption tracks',
+    15_000,
+  );
+  const ids = player.engine.tracks.available.filter((t) => t.role === 'caption').map((t) => t.id);
+  expect(ids.sort()).toEqual(['cea608:CC1', 'cea608:CC2', 'cea608:CC3', 'cea608:CC4']);
+  player.engine.tracks.select('cea608:CC2');
+  await until(() => nativeCaption(player.video, 'CC2')?.mode === 'showing', 'CC2 showing', 5_000);
 });
