@@ -9,7 +9,13 @@ import {
   parseDuration,
   sidxToSegments,
 } from '../../../src/protocols/dash-cmaf/parse.js';
-import type { IndexedSegments, Rendition, SidxSegments, Track } from '../../../src/types/ir.js';
+import type {
+  IndexedSegments,
+  Rendition,
+  Segment,
+  SidxSegments,
+  Track,
+} from '../../../src/types/ir.js';
 
 const FIXTURES = join(import.meta.dirname, '../../fixtures/manifests');
 const BASE = 'https://cdn.example/path/manifest.mpd';
@@ -598,5 +604,128 @@ describe('EventStream', () => {
         data: 'splice body',
       },
     ]);
+  });
+});
+
+describe('multi-period MPDs play as one presentation', () => {
+  const flat = () => {
+    const result = parse(fixture('edge-multiperiod.mpd'), BASE);
+    expect(result.error).toBeNull();
+    return result;
+  };
+  const track = (id: string) =>
+    flat().presentation?.periods[0]?.tracks.find((t) => t.id === id) as Track;
+
+  it('lists one stable set of tracks over one period spanning them all', () => {
+    const presentation = flat().presentation;
+    expect(presentation?.periods).toHaveLength(1);
+    expect(presentation?.duration).toBe(30);
+    expect(presentation?.periods[0]?.tracks.map((t) => t.id)).toEqual([
+      'as-1',
+      'as-2',
+      'as-3',
+      'as-4',
+    ]);
+  });
+
+  it('chains each rendition through every period, a discontinuity at each boundary', () => {
+    const [lo, hi] = track('as-1').renditions as [Rendition, Rendition];
+    const segments = lo.segments as readonly Segment[];
+    expect(segments.map((s) => [s.seq, s.start, s.duration])).toEqual([
+      [0, 0, 4],
+      [1, 4, 4],
+      [2, 8, 4],
+      [3, 12, 3],
+      [4, 15, 3],
+      [5, 18, 4],
+      [6, 22, 4],
+      [7, 26, 4],
+    ]);
+    expect(segments.map((s) => s.discontinuitySequence)).toEqual([
+      0,
+      undefined,
+      undefined,
+      1,
+      undefined,
+      2,
+      undefined,
+      undefined,
+    ]);
+    expect(segments[3]).toMatchObject({
+      discontinuity: true,
+      url: 'https://cdn.example/mp/ad/ad-v1/1.m4s',
+    });
+    // The ad's init travels with its segments; the content's own init needs no entry.
+    expect(segments[3]?.init).toEqual({ url: 'https://cdn.example/mp/ad/ad-v1/init.mp4' });
+    expect(segments[5]?.init).toBeUndefined();
+    expect(segments[5]?.url).toBe('https://cdn.example/mp/c1/v-lo/4.m4s');
+    // Both rungs take the ad's one rendition.
+    expect((hi.segments as readonly Segment[])[3]?.url).toBe(
+      'https://cdn.example/mp/ad/ad-v1/1.m4s',
+    );
+  });
+
+  it('fills a period without the language from its closest audio, and leaves text with a gap', () => {
+    const french = track('as-3').renditions[0]?.segments as readonly Segment[];
+    expect(french.map((s) => s.url.split('/mp/')[1])).toEqual([
+      'c1/a-fr/1.m4s',
+      'c1/a-fr/2.m4s',
+      'c1/a-fr/3.m4s',
+      'ad/ad-a1/1.m4s',
+      'ad/ad-a1/2.m4s',
+      'c1/a-fr/4.m4s',
+      'c1/a-fr/5.m4s',
+      'c1/a-fr/6.m4s',
+    ]);
+    const subs = track('as-4').renditions[0]?.segments as readonly Segment[];
+    expect(subs.map((s) => [s.start, s.duration, s.timeOffset])).toEqual([
+      [0, 12, undefined],
+      [18, 12, 18],
+    ]);
+  });
+
+  it('leaves out a period of another codec family, with a warning naming both and the period', () => {
+    const mpd = fixture('edge-multiperiod.mpd').replace(
+      'codecs="avc1.42c01e"',
+      'codecs="hvc1.1.6.L93.B0"',
+    );
+    const result = parse(mpd, BASE);
+    expect(result.error).toBeNull();
+    expect(result.presentation !== null && 'warnings' in result ? result.warnings : []).toEqual([
+      {
+        category: 'media',
+        code: 'MEDIA_CODEC_MISMATCH',
+        fatal: false,
+        recoverable: true,
+        context: {
+          kind: 'family',
+          declared: 'avc1.4d401f',
+          probed: 'hvc1.1.6.L93.B0',
+          period: 'ad',
+          start: 12,
+          end: 18,
+        },
+      },
+    ]);
+    const segments = result.presentation?.periods[0]?.tracks[0]?.renditions[0]
+      ?.segments as readonly Segment[];
+    expect(segments.map((s) => s.start)).toEqual([0, 4, 8, 18, 22, 26]);
+  });
+
+  it('keeps the first period alone for a live MPD and for SegmentBase periods', () => {
+    const live = fixture('edge-multiperiod.mpd').replace(
+      'type="static"',
+      'type="dynamic" availabilityStartTime="2026-01-01T00:00:00Z"',
+    );
+    expect(
+      parse(live, BASE).presentation?.periods[0]?.tracks[0]?.renditions[0]?.segments,
+    ).not.toBeInstanceOf(Array);
+    const based = fixture('edge-multiperiod.mpd').replace(
+      '<Representation id="ad-v1" bandwidth="1500000" width="1280" height="720"/>',
+      '<Representation id="ad-v1" bandwidth="1500000"><BaseURL>ad.mp4</BaseURL><SegmentBase indexRange="800-999"><Initialization range="0-799"/></SegmentBase></Representation>',
+    );
+    const single = parse(based, BASE).presentation;
+    expect(single?.duration).toBe(30);
+    expect(single?.periods[0]?.duration).toBe(12);
   });
 });

@@ -12,7 +12,7 @@ function compose(...factories: Array<() => Stage>) {
   const slices: Array<readonly [string, SliceReducer]> = [];
   for (const factory of factories) {
     factory().install({
-      element: {} as HTMLMediaElement,
+      element: new EventTarget() as unknown as HTMLMediaElement,
       registerSink: () => undefined,
       registerParser: () => undefined,
       capabilities: () => [],

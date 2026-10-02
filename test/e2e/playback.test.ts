@@ -98,3 +98,19 @@ it('47. a SegmentList MPD plays and seeks, segment by segment URL', async () => 
   );
   expect(player.engine.error?.code ?? null).toBeNull();
 });
+
+it('52. a three-period MPD plays across both boundaries as one presentation', async () => {
+  const player = await boot({ src: 'periods' });
+  const changed: unknown[] = [];
+  player.engine.on('tracks:changed', (payload) => changed.push(payload));
+  await play(player, 1, 5_000);
+  const tracks = player.engine.tracks.available.filter((t) => t.contentType === 'video');
+  expect(tracks.map((t) => t.id)).toEqual(['as-0']);
+  // The load's own tracks:changed is behind us; a boundary must add none.
+  changed.length = 0;
+  // Into the content just before the ad, then through the ad and back.
+  player.engine.dispatch({ type: 'SEEK', to: 10 });
+  await until(() => player.video.currentTime > 23 && !player.video.seeking, 'past the ad', 30_000);
+  expect(player.engine.error?.code ?? null).toBeNull();
+  expect(changed).toEqual([]);
+});

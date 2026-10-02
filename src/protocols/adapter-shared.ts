@@ -16,7 +16,12 @@ export const RETRY_SECONDS = 15;
 
 /** A parse either yields a presentation or says why not. */
 export type ParseResult =
-  | { readonly presentation: Presentation; readonly error: null }
+  | {
+      readonly presentation: Presentation;
+      readonly error: null;
+      /** Non-fatal findings the adapter reports as error events on load. */
+      readonly warnings?: readonly MatteboxError[];
+    }
   | { readonly presentation: null; readonly error: MatteboxError };
 
 export function manifestError(reason: string): MatteboxError {

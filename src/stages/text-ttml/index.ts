@@ -17,7 +17,9 @@
  * that draws captions itself.
  */
 import { timedSamples, trackTimescales } from '../../containers/mp4-box/index.js';
+import { findRendition } from '../../kernel/presentation.js';
 import { joinTextSink } from '../../kernel/sinks/text-formats.js';
+import { segmentAt } from '../../kernel/timeline.js';
 import type { CueDescriptor } from '../../types/messages.js';
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage } from '../../types/stage.js';
@@ -32,10 +34,6 @@ function finish(cues: readonly CueDescriptor[], shift: number, end: number): Cue
     const stop = Math.min(cue.end + shift, end);
     return { ...cue, id: `${start.toFixed(3)}|${stop.toFixed(3)}|${cue.text}`, start, end: stop };
   });
-}
-
-function parseDocument(data: Uint8Array, meta: SegmentMeta): readonly CueDescriptor[] {
-  return finish(parseTtml(new TextDecoder().decode(data)), 0, meta.start + meta.duration);
 }
 
 export default function textTtml(): Stage {
@@ -64,6 +62,23 @@ export default function textTtml(): Stage {
           cues.push(...finish(parsed, relative ? sample.start : sample.shift, sample.end));
         }
         return cues;
+      }
+
+      /**
+       * A whole document, timed on the presentation timeline, or from its
+       * DASH period's start when the segment carries that offset.
+       */
+      function parseDocument(data: Uint8Array, meta: SegmentMeta): readonly CueDescriptor[] {
+        const site = findRendition(ctx.getState().presentation, meta.renditionId);
+        const offset =
+          site === null
+            ? undefined
+            : segmentAt(site.rendition.segments, meta.seq, site.period.start)?.timeOffset;
+        return finish(
+          parseTtml(new TextDecoder().decode(data)),
+          offset ?? 0,
+          meta.start + meta.duration,
+        );
       }
 
       return joinTextSink(ctx, { [TTML]: parseDocument, 'application/mp4;stpp': parseStpp });

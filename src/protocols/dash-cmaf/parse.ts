@@ -17,6 +17,7 @@
 import { findBox, parseSidx } from '../../containers/mp4-box/index.js';
 import { base64ToBytes } from '../../kernel/base64.js';
 import { resolveUrl as resolve } from '../../kernel/url.js';
+import type { MatteboxError } from '../../types/error.js';
 import type {
   ByteRange,
   ContentType,
@@ -35,6 +36,7 @@ import type {
 import type { ParseResult } from '../adapter-shared.js';
 import { manifestError } from '../adapter-shared.js';
 import { dimensions } from '../dimensions.js';
+import { flattenPeriods, type ParsedPeriod } from './periods.js';
 
 export type { ParseResult } from '../adapter-shared.js';
 
@@ -523,98 +525,65 @@ function contentTypeOf(adaptationSet: Element, mimeType: string): ContentType {
   return 'video';
 }
 
-/** parse an MPD document into a Presentation. Never throws. */
-export function parse(text: string, baseUrl: string): ParseResult {
-  let doc: Document;
-  try {
-    doc = new DOMParser().parseFromString(text, 'text/xml');
-  } catch (cause) {
-    return { presentation: null, error: { ...manifestError('unparsable XML'), cause } };
-  }
-  const mpd = doc.documentElement;
-  if (
-    mpd === null ||
-    mpd.localName !== 'MPD' ||
-    doc.getElementsByTagName('parsererror').length > 0
-  ) {
-    return { presentation: null, error: manifestError('not an MPD document') };
-  }
+/** A Period's place on the presentation timeline. */
+interface PeriodSpan {
+  readonly start: number;
+  readonly duration: number | null;
+}
 
-  const isLive = attr(mpd, 'type') === 'dynamic';
-  const mpdDuration = parseDuration(attr(mpd, 'mediaPresentationDuration'));
-  const mpdBase = applyBaseUrl(mpd, baseUrl);
-
-  // Live delivery metadata, normalized for the dash-live stage. The parser
-  // only records; wall-clock arithmetic happens in the stage, from facts.
-  let live: import('../../types/ir.js').LiveInfo | undefined;
-  if (isLive) {
-    const availabilityStart = Date.parse(attr(mpd, 'availabilityStartTime') ?? '');
-    const updatePeriod = parseDuration(attr(mpd, 'minimumUpdatePeriod'));
-    const timeShiftDepth = parseDuration(attr(mpd, 'timeShiftBufferDepth'));
-    const holdBack = parseDuration(attr(mpd, 'suggestedPresentationDelay'));
-    const timing = children(mpd, 'UTCTiming')[0];
-    live = {
-      ...(Number.isFinite(availabilityStart)
-        ? { availabilityStart: availabilityStart / 1000 }
-        : {}),
-      ...(updatePeriod !== null ? { updatePeriod } : {}),
-      ...(timeShiftDepth !== null ? { timeShiftDepth } : {}),
-      ...(holdBack !== null ? { holdBack } : {}),
-      ...(timing !== undefined
-        ? {
-            timeServer: {
-              scheme: attr(timing, 'schemeIdUri') ?? '',
-              value: attr(timing, 'value') ?? '',
-            },
-          }
-        : {}),
-    };
+/**
+ * Each Period's start and duration (ISO/IEC 23009-1 §5.3.2.1): `@start`, or
+ * where the previous period ends; `@duration`, or up to the next period's
+ * start, or up to the presentation's end.
+ */
+function periodSpans(elements: readonly Element[], mpdDuration: number | null): PeriodSpan[] {
+  const starts: Array<number | null> = [];
+  let previousEnd: number | null = 0;
+  for (const element of elements) {
+    const start: number | null = parseDuration(attr(element, 'start')) ?? previousEnd;
+    const duration = parseDuration(attr(element, 'duration'));
+    starts.push(start);
+    previousEnd = start !== null && duration !== null ? start + duration : null;
   }
+  return elements.map((element, i) => {
+    const start = starts[i] ?? 0;
+    const next = starts[i + 1];
+    const duration =
+      parseDuration(attr(element, 'duration')) ??
+      (next !== null && next !== undefined
+        ? next - start
+        : mpdDuration !== null
+          ? mpdDuration - start
+          : null);
+    return { start, duration };
+  });
+}
 
-  // ContentSteering plus BaseURL@serviceLocation alternatives: the bases
-  // map is the DASH pathway table the steering stage switches between.
-  let steering: import('../../types/ir.js').SteeringInfo | undefined;
-  const steeringElement = children(mpd, 'ContentSteering')[0];
-  if (steeringElement !== undefined) {
-    const serverUri = steeringElement.textContent?.trim() ?? '';
-    if (serverUri !== '') {
-      const bases: Record<string, string> = {};
-      for (const base of children(mpd, 'BaseURL')) {
-        const location = attr(base, 'serviceLocation');
-        const text = base.textContent?.trim();
-        if (location !== null && text !== undefined && text !== '') {
-          bases[location] = resolve(text, baseUrl);
-        }
-      }
-      steering = {
-        serverUri: resolve(serverUri, baseUrl),
-        ...(attr(steeringElement, 'defaultServiceLocation') !== null
-          ? { defaultPathway: attr(steeringElement, 'defaultServiceLocation') as string }
-          : {}),
-        ...(Object.keys(bases).length > 0 ? { bases } : {}),
-      };
-    }
-  }
+/**
+ * The earlier periods an AdaptationSet continues: DASH-IF IOP period
+ * continuity and connectivity (ISO/IEC 23009-1 §5.3.2.4), whose value names
+ * the earlier Period's id.
+ */
+function followsOf(adaptationSet: Element): string[] {
+  return children(adaptationSet, 'SupplementalProperty')
+    .filter((property) =>
+      /^urn:mpeg:dash:period-(continuity|connectivity):2015$/.test(
+        attr(property, 'schemeIdUri') ?? '',
+      ),
+    )
+    .flatMap((property) => (attr(property, 'value') ?? '').split(/[\s,]+/).filter((v) => v !== ''));
+}
 
-  const periodElements = children(mpd, 'Period');
-  const periodElement = periodElements[0];
-  if (periodElement === undefined) {
-    return {
-      presentation: null,
-      error: {
-        category: 'manifest',
-        code: 'MANIFEST_EMPTY',
-        fatal: true,
-        recoverable: false,
-        context: { reason: 'MPD with no Period' },
-      },
-    };
-  }
-
-  const periodStart = parseDuration(attr(periodElement, 'start')) ?? 0;
-  const periodDuration =
-    parseDuration(attr(periodElement, 'duration')) ??
-    (mpdDuration !== null ? mpdDuration - periodStart : null);
+function parsePeriod(
+  periodElement: Element,
+  span: PeriodSpan,
+  index: number,
+  mpdBase: string,
+  isLive: boolean,
+): ParsedPeriod | { readonly error: MatteboxError } {
+  const matching = new Map<string, { asId: string | null; follows: string[] }>();
+  const periodStart = span.start;
+  const periodDuration = span.duration;
   const periodBase = applyBaseUrl(periodElement, mpdBase);
 
   const tracks: Track[] = [];
@@ -701,7 +670,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
           periodDuration !== null ? Math.round(offset + periodDuration * timescale) : null,
       );
       if (list === 'invalid') {
-        return { presentation: null, error: manifestError(`bad SegmentList in '${id}'`) };
+        return { error: manifestError(`bad SegmentList in '${id}'`) };
       }
       if (list !== null) {
         // A single segment with no duration spans the period.
@@ -758,7 +727,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
           ? parseTimeline(template.timelineElement, periodEndUnits)
           : null;
       if (template.timelineElement !== null && timeline === null) {
-        return { presentation: null, error: manifestError(`bad SegmentTimeline in '${id}'`) };
+        return { error: manifestError(`bad SegmentTimeline in '${id}'`) };
       }
 
       let endSeq: number | null = null;
@@ -770,7 +739,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
           1 +
           Math.ceil((periodDuration * template.timescale) / template.duration);
       } else if (template.duration === null) {
-        return { presentation: null, error: manifestError(`no addressing for '${id}'`) };
+        return { error: manifestError(`no addressing for '${id}'`) };
       }
 
       const segments: IndexedSegments = {
@@ -827,8 +796,11 @@ export function parse(text: string, baseUrl: string): ParseResult {
       (roles.includes('forced-subtitle') || roles.includes('forced_subtitle'));
     // ISO/IEC 23009-1 §5.3.10: the first Label is the display name.
     const label = children(adaptationSet, 'Label')[0]?.textContent?.trim();
+    const trackId =
+      attr(adaptationSet, 'id') !== null ? `as-${attr(adaptationSet, 'id')}` : `as-i${asIndex}`;
+    matching.set(trackId, { asId: attr(adaptationSet, 'id'), follows: followsOf(adaptationSet) });
     tracks.push({
-      id: attr(adaptationSet, 'id') !== null ? `as-${attr(adaptationSet, 'id')}` : `as-i${asIndex}`,
+      id: trackId,
       contentType,
       mimeType,
       ...(label !== undefined && label !== '' ? { name: label } : {}),
@@ -868,6 +840,134 @@ export function parse(text: string, baseUrl: string): ParseResult {
     }
   }
 
+  const events = eventsOf(periodElement, periodStart);
+  return {
+    id: attr(periodElement, 'id') ?? `p${index}`,
+    start: periodStart,
+    duration: periodDuration,
+    tracks,
+    events,
+    matching,
+  };
+}
+
+/** parse an MPD document into a Presentation. Never throws. */
+export function parse(text: string, baseUrl: string): ParseResult {
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(text, 'text/xml');
+  } catch (cause) {
+    return { presentation: null, error: { ...manifestError('unparsable XML'), cause } };
+  }
+  const mpd = doc.documentElement;
+  if (
+    mpd === null ||
+    mpd.localName !== 'MPD' ||
+    doc.getElementsByTagName('parsererror').length > 0
+  ) {
+    return { presentation: null, error: manifestError('not an MPD document') };
+  }
+
+  const isLive = attr(mpd, 'type') === 'dynamic';
+  const mpdDuration = parseDuration(attr(mpd, 'mediaPresentationDuration'));
+  const mpdBase = applyBaseUrl(mpd, baseUrl);
+
+  // Live delivery metadata, normalized for the dash-live stage. The parser
+  // only records; wall-clock arithmetic happens in the stage, from facts.
+  let live: import('../../types/ir.js').LiveInfo | undefined;
+  if (isLive) {
+    const availabilityStart = Date.parse(attr(mpd, 'availabilityStartTime') ?? '');
+    const updatePeriod = parseDuration(attr(mpd, 'minimumUpdatePeriod'));
+    const timeShiftDepth = parseDuration(attr(mpd, 'timeShiftBufferDepth'));
+    const holdBack = parseDuration(attr(mpd, 'suggestedPresentationDelay'));
+    const timing = children(mpd, 'UTCTiming')[0];
+    live = {
+      ...(Number.isFinite(availabilityStart)
+        ? { availabilityStart: availabilityStart / 1000 }
+        : {}),
+      ...(updatePeriod !== null ? { updatePeriod } : {}),
+      ...(timeShiftDepth !== null ? { timeShiftDepth } : {}),
+      ...(holdBack !== null ? { holdBack } : {}),
+      ...(timing !== undefined
+        ? {
+            timeServer: {
+              scheme: attr(timing, 'schemeIdUri') ?? '',
+              value: attr(timing, 'value') ?? '',
+            },
+          }
+        : {}),
+    };
+  }
+
+  // ContentSteering plus BaseURL@serviceLocation alternatives: the bases
+  // map is the DASH pathway table the steering stage switches between.
+  let steering: import('../../types/ir.js').SteeringInfo | undefined;
+  const steeringElement = children(mpd, 'ContentSteering')[0];
+  if (steeringElement !== undefined) {
+    const serverUri = steeringElement.textContent?.trim() ?? '';
+    if (serverUri !== '') {
+      const bases: Record<string, string> = {};
+      for (const base of children(mpd, 'BaseURL')) {
+        const location = attr(base, 'serviceLocation');
+        const text = base.textContent?.trim();
+        if (location !== null && text !== undefined && text !== '') {
+          bases[location] = resolve(text, baseUrl);
+        }
+      }
+      steering = {
+        serverUri: resolve(serverUri, baseUrl),
+        ...(attr(steeringElement, 'defaultServiceLocation') !== null
+          ? { defaultPathway: attr(steeringElement, 'defaultServiceLocation') as string }
+          : {}),
+        ...(Object.keys(bases).length > 0 ? { bases } : {}),
+      };
+    }
+  }
+
+  const periodElements = children(mpd, 'Period');
+  if (periodElements.length === 0) {
+    return {
+      presentation: null,
+      error: {
+        category: 'manifest',
+        code: 'MANIFEST_EMPTY',
+        fatal: true,
+        recoverable: false,
+        context: { reason: 'MPD with no Period' },
+      },
+    };
+  }
+
+  const spans = periodSpans(periodElements, mpdDuration);
+  const parsed: ParsedPeriod[] = [];
+  for (let i = 0; i < periodElements.length; i += 1) {
+    // A live MPD keeps its first period: listing a later period's segments
+    // needs the clock, which the parser does not have.
+    if (i > 0 && isLive) break;
+    const result = parsePeriod(
+      periodElements[i] as Element,
+      spans[i] as PeriodSpan,
+      i,
+      mpdBase,
+      isLive,
+    );
+    if ('error' in result) return { presentation: null, error: result.error };
+    parsed.push(result);
+  }
+  // Several periods play as one: tracks matched across them, each boundary a
+  // discontinuity. A period the flattening cannot take keeps the first alone.
+  const flat = parsed.length > 1 ? flattenPeriods(parsed) : null;
+  const first = parsed[0] as ParsedPeriod;
+  const tracks = flat?.tracks ?? first.tracks;
+  const events = flat?.events ?? first.events;
+  const lastSpan = flat === null ? first : (parsed[parsed.length - 1] as ParsedPeriod);
+  const total =
+    flat === null
+      ? first.duration
+      : lastSpan.duration === null
+        ? null
+        : lastSpan.start + lastSpan.duration - first.start;
+
   if (tracks.length === 0) {
     return {
       presentation: null,
@@ -881,8 +981,6 @@ export function parse(text: string, baseUrl: string): ParseResult {
     };
   }
 
-  const events = eventsOf(periodElement, periodStart);
-
   return {
     presentation: {
       id: baseUrl,
@@ -890,9 +988,9 @@ export function parse(text: string, baseUrl: string): ParseResult {
       ...(mpdDuration !== null ? { duration: mpdDuration } : {}),
       periods: [
         {
-          id: attr(periodElement, 'id') ?? 'p0',
-          start: periodStart,
-          ...(periodDuration !== null ? { duration: periodDuration } : {}),
+          id: first.id,
+          start: first.start,
+          ...(total !== null ? { duration: total } : {}),
           tracks,
           ...(events.length > 0 ? { events } : {}),
         },
@@ -902,6 +1000,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
       ...(steering !== undefined ? { steering } : {}),
     },
     error: null,
+    ...(flat !== null && flat.warnings.length > 0 ? { warnings: flat.warnings } : {}),
   };
 }
 

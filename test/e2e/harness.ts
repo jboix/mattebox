@@ -55,6 +55,7 @@ export type Source =
   | 'dash-list'
   | 'cmsd'
   | 'names'
+  | 'periods'
   | 'metadata';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
@@ -121,6 +122,8 @@ const sources: Record<Source, () => string> = {
   cmsd: () => `/cmsd/streams/${flavor}/master.m3u8`,
   // The accessibility master with a localized-rendition-names dictionary.
   names: () => `/streams/${flavor}/master-names.m3u8`,
+  // Three periods: content, an ad on another clock and init, content again.
+  periods: () => `/streams/${flavor}-dash/manifest-periods.mpd`,
   // The TS stream with an ID3 stream in every segment and two date ranges.
   metadata: () => '/streams/ts/master-metadata.m3u8',
 };

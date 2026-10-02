@@ -92,7 +92,7 @@ function compose(stages: readonly Stage[], hooks: Parameters<typeof createReduce
   const slices: Array<readonly [string, SliceReducer]> = [];
   for (const stage of stages) {
     stage.install({
-      element: {} as HTMLMediaElement,
+      element: new EventTarget() as unknown as HTMLMediaElement,
       registerSink: () => undefined,
       registerParser: () => undefined,
       capabilities: () => [],

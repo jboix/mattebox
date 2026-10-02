@@ -66,6 +66,18 @@ export interface Segment {
   readonly discontinuitySequence?: number;
   /** Present while an AES-128 key applies; absent after METHOD=NONE or when never keyed. */
   readonly key?: SegmentKey;
+  /**
+   * The init segment this segment needs, when it is not its rendition's: a
+   * DASH period after the first, flattened into the rendition. The kernel
+   * appends only the rendition's init; the protocol stage puts this one in
+   * front of the segment.
+   */
+  readonly init?: SegmentRef;
+  /**
+   * Seconds to add to the times inside the segment's own bytes: text whose
+   * cues count from its DASH period's start rather than the presentation's.
+   */
+  readonly timeOffset?: number;
 }
 
 /**

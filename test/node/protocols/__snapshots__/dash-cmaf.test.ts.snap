@@ -1748,6 +1748,372 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > edge-eventstre
 }
 `;
 
+exports[`golden corpus: every MPD fixture parses to a stable IR > edge-multiperiod.mpd parses to a stable IR 1`] = `
+{
+  "couplings": [],
+  "duration": 30,
+  "id": "https://cdn.example/path/manifest.mpd",
+  "isLive": false,
+  "periods": [
+    {
+      "duration": 30,
+      "id": "content-1",
+      "start": 0,
+      "tracks": [
+        {
+          "contentType": "video",
+          "id": "as-1",
+          "mimeType": "video/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 500000,
+              "codecs": "avc1.4d401f",
+              "height": 360,
+              "id": "v-lo",
+              "init": {
+                "url": "https://cdn.example/mp/c1/v-lo/init.mp4",
+              },
+              "mimeType": "video/mp4",
+              "segments": [
+                {
+                  "discontinuity": false,
+                  "discontinuitySequence": 0,
+                  "duration": 4,
+                  "seq": 0,
+                  "start": 0,
+                  "url": "https://cdn.example/mp/c1/v-lo/1.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 1,
+                  "start": 4,
+                  "url": "https://cdn.example/mp/c1/v-lo/2.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 2,
+                  "start": 8,
+                  "url": "https://cdn.example/mp/c1/v-lo/3.m4s",
+                },
+                {
+                  "discontinuity": true,
+                  "discontinuitySequence": 1,
+                  "duration": 3,
+                  "init": {
+                    "url": "https://cdn.example/mp/ad/ad-v1/init.mp4",
+                  },
+                  "seq": 3,
+                  "start": 12,
+                  "url": "https://cdn.example/mp/ad/ad-v1/1.m4s",
+                },
+                {
+                  "duration": 3,
+                  "init": {
+                    "url": "https://cdn.example/mp/ad/ad-v1/init.mp4",
+                  },
+                  "seq": 4,
+                  "start": 15,
+                  "url": "https://cdn.example/mp/ad/ad-v1/2.m4s",
+                },
+                {
+                  "discontinuity": true,
+                  "discontinuitySequence": 2,
+                  "duration": 4,
+                  "seq": 5,
+                  "start": 18,
+                  "url": "https://cdn.example/mp/c1/v-lo/4.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 6,
+                  "start": 22,
+                  "url": "https://cdn.example/mp/c1/v-lo/5.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 7,
+                  "start": 26,
+                  "url": "https://cdn.example/mp/c1/v-lo/6.m4s",
+                },
+              ],
+              "width": 640,
+            },
+            {
+              "bitrate": 2000000,
+              "codecs": "avc1.4d401f",
+              "height": 720,
+              "id": "v-hi",
+              "init": {
+                "url": "https://cdn.example/mp/c1/v-hi/init.mp4",
+              },
+              "mimeType": "video/mp4",
+              "segments": [
+                {
+                  "discontinuity": false,
+                  "discontinuitySequence": 0,
+                  "duration": 4,
+                  "seq": 0,
+                  "start": 0,
+                  "url": "https://cdn.example/mp/c1/v-hi/1.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 1,
+                  "start": 4,
+                  "url": "https://cdn.example/mp/c1/v-hi/2.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 2,
+                  "start": 8,
+                  "url": "https://cdn.example/mp/c1/v-hi/3.m4s",
+                },
+                {
+                  "discontinuity": true,
+                  "discontinuitySequence": 1,
+                  "duration": 3,
+                  "init": {
+                    "url": "https://cdn.example/mp/ad/ad-v1/init.mp4",
+                  },
+                  "seq": 3,
+                  "start": 12,
+                  "url": "https://cdn.example/mp/ad/ad-v1/1.m4s",
+                },
+                {
+                  "duration": 3,
+                  "init": {
+                    "url": "https://cdn.example/mp/ad/ad-v1/init.mp4",
+                  },
+                  "seq": 4,
+                  "start": 15,
+                  "url": "https://cdn.example/mp/ad/ad-v1/2.m4s",
+                },
+                {
+                  "discontinuity": true,
+                  "discontinuitySequence": 2,
+                  "duration": 4,
+                  "seq": 5,
+                  "start": 18,
+                  "url": "https://cdn.example/mp/c1/v-hi/4.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 6,
+                  "start": 22,
+                  "url": "https://cdn.example/mp/c1/v-hi/5.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 7,
+                  "start": 26,
+                  "url": "https://cdn.example/mp/c1/v-hi/6.m4s",
+                },
+              ],
+              "width": 1280,
+            },
+          ],
+        },
+        {
+          "contentType": "audio",
+          "id": "as-2",
+          "lang": "en",
+          "mimeType": "audio/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 128000,
+              "codecs": "mp4a.40.2",
+              "id": "a-en",
+              "init": {
+                "url": "https://cdn.example/mp/c1/a-en/init.mp4",
+              },
+              "mimeType": "audio/mp4",
+              "segments": [
+                {
+                  "discontinuity": false,
+                  "discontinuitySequence": 0,
+                  "duration": 4,
+                  "seq": 0,
+                  "start": 0,
+                  "url": "https://cdn.example/mp/c1/a-en/1.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 1,
+                  "start": 4,
+                  "url": "https://cdn.example/mp/c1/a-en/2.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 2,
+                  "start": 8,
+                  "url": "https://cdn.example/mp/c1/a-en/3.m4s",
+                },
+                {
+                  "discontinuity": true,
+                  "discontinuitySequence": 1,
+                  "duration": 3,
+                  "init": {
+                    "url": "https://cdn.example/mp/ad/ad-a1/init.mp4",
+                  },
+                  "seq": 3,
+                  "start": 12,
+                  "url": "https://cdn.example/mp/ad/ad-a1/1.m4s",
+                },
+                {
+                  "duration": 3,
+                  "init": {
+                    "url": "https://cdn.example/mp/ad/ad-a1/init.mp4",
+                  },
+                  "seq": 4,
+                  "start": 15,
+                  "url": "https://cdn.example/mp/ad/ad-a1/2.m4s",
+                },
+                {
+                  "discontinuity": true,
+                  "discontinuitySequence": 2,
+                  "duration": 4,
+                  "seq": 5,
+                  "start": 18,
+                  "url": "https://cdn.example/mp/c1/a-en/4.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 6,
+                  "start": 22,
+                  "url": "https://cdn.example/mp/c1/a-en/5.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 7,
+                  "start": 26,
+                  "url": "https://cdn.example/mp/c1/a-en/6.m4s",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          "contentType": "audio",
+          "id": "as-3",
+          "lang": "fr",
+          "mimeType": "audio/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 128000,
+              "codecs": "mp4a.40.2",
+              "id": "a-fr",
+              "init": {
+                "url": "https://cdn.example/mp/c1/a-fr/init.mp4",
+              },
+              "mimeType": "audio/mp4",
+              "segments": [
+                {
+                  "discontinuity": false,
+                  "discontinuitySequence": 0,
+                  "duration": 4,
+                  "seq": 0,
+                  "start": 0,
+                  "url": "https://cdn.example/mp/c1/a-fr/1.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 1,
+                  "start": 4,
+                  "url": "https://cdn.example/mp/c1/a-fr/2.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 2,
+                  "start": 8,
+                  "url": "https://cdn.example/mp/c1/a-fr/3.m4s",
+                },
+                {
+                  "discontinuity": true,
+                  "discontinuitySequence": 1,
+                  "duration": 3,
+                  "init": {
+                    "url": "https://cdn.example/mp/ad/ad-a1/init.mp4",
+                  },
+                  "seq": 3,
+                  "start": 12,
+                  "url": "https://cdn.example/mp/ad/ad-a1/1.m4s",
+                },
+                {
+                  "duration": 3,
+                  "init": {
+                    "url": "https://cdn.example/mp/ad/ad-a1/init.mp4",
+                  },
+                  "seq": 4,
+                  "start": 15,
+                  "url": "https://cdn.example/mp/ad/ad-a1/2.m4s",
+                },
+                {
+                  "discontinuity": true,
+                  "discontinuitySequence": 2,
+                  "duration": 4,
+                  "seq": 5,
+                  "start": 18,
+                  "url": "https://cdn.example/mp/c1/a-fr/4.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 6,
+                  "start": 22,
+                  "url": "https://cdn.example/mp/c1/a-fr/5.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 7,
+                  "start": 26,
+                  "url": "https://cdn.example/mp/c1/a-fr/6.m4s",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          "contentType": "text",
+          "id": "as-4",
+          "lang": "en",
+          "mimeType": "text/vtt",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 1000,
+              "codecs": null,
+              "id": "t-en",
+              "mimeType": "text/vtt",
+              "segments": [
+                {
+                  "discontinuity": false,
+                  "discontinuitySequence": 0,
+                  "duration": 12,
+                  "seq": 0,
+                  "start": 0,
+                  "url": "https://cdn.example/mp/c1/subs.vtt",
+                },
+                {
+                  "discontinuity": true,
+                  "discontinuitySequence": 2,
+                  "duration": 12,
+                  "seq": 1,
+                  "start": 18,
+                  "timeOffset": 18,
+                  "url": "https://cdn.example/mp/c2/subs.vtt",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
+`;
+
 exports[`golden corpus: every MPD fixture parses to a stable IR > edge-multitrack.mpd parses to a stable IR 1`] = `
 {
   "couplings": [],

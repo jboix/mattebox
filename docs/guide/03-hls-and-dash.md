@@ -31,6 +31,33 @@ const engine = mattebox({ stages: [hlsCmaf(), dashCmaf()] });
 engine.load(url); // .m3u8 or .mpd
 ```
 
+## Multi-period MPDs
+
+`dash-cmaf` plays a static MPD with several Periods as one presentation,
+as for server-side ad insertion.
+
+- Each track keeps one id across the periods. A period's tracks match
+  those of the first by the period continuity or connectivity descriptor,
+  then the AdaptationSet `id`, then language, role, and codec.
+- `engine.tracks.available` lists one set, with no duplicate per period. A
+  period boundary fires no `tracks:changed`.
+- A period without the selected language plays its closest audio. A
+  subtitle track with nothing in a period shows nothing there.
+- Each boundary resets the timestamp offset from the media, and a period
+  with its own init segment gets it before its first segment.
+
+Two cases play the first period only, as before:
+
+| Case                        | Why                                                   |
+| --------------------------- | ----------------------------------------------------- |
+| A live (`dynamic`) MPD      | Listing a later period's segments needs the clock     |
+| A period with `SegmentBase` | Its segments are known only once its index is fetched |
+
+A period whose audio or video uses another codec family than the first
+period's (an HEVC ad in H.264 content) is skipped: playback seeks past
+it, and the engine emits a non-fatal `MEDIA_CODEC_MISMATCH` error naming
+both codecs and the period.
+
 ## The mimeType option
 
 If you know the manifest type, pass it. The adapter for that type parses

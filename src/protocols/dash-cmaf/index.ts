@@ -20,10 +20,11 @@ import { isUnresolved } from '../../kernel/timeline.js';
 import type { MatteboxError } from '../../types/error.js';
 import type { Rendition, SegmentAddressing, SidxSegments } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
-import type { Effect, Message } from '../../types/messages.js';
+import type { Effect, Message, Serializable } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
 import { manifestFact, RETRY_SECONDS } from '../adapter-shared.js';
 import { parse, sidxToSegments } from './parse.js';
+import { installPeriods } from './periods-runtime.js';
 
 const INDEX_TOKEN = 'dash:idx:';
 /** A failed index's retry, by rendition: `dash:retry:<renditionId>`. */
@@ -60,9 +61,18 @@ interface DashSlice {
   readonly failed: Readonly<Record<string, true>>;
   /** The selection last looked at, so the index choice runs only when it changes. */
   readonly seen: string;
+  /** Periods left out of the flattened presentation; playback seeks past them. */
+  readonly skips: readonly { readonly start: number; readonly end: number }[];
 }
 
-const INITIAL: DashSlice = { manifestUrl: null, mimeType: null, pending: {}, failed: {}, seen: '' };
+const INITIAL: DashSlice = {
+  manifestUrl: null,
+  mimeType: null,
+  pending: {},
+  failed: {},
+  seen: '',
+  skips: [],
+};
 
 /** The constraint source that excludes renditions whose index failed. */
 const UNAVAILABLE = 'dash:unavailable';
@@ -184,8 +194,39 @@ const createReduceDash =
     }
 
     if (msg.type === 'SEGMENT_LOADED' && msg.trackId === 'manifest' && state.manifestUrl !== null) {
-      const fact = manifestFact(msg.bytes, state.manifestUrl, (text) => claims(state, text), parse);
-      return [state, fact === null ? [] : [feed(fact)]];
+      let warnings: readonly MatteboxError[] = [];
+      const fact = manifestFact(
+        msg.bytes,
+        state.manifestUrl,
+        (text) => claims(state, text),
+        (text, url) => {
+          const result = parse(text, url);
+          if (result.presentation !== null) warnings = result.warnings ?? [];
+          return result;
+        },
+      );
+      if (fact === null) return [state, []];
+      // A period left out (another codec family) is reported now, not met as a silent skip.
+      const skips = warnings
+        .filter((warning) => warning.code === 'MEDIA_CODEC_MISMATCH')
+        .map((warning) => ({
+          start: Number(warning.context?.start),
+          end: Number(warning.context?.end),
+        }));
+      return [
+        { ...state, skips },
+        [
+          feed(fact),
+          // Built by the parser from plain values, so it clones like any payload.
+          ...warnings.map(
+            (warning): Effect => ({
+              kind: 'emit',
+              event: 'error',
+              payload: warning as unknown as Serializable,
+            }),
+          ),
+        ],
+      ];
     }
 
     let next = state;
@@ -310,6 +351,7 @@ export default function dashCmaf(options: DashCmafOptions = {}): Stage {
     provides: ['dash-cmaf', ...MANIFEST_TYPES],
     install(ctx) {
       ctx.reduce('dash', createReduceDash(retryMs) as SliceReducer);
+      return installPeriods(ctx, () => (ctx.getState().dash as DashSlice | undefined)?.skips ?? []);
     },
   };
 }
