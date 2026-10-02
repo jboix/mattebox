@@ -158,3 +158,28 @@ describe('registries', () => {
     expect(bus.getState().scheduling.bufferGoal).toBe(15);
   });
 });
+
+describe('trace work', () => {
+  it('builds no entry with no ring and no listener, and one for each listener once one subscribes', () => {
+    let reads = 0;
+    const bus = createBus({
+      reducer: createReducer(),
+      initial: initialState(),
+      now: () => {
+        reads += 1;
+        return 0;
+      },
+    });
+    bus.dispatch({ type: 'SET_BUFFER_GOAL', seconds: 12 });
+    expect(reads).toBe(0);
+    const seen: string[] = [];
+    const off = bus.on('trace', (entry) =>
+      seen.push((entry as { msg: { type: string } }).msg.type),
+    );
+    bus.dispatch({ type: 'SET_BUFFER_GOAL', seconds: 13 });
+    off();
+    bus.dispatch({ type: 'SET_BUFFER_GOAL', seconds: 14 });
+    expect(seen).toEqual(['SET_BUFFER_GOAL']);
+    expect(reads).toBe(1);
+  });
+});

@@ -88,15 +88,18 @@ export function createBus(options: CreateBusOptions): KernelBus {
         const [next, effects] = reducer(state, msg);
         state = next;
         // Without its bytes, so nothing here keeps the media alive; kept only
-        // when a ring was asked for, and handed to whoever listens either way.
-        const entry: TraceEntry = {
-          t: now(),
-          msg: lighten(msg),
-          effects: effects.map(lighten),
-          digest: digest(state),
-        };
-        traceBuffer.push(entry);
-        emitEvent('trace', entry);
+        // when a ring was asked for, and handed to whoever listens. With
+        // neither, nothing is built: the digest walks the state on every message.
+        if (traceBuffer.capacity > 0 || (listeners.get('trace')?.size ?? 0) > 0) {
+          const entry: TraceEntry = {
+            t: now(),
+            msg: lighten(msg),
+            effects: effects.map(lighten),
+            digest: digest(state),
+          };
+          traceBuffer.push(entry);
+          emitEvent('trace', entry);
+        }
         // The sink may re-enter dispatch or absorb; those enqueue and are
         // handled by this same loop, in order.
         effectSink(effects);
