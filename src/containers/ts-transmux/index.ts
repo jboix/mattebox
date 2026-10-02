@@ -13,13 +13,16 @@
  * the manifest's prediction, which re-anchors a discontinuity the bytes
  * already carry at its presentation time, so the stage requires one.
  * `media-transform` marks the stage as a byte rewriter.
+ *
+ * The one state it keeps between segments: each rendition's last H.264
+ * parameter sets, for a segment cut mid-GOP that carries none.
  */
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage, StageContext } from '../../types/stage.js';
 import { captionsWanted, deliverCaptions } from '../captions.js';
 import { looksLikeTransportStream } from './demux.js';
 import { createTransmuxRunner, type TransmuxRunnerOptions } from './runner.js';
-import type { TransmuxTracks } from './transmux.js';
+import type { ParameterSets, TransmuxTracks } from './transmux.js';
 
 /** Runs after decrypt-class steps (lower order) and before caption extraction. */
 const TRANSMUX_ORDER = 100;
@@ -45,6 +48,8 @@ export default function tsTransmux(options: TransmuxRunnerOptions = {}): Stage {
     install(ctx) {
       const runner = createTransmuxRunner(options);
       let announcedDrop = false;
+      // By source and rendition: a new source may reuse a rendition id.
+      const parameterSets = new Map<string, ParameterSets>();
       ctx.registerTransform({
         name: 'ts-transmux',
         order: TRANSMUX_ORDER,
@@ -53,9 +58,17 @@ export default function tsTransmux(options: TransmuxRunnerOptions = {}): Stage {
           // sniffs false and passes straight through, no Worker round-trip.
           if (meta.contentType !== 'video' && meta.contentType !== 'audio') return data;
           if (!looksLikeTransportStream(data)) return data;
+          const key = `${ctx.getState().presentation?.id ?? ''}|${meta.renditionId}`;
           // Only extract SEI captions when a caption stage is loaded, so a
           // caption-free composition pays nothing for them.
-          const result = await runner.run(data, meta.start, captionsWanted(), tracksFor(ctx, meta));
+          const result = await runner.run(
+            data,
+            meta.start,
+            captionsWanted(),
+            tracksFor(ctx, meta),
+            parameterSets.get(key) ?? null,
+          );
+          if (result.parameterSets !== null) parameterSets.set(key, result.parameterSets);
           if (result.captions.length > 0) deliverCaptions(result.captions);
           if (result.droppedAudio && !announcedDrop) {
             // Once per composition: the fact belongs in the diagnostic trace,

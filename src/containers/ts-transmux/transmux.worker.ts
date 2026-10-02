@@ -5,7 +5,7 @@
  * output buffer is transferred back, not copied.
  */
 import type { CcPacket } from '../captions.js';
-import { type TransmuxTracks, transmux } from './transmux.js';
+import { type ParameterSets, type TransmuxTracks, transmux } from './transmux.js';
 
 interface Request {
   readonly id: number;
@@ -13,6 +13,7 @@ interface Request {
   readonly presentationStart: number;
   readonly wantCaptions: boolean;
   readonly tracks?: TransmuxTracks;
+  readonly parameterSets?: ParameterSets | null;
 }
 
 interface Response {
@@ -21,6 +22,7 @@ interface Response {
   readonly notTransportStream: boolean;
   readonly captions: readonly CcPacket[];
   readonly droppedAudio: boolean;
+  readonly parameterSets: ParameterSets | null;
 }
 
 // `self` is the DedicatedWorkerGlobalScope; typed minimally to avoid pulling
@@ -32,7 +34,14 @@ const scope = self as unknown as {
 
 scope.onmessage = (event) => {
   const { id, bytes, presentationStart, wantCaptions, tracks = 'all' } = event.data;
-  const result = transmux(new Uint8Array(bytes), presentationStart, wantCaptions, tracks);
+  const parameterSets = event.data.parameterSets ?? null;
+  const result = transmux(
+    new Uint8Array(bytes),
+    presentationStart,
+    wantCaptions,
+    tracks,
+    parameterSets,
+  );
   const out = result.bytes;
   if (out === null) {
     scope.postMessage(
@@ -42,6 +51,7 @@ scope.onmessage = (event) => {
         notTransportStream: result.notTransportStream,
         captions: [],
         droppedAudio: result.droppedAudio,
+        parameterSets: null,
       },
       [],
     );
@@ -56,6 +66,7 @@ scope.onmessage = (event) => {
       notTransportStream: false,
       captions: result.captions,
       droppedAudio: result.droppedAudio,
+      parameterSets: result.parameterSets,
     },
     [buffer],
   );

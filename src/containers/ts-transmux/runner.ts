@@ -6,7 +6,12 @@
  * thread. Both paths call the identical function, so the bytes match whatever
  * route a given browser takes; only the timing differs.
  */
-import { type TransmuxResult, type TransmuxTracks, transmux } from './transmux.js';
+import {
+  type ParameterSets,
+  type TransmuxResult,
+  type TransmuxTracks,
+  transmux,
+} from './transmux.js';
 
 export interface TransmuxRunnerOptions {
   /** A custom Worker URL for strict-CSP hosts that serve the chunk themselves. */
@@ -21,6 +26,7 @@ export interface TransmuxRunner {
     presentationStart: number,
     wantCaptions?: boolean,
     tracks?: TransmuxTracks,
+    parameterSets?: ParameterSets | null,
   ): Promise<TransmuxResult>;
   /** Which path the most recent run took, for diagnostics and the handoff. */
   path(): 'worker' | 'main';
@@ -33,6 +39,7 @@ interface Pending {
   readonly presentationStart: number;
   readonly wantCaptions: boolean;
   readonly tracks: TransmuxTracks;
+  readonly parameterSets: ParameterSets | null;
 }
 
 interface WorkerResponse {
@@ -41,15 +48,17 @@ interface WorkerResponse {
   readonly notTransportStream: boolean;
   readonly captions: TransmuxResult['captions'];
   readonly droppedAudio: boolean;
+  readonly parameterSets: ParameterSets | null;
 }
 
-function runOnMainThread(
-  bytes: Uint8Array,
-  presentationStart: number,
-  wantCaptions: boolean,
-  tracks: TransmuxTracks,
-): TransmuxResult {
-  return transmux(bytes, presentationStart, wantCaptions, tracks);
+function runOnMainThread(entry: Omit<Pending, 'resolve'>): TransmuxResult {
+  return transmux(
+    entry.bytes,
+    entry.presentationStart,
+    entry.wantCaptions,
+    entry.tracks,
+    entry.parameterSets,
+  );
 }
 
 export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): TransmuxRunner {
@@ -77,6 +86,7 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
           empty: event.data.bytes === null && !event.data.notTransportStream,
           captions: event.data.captions,
           droppedAudio: event.data.droppedAudio,
+          parameterSets: event.data.parameterSets,
         });
       };
       worker.onerror = () => {
@@ -88,9 +98,7 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
         worker = null;
         for (const [id, entry] of pending) {
           pending.delete(id);
-          entry.resolve(
-            runOnMainThread(entry.bytes, entry.presentationStart, entry.wantCaptions, entry.tracks),
-          );
+          entry.resolve(runOnMainThread(entry));
         }
       };
     } catch {
@@ -101,11 +109,12 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
   }
 
   return {
-    run(bytes, presentationStart, wantCaptions = false, tracks = 'all') {
+    run(bytes, presentationStart, wantCaptions = false, tracks = 'all', parameterSets = null) {
+      const request = { bytes, presentationStart, wantCaptions, tracks, parameterSets };
       const active = ensureWorker();
       if (active === null) {
         lastPath = 'main';
-        return Promise.resolve(runOnMainThread(bytes, presentationStart, wantCaptions, tracks));
+        return Promise.resolve(runOnMainThread(request));
       }
       lastPath = 'worker';
       const id = nextId;
@@ -114,17 +123,19 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
       return new Promise<TransmuxResult>((resolve) => {
         // Keep the inputs on the pending entry so an onerror after this point
         // can resolve it on the main thread rather than hang.
-        pending.set(id, { resolve, bytes, presentationStart, wantCaptions, tracks });
+        pending.set(id, { resolve, ...request });
         try {
-          active.postMessage({ id, bytes: copy.buffer, presentationStart, wantCaptions, tracks }, [
-            copy.buffer,
-          ]);
+          // The parameter sets are small and cloned; only the segment bytes transfer.
+          active.postMessage(
+            { id, bytes: copy.buffer, presentationStart, wantCaptions, tracks, parameterSets },
+            [copy.buffer],
+          );
         } catch {
           pending.delete(id);
           workerBroken = true;
           worker = null;
           lastPath = 'main';
-          resolve(runOnMainThread(bytes, presentationStart, wantCaptions, tracks));
+          resolve(runOnMainThread(request));
         }
       });
     },

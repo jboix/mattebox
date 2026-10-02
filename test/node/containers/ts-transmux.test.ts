@@ -142,6 +142,70 @@ describe('ts-transmux fMP4 output', () => {
   });
 });
 
+/** The bytes before the first moof: the init segment. */
+function initLength(bytes: Uint8Array): number {
+  for (let i = 4; i + 4 <= bytes.length; i += 1) {
+    if (
+      bytes[i] === 0x6d &&
+      bytes[i + 1] === 0x6f &&
+      bytes[i + 2] === 0x6f &&
+      bytes[i + 3] === 0x66
+    ) {
+      return i - 4;
+    }
+  }
+  return bytes.length;
+}
+
+/**
+ * The fixture as a segment cut mid-GOP: its SPS and PPS NAL headers become
+ * filler data (type 12) in place, so the TS and PES framing stay intact.
+ */
+function withoutParameterSets(ts: Uint8Array): Uint8Array {
+  const out = ts.slice();
+  let patched = 0;
+  for (let i = 0; i + 3 < out.length; i += 1) {
+    if (out[i] !== 0 || out[i + 1] !== 0 || out[i + 2] !== 1) continue;
+    const type = (out[i + 3] as number) & 0x1f;
+    if (type === 7 || type === 8) {
+      out[i + 3] = 12;
+      patched += 1;
+    }
+  }
+  expect(patched).toBe(2);
+  return out;
+}
+
+describe('a segment cut mid-GOP', () => {
+  it('drops without parameter sets to borrow', () => {
+    const result = transmux(withoutParameterSets(fixture('muxed.m2ts')), 6, false, 'video');
+    expect(result.bytes).toBeNull();
+    expect(result.empty).toBe(true);
+  });
+
+  it('borrows the parameter sets the previous segment of its rendition had', () => {
+    const previous = transmux(fixture('muxed.m2ts'), 0, false, 'video');
+    expect(previous.parameterSets).not.toBeNull();
+    const cut = withoutParameterSets(fixture('muxed.m2ts'));
+    const borrowed = transmux(cut, 6, false, 'video', previous.parameterSets);
+    expect(borrowed.bytes).not.toBeNull();
+    expect(borrowed.parameterSets).toEqual(previous.parameterSets);
+    // The init it writes is the one the intact segment writes: same sets, same avcC.
+    const intact = transmux(fixture('muxed.m2ts'), 6, false, 'video').bytes as Uint8Array;
+    const init = (bytes: Uint8Array) => bytes.slice(0, initLength(bytes));
+    expect(Array.from(init(borrowed.bytes as Uint8Array))).toEqual(Array.from(init(intact)));
+  });
+
+  it('the runner carries the sets the caller hands it', async () => {
+    const runner = createTransmuxRunner({ disableWorker: true });
+    const previous = await runner.run(fixture('muxed.m2ts'), 0, false, 'video');
+    const cut = withoutParameterSets(fixture('muxed.m2ts'));
+    const borrowed = await runner.run(cut, 6, false, 'video', previous.parameterSets);
+    expect(borrowed.bytes).not.toBeNull();
+    runner.dispose();
+  });
+});
+
 describe('33-bit PTS rollover', () => {
   it('keeps a wrapping timestamp series monotonic', () => {
     const wrap = 0x2_0000_0000;

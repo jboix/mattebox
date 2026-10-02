@@ -50,6 +50,16 @@ const DEFAULT_FRAME_DURATION = 3000;
  */
 export type TransmuxTracks = 'all' | 'video' | 'audio';
 
+/**
+ * The H.264 sequence and picture parameter sets of a rendition. A segment
+ * cut mid-GOP carries none of its own; it borrows the last ones its
+ * rendition had, which the caller keeps between segments.
+ */
+export interface ParameterSets {
+  readonly sps: Uint8Array;
+  readonly pps: Uint8Array;
+}
+
 export interface TransmuxResult {
   /** The fMP4 bytes, or null when the input was not a transport stream. */
   readonly bytes: Uint8Array | null;
@@ -60,12 +70,15 @@ export interface TransmuxResult {
   readonly captions: readonly CcPacket[];
   /** True when the input carried an audio stream the `tracks` selection left out. */
   readonly droppedAudio: boolean;
+  /** The parameter sets the video track used, for the caller to carry to the next segment. */
+  readonly parameterSets: ParameterSets | null;
 }
 
 interface VideoResult {
   readonly config: VideoTrackConfig;
   readonly fragment: TrackFragment;
   readonly captions: CcPacket[];
+  readonly parameterSets: ParameterSets;
 }
 
 interface FramedUnit {
@@ -131,6 +144,7 @@ function buildVideo(
   packets: ReturnType<typeof demux>['video'],
   presentationStart: number,
   wantCaptions: boolean,
+  carried: ParameterSets | null,
 ): VideoResult | null {
   if (packets.length === 0) return null;
   const framed = frameAccessUnits(packets);
@@ -141,9 +155,12 @@ function buildVideo(
     if (unit.sps !== null) sps = unit.sps;
     if (unit.pps !== null) pps = unit.pps;
   }
-  // No parameter sets means this segment opened mid-GOP; without them there
-  // is no honest init segment. Legacy HLS keys segments to a keyframe, so
-  // this is the dirty-stream path, registered for recovery.
+  // A segment cut mid-GOP carries no parameter sets: it borrows the ones its
+  // rendition's previous segment had, which still describe the stream. Its
+  // frames up to the next keyframe decode from that segment's references.
+  // Without either there is no honest init segment and the segment drops.
+  sps = sps ?? carried?.sps ?? null;
+  pps = pps ?? carried?.pps ?? null;
   if (sps === null || pps === null) return null;
 
   const dts = unrollTimestamps(framed.map((f) => f.dts));
@@ -195,6 +212,7 @@ function buildVideo(
     config,
     fragment: { trackId: VIDEO_TRACK_ID, baseMediaDecodeTime: base, samples },
     captions,
+    parameterSets: { sps, pps },
   };
 }
 
@@ -218,6 +236,7 @@ export function transmux(
   presentationStart = 0,
   wantCaptions = false,
   tracks: TransmuxTracks = 'all',
+  parameterSets: ParameterSets | null = null,
 ): TransmuxResult {
   const streams = demux(input);
   if (streams.notTransportStream) {
@@ -227,14 +246,24 @@ export function transmux(
       empty: false,
       captions: [],
       droppedAudio: false,
+      parameterSets: null,
     };
   }
   const video =
-    tracks === 'audio' ? null : buildVideo(streams.video, presentationStart, wantCaptions);
+    tracks === 'audio'
+      ? null
+      : buildVideo(streams.video, presentationStart, wantCaptions, parameterSets);
   const audio = tracks === 'video' ? null : buildAudio(streams.audio, presentationStart);
   const droppedAudio = tracks === 'video' && streams.audio.length > 0;
   if (video === null && audio === null) {
-    return { bytes: null, notTransportStream: false, empty: true, captions: [], droppedAudio };
+    return {
+      bytes: null,
+      notTransportStream: false,
+      empty: true,
+      captions: [],
+      droppedAudio,
+      parameterSets: null,
+    };
   }
   const configs: TrackConfig[] = [];
   const fragments: TrackFragment[] = [];
@@ -254,5 +283,6 @@ export function transmux(
     empty: false,
     captions: video?.captions ?? [],
     droppedAudio,
+    parameterSets: video?.parameterSets ?? null,
   };
 }

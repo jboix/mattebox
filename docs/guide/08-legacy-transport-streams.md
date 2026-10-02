@@ -40,6 +40,13 @@ codec its type declares. The first time that happens the stage emits
 up in a trace. A variant without a separate audio rendition keeps its muxed
 audio and the video buffer declares both codecs.
 
+## Segments cut mid-GOP
+
+A segment that starts mid-GOP carries no H.264 SPS or PPS. `ts-transmux`
+keeps the last ones each rendition had and uses them for such a segment, so
+it plays on from the segment before. A rendition's first segment without
+them still has nothing to describe the stream, and the segment fails.
+
 ## The Worker
 
 `ts-transmux` runs in a Web Worker so it never blocks the main thread. The
