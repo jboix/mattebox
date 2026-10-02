@@ -16,6 +16,7 @@ import type { MatteboxError } from '../../types/error.js';
 import type {
   ByteRange,
   Coupling,
+  DateRange,
   Presentation,
   ProtectionInfo,
   Rendition,
@@ -47,6 +48,61 @@ export interface MediaPlaylist {
   readonly dateAnchor?: { readonly wallClock: number; readonly presentationTime: number };
   /** From the first EXT-X-TILES of an image playlist. */
   readonly tiles?: TileGrid;
+  /** The playlist's EXT-X-DATERANGE tags, merged by ID, on the presentation timeline. */
+  readonly dateRanges?: readonly DateRange[];
+}
+
+/** Epoch seconds from an ISO 8601 date, or null. */
+function epochSeconds(value: string | undefined): number | null {
+  if (value === undefined) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms / 1000 : null;
+}
+
+/**
+ * The date ranges of a playlist (RFC 8216bis §4.4.5.1), merged by ID: a
+ * later tag with the same ID adds attributes and never changes one. Each
+ * maps to the presentation timeline through the playlist's first
+ * EXT-X-PROGRAM-DATE-TIME, which a playlist with date ranges must carry; a
+ * playlist without one yields none.
+ */
+function dateRangesFrom(
+  tags: readonly Readonly<Record<string, string>>[],
+  anchor: { readonly wallClock: number; readonly presentationTime: number } | undefined,
+): DateRange[] {
+  if (anchor === undefined) return [];
+  const merged = new Map<string, Record<string, string>>();
+  for (const attributes of tags) {
+    const id = attributes.ID;
+    if (id === undefined) continue;
+    const known = merged.get(id);
+    merged.set(id, known === undefined ? { ...attributes } : { ...attributes, ...known });
+  }
+  const toPresentation = (epoch: number) => anchor.presentationTime + (epoch - anchor.wallClock);
+  const out: DateRange[] = [];
+  for (const [id, attributes] of merged) {
+    const startDate = epochSeconds(attributes['START-DATE']);
+    if (startDate === null) continue;
+    const start = toPresentation(startDate);
+    const endDate = epochSeconds(attributes['END-DATE']);
+    const duration = Number(attributes.DURATION);
+    const planned = Number(attributes['PLANNED-DURATION']);
+    const end =
+      endDate !== null
+        ? toPresentation(endDate)
+        : Number.isFinite(duration)
+          ? start + duration
+          : undefined;
+    out.push({
+      id,
+      start,
+      ...(end !== undefined ? { end } : {}),
+      ...(Number.isFinite(planned) ? { plannedEnd: start + planned } : {}),
+      startDate,
+      attributes,
+    });
+  }
+  return out.sort((a, b) => a.start - b.start);
 }
 
 /** A media playlist parse either yields the playlist or says why not. */
@@ -172,6 +228,7 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
   let pendingDiscontinuity = false;
   // RFC 8216 §4.3.3.3: the first segment's number, 0 without the tag.
   let discontinuitySequence = 0;
+  const dateRangeTags: Readonly<Record<string, string>>[] = [];
   let previousRangeEnd: number | null = null;
   let start = 0;
   let seq = 0;
@@ -202,6 +259,9 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
           break;
         case 'EXT-X-DISCONTINUITY':
           pendingDiscontinuity = true;
+          break;
+        case 'EXT-X-DATERANGE':
+          dateRangeTags.push(line.attributes);
           break;
         case 'EXT-X-DISCONTINUITY-SEQUENCE':
           discontinuitySequence = Number(line.value) || 0;
@@ -284,6 +344,9 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
       protection,
       ...(dateAnchor !== undefined ? { dateAnchor } : {}),
       ...(tiles !== null ? { tiles } : {}),
+      ...(dateRangeTags.length > 0
+        ? { dateRanges: dateRangesFrom(dateRangeTags, dateAnchor) }
+        : {}),
     },
     error: null,
   };
@@ -481,6 +544,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
       mimeType,
       segments: media.playlist.segments,
       ...(media.playlist.init !== null ? { init: media.playlist.init } : {}),
+      ...(media.playlist.dateRanges !== undefined ? { dateRanges: media.playlist.dateRanges } : {}),
     };
     return {
       presentation: {
@@ -815,6 +879,24 @@ export function refreshFor(
           },
         }
       : {}),
+    // Date ranges ride the same shift as the segments they are anchored to.
+    ...(playlist.dateRanges !== undefined
+      ? {
+          dateRanges:
+            shift === 0
+              ? playlist.dateRanges
+              : playlist.dateRanges.map((range) => shiftRange(range, shift)),
+        }
+      : {}),
+  };
+}
+
+function shiftRange(range: DateRange, shift: number): DateRange {
+  return {
+    ...range,
+    start: range.start + shift,
+    ...(range.end !== undefined ? { end: range.end + shift } : {}),
+    ...(range.plannedEnd !== undefined ? { plannedEnd: range.plannedEnd + shift } : {}),
   };
 }
 

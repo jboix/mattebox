@@ -177,6 +177,31 @@ function withoutParameterSets(ts: Uint8Array): Uint8Array {
   return out;
 }
 
+describe('the ID3 metadata stream', () => {
+  // muxed-id3.m2ts is muxed.m2ts plus one ID3 PES, one second after the
+  // first video PTS (test/e2e/inject-id3.mjs).
+  it('returns each tag at its presentation time and leaves the media as it was', () => {
+    const result = transmux(fixture('muxed-id3.m2ts'), 10);
+    expect(result.metadata).toHaveLength(1);
+    expect(result.metadata[0]?.time).toBeCloseTo(11, 6);
+    expect([...(result.metadata[0]?.bytes.subarray(0, 3) ?? [])]).toEqual([0x49, 0x44, 0x33]);
+    expect(result.bytes).toEqual(transmux(fixture('muxed.m2ts'), 10).bytes);
+    expect(transmux(fixture('muxed.m2ts'), 10).metadata).toEqual([]);
+  });
+
+  it('copies each tag out of the segment, so a Worker posts only the tag', () => {
+    const [tag] = transmux(fixture('muxed-id3.m2ts'), 0).metadata;
+    expect(tag?.bytes.byteLength).toBe(tag?.bytes.buffer.byteLength);
+  });
+
+  it('comes back the same through the runner', async () => {
+    const runner = createTransmuxRunner({ disableWorker: true }, transmuxSource);
+    const result = await runner.run(fixture('muxed-id3.m2ts'), 10);
+    expect(result.metadata).toEqual(transmux(fixture('muxed-id3.m2ts'), 10).metadata);
+    runner.dispose();
+  });
+});
+
 describe('a segment cut mid-GOP', () => {
   it('drops without parameter sets to borrow', () => {
     const result = transmux(withoutParameterSets(fixture('muxed.m2ts')), 6, false, 'video');

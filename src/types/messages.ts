@@ -12,6 +12,7 @@ import type { MatteboxError } from './error.js';
 import type {
   ByteRange,
   ContentType,
+  DateRange,
   Presentation,
   ProtectionInfo,
   Segment,
@@ -148,6 +149,8 @@ export type Fact =
       readonly updatePeriod?: number;
       /** A wall-clock anchor on the presentation timeline. Applies while the playlist is not complete. */
       readonly dateAnchor?: { readonly wallClock: number; readonly presentationTime: number };
+      /** The playlist's date ranges, replacing the rendition's. */
+      readonly dateRanges?: readonly DateRange[];
     }
   | {
       readonly type: 'SEGMENT_LOADED';

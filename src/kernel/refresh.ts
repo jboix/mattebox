@@ -32,6 +32,7 @@ export function applyRefresh(
                 segments: refresh.segments,
                 ...(refresh.init !== undefined ? { init: refresh.init } : {}),
                 ...(refresh.tiles !== undefined ? { tiles: refresh.tiles } : {}),
+                ...(refresh.dateRanges !== undefined ? { dateRanges: refresh.dateRanges } : {}),
               }
             : rendition,
         ),

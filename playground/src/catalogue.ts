@@ -47,6 +47,7 @@ import textCea608 from '../../src/stages/text-cea608/index.js';
 import textWebvtt from '../../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../../src/stages/text-webvtt-segmented/index.js';
 import thumbnails from '../../src/stages/thumbnails/index.js';
+import timedMetadata from '../../src/stages/timed-metadata/index.js';
 import trickPlay from '../../src/stages/trick-play/index.js';
 import type { Requirement } from '../../src/types/stage.js';
 
@@ -104,6 +105,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('stages', thumbnails),
   built('stages', chapters),
   built('stages', trickPlay),
+  built('stages', timedMetadata),
 ];
 
 /**
@@ -239,6 +241,12 @@ const LOCAL_STREAMS: readonly StreamEntry[] =
           url: local('ts/master.m3u8'),
           topic: 'local',
           tags: ['needs ts-transmux'],
+        },
+        {
+          label: 'Muxed MPEG-TS with ID3 metadata and date ranges',
+          url: local('ts/master-metadata.m3u8'),
+          topic: 'local',
+          tags: ['generated', 'timed metadata', 'needs ts-transmux'],
         },
         {
           label: 'Packed AAC audio',

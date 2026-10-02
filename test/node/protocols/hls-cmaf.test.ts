@@ -434,3 +434,41 @@ describe('closed captions', () => {
     ]);
   });
 });
+
+describe('date ranges', () => {
+  const playlist = () => {
+    const result = parseMediaPlaylist(fixture('edge-daterange-media.m3u8'), BASE);
+    expect(result.error).toBeNull();
+    return result.playlist?.dateRanges ?? [];
+  };
+
+  it('maps START-DATE, END-DATE, and DURATION through the program date time', () => {
+    const ranges = playlist();
+    expect(ranges.map((r) => [r.id, r.start, r.end ?? null])).toEqual([
+      ['program', 0, 30],
+      ['splice-6FFFFFF0', 10, 69.5],
+      ['ad-break', 20, null],
+    ]);
+  });
+
+  it('merges a later tag with the same ID: it adds attributes and keeps the first start', () => {
+    const splice = playlist().find((r) => r.id === 'splice-6FFFFFF0');
+    expect(splice?.attributes['SCTE35-OUT']).toMatch(/^0xFC002F/);
+    expect(splice?.attributes['SCTE35-IN']).toMatch(/^0xFC002A/);
+    expect(splice?.plannedEnd).toBeCloseTo(69.993, 3);
+  });
+
+  it('keeps every attribute of an interstitial as written', () => {
+    const ad = playlist().find((r) => r.id === 'ad-break');
+    expect(ad?.attributes).toMatchObject({
+      CLASS: 'com.apple.hls.interstitial',
+      'X-ASSET-URI': 'https://ads.example/ad.m3u8',
+      CUE: 'PRE',
+    });
+  });
+
+  it('a playlist without a program date time yields none', () => {
+    const text = fixture('edge-daterange-media.m3u8').replace(/#EXT-X-PROGRAM-DATE-TIME.*\n/, '');
+    expect(parseMediaPlaylist(text, BASE).playlist?.dateRanges).toEqual([]);
+  });
+});

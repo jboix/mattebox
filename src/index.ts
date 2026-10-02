@@ -43,6 +43,7 @@ export type * from './types/facade.js';
 export type * from './types/ir.js';
 export type * from './types/kernel.js';
 export type * from './types/messages.js';
+export type * from './types/metadata.js';
 export type * from './types/quality.js';
 export type * from './types/sink.js';
 export type * from './types/stage.js';

@@ -180,23 +180,64 @@ shows while the caption track is selected, and a pick in the browser's
 caption menu selects it in the engine. If your packager can emit WebVTT
 sidecars instead, skip these stages.
 
-## ID3 metadata
+## Timed metadata
 
-ID3 tags in MPEG-TS or packed-audio segments become cues on a metadata
-`TextTrack`. The stage requires `ts-transmux` or `packed-audio`.
+The `timed-metadata` stage collects timed metadata from every source into
+one list. It is in `full`; add it to another preset with `stages`.
+
+| Source                 | Where it comes from                         |
+| ---------------------- | ------------------------------------------- |
+| HLS `EXT-X-DATERANGE`  | The media playlists, merged by `ID`         |
+| DASH `EventStream`     | The MPD, per period                         |
+| DASH and CMAF `emsg`   | The fMP4 segments, versions 0 and 1         |
+| ID3 in MPEG-TS         | The stream of type 0x15, with `ts-transmux` |
+| ID3 metadata rendition | `application/id3` segments, with `meta-id3` |
 
 ```ts
-import tsTransmux from 'mattebox/containers/ts-transmux';
-import metaId3 from 'mattebox/stages/meta-id3';
+import hls from 'mattebox/presets/hls';
+import timedMetadata from 'mattebox/stages/timed-metadata';
 
-const engine = mattebox({ stages: [hlsCmaf(), tsTransmux(), metaId3()] });
+const engine = hls({ stages: [timedMetadata()] });
 
-video.textTracks.addEventListener('addtrack', ({ track }) => {
-  if (track.kind !== 'metadata') return;
-  track.mode = 'hidden';
-  track.addEventListener('cuechange', () => console.log(track.activeCues));
+engine.on('metadata:enter', ({ id }) => {
+  const event = engine.metadata.events.find((e) => e.id === id);
+  if (event?.scte35?.outOfNetwork) showAdBadge(event.end);
 });
+engine.on('metadata:exit', ({ id }) => hideAdBadge(id));
 ```
+
+`engine.metadata.events` lists every record of the current source, sorted
+by `start`. `engine.metadata.at(time)` returns the records that span `time`.
+
+- `start` and `end` are presentation seconds. `end` equals `start` for an
+  instant, and is `null` while a span is open, such as a splice out with no
+  in yet.
+- `attributes` holds a date range's attributes as written, `X-` ones
+  included.
+- `data` holds the bytes: the SCTE-35 section, the emsg message, the Event
+  body, or the ID3 tag. `frames` holds the decoded ID3 frames.
+- `scte35` summarizes an SCTE-35 section: the command type, the event id,
+  the out-of-network flag, the break duration, and each segmentation's type
+  and duration.
+
+The stage emits three events, each with the record's `id`:
+
+| Event            | When                                             |
+| ---------------- | ------------------------------------------------ |
+| `metadata:added` | A record appears, or a later sighting changes it |
+| `metadata:enter` | The playhead reaches its start                   |
+| `metadata:exit`  | The playhead passes its end                      |
+
+Playback across an instant emits `enter` and then `exit`. A seek emits
+`exit` for the spans it leaves and `enter` for the spans it lands in, and
+skips the instants in between.
+
+The stage also writes every record as a cue on a native `metadata` text
+track labelled `metadata`, with the record as JSON in the cue text. Use it
+when your page already reads `textTracks`.
+
+The stage does not play HLS interstitials. Their date ranges are records
+like any other, with `X-ASSET-URI` in `attributes`.
 
 ## Example
 

@@ -146,6 +146,7 @@ if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
     [ -f "$OUT/$flavor/master-accessibility.m3u8" ] || accessibility_master "$flavor"
   done
   [ -f "$OUT/h264/master-captions.m3u8" ] || captions_master
+  [ -f "$OUT/ts/master-metadata.m3u8" ] || node "$ROOT/test/e2e/inject-id3.mjs" "$OUT/ts"
   echo "streams present, skipping generation"
   exit 0
 fi
@@ -326,6 +327,7 @@ master vp9 "$V_LOW" "$V_HIGH" "$V_TOP" libopus opus
 dash vp9 libvpx-vp9 -deadline realtime -cpu-used 8
 
 ts_flavor
+node "$ROOT/test/e2e/inject-id3.mjs" "$OUT/ts"
 aac_flavor
 images_flavor
 

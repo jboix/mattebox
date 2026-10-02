@@ -31,6 +31,7 @@ const ATTRIBUTE_TAGS = new Set([
   'EXT-X-IMAGE-STREAM-INF',
   'EXT-X-TILES',
   'EXT-X-CONTENT-STEERING',
+  'EXT-X-DATERANGE',
 ]);
 
 /**

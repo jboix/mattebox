@@ -68,10 +68,42 @@ export interface TransmuxResult {
   readonly empty: boolean;
   /** CEA-608/708 caption packets from the video SEI, when captions were requested. */
   readonly captions: readonly CcPacket[];
+  /** The ID3 tags of the metadata stream, each at its presentation time. */
+  readonly metadata: readonly TimedTag[];
   /** True when the input carried an audio stream the `tracks` selection left out. */
   readonly droppedAudio: boolean;
   /** The parameter sets the video track used, for the caller to carry to the next segment. */
   readonly parameterSets: ParameterSets | null;
+}
+
+/** One PES payload of a metadata stream (one ID3 tag) and its presentation time. */
+export interface TimedTag {
+  readonly time: number;
+  readonly bytes: Uint8Array;
+}
+
+const PTS_WRAP = 2 ** 33;
+
+/**
+ * The metadata stream's tags on the presentation timeline. The first video
+ * DTS (or audio PTS) sits at `presentationStart`, so each tag keeps its
+ * distance from it, across a 33-bit PTS wrap. The bytes are copied so a Worker posts only the
+ * tag, not the segment it was cut from.
+ */
+function timedTags(
+  streams: ReturnType<typeof demux>,
+  presentationStart: number,
+  anchor: number | null,
+): TimedTag[] {
+  const tags: TimedTag[] = [];
+  for (const packet of streams.id3) {
+    if (packet.pts === null || anchor === null) continue;
+    let delta = (packet.pts - anchor) % PTS_WRAP;
+    if (delta > PTS_WRAP / 2) delta -= PTS_WRAP;
+    else if (delta < -PTS_WRAP / 2) delta += PTS_WRAP;
+    tags.push({ time: presentationStart + delta / VIDEO_TIMESCALE, bytes: packet.data.slice() });
+  }
+  return tags;
 }
 
 interface VideoResult {
@@ -245,6 +277,7 @@ export function transmux(
       notTransportStream: true,
       empty: false,
       captions: [],
+      metadata: [],
       droppedAudio: false,
       parameterSets: null,
     };
@@ -261,6 +294,7 @@ export function transmux(
       notTransportStream: false,
       empty: true,
       captions: [],
+      metadata: [],
       droppedAudio,
       parameterSets: null,
     };
@@ -282,6 +316,11 @@ export function transmux(
     notTransportStream: false,
     empty: false,
     captions: video?.captions ?? [],
+    metadata: timedTags(
+      streams,
+      presentationStart,
+      (video !== null ? streams.video[0]?.dts : streams.audio[0]?.pts) ?? null,
+    ),
     droppedAudio,
     parameterSets: video?.parameterSets ?? null,
   };

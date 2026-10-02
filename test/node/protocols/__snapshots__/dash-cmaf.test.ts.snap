@@ -1685,6 +1685,69 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > edge-contentpr
 }
 `;
 
+exports[`golden corpus: every MPD fixture parses to a stable IR > edge-eventstream.mpd parses to a stable IR 1`] = `
+{
+  "couplings": [],
+  "duration": 30,
+  "id": "https://cdn.example/path/manifest.mpd",
+  "isLive": false,
+  "periods": [
+    {
+      "duration": 30,
+      "events": [
+        {
+          "data": "news",
+          "duration": 2.5,
+          "id": "7",
+          "scheme": "urn:example:program",
+          "start": 5,
+          "value": "1",
+        },
+        {
+          "data": "splice body",
+          "duration": 30,
+          "id": "urn:scte:scte35:2013:xml:0",
+          "scheme": "urn:scte:scte35:2013:xml",
+          "start": 12,
+        },
+      ],
+      "id": "p0",
+      "start": 0,
+      "tracks": [
+        {
+          "contentType": "video",
+          "id": "as-1",
+          "mimeType": "video/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 800000,
+              "codecs": "avc1.4d401f",
+              "height": 360,
+              "id": "v1",
+              "init": {
+                "url": "https://cdn.example/path/v-init.mp4",
+              },
+              "mimeType": "video/mp4",
+              "segments": {
+                "endSeq": 5,
+                "kind": "indexed",
+                "segmentDuration": 6,
+                "startSeq": 1,
+                "timeline": null,
+                "timescale": 1,
+                "urlTemplate": "https://cdn.example/path/v-$Number$.m4s",
+              },
+              "width": 640,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
+`;
+
 exports[`golden corpus: every MPD fixture parses to a stable IR > edge-multitrack.mpd parses to a stable IR 1`] = `
 {
   "couplings": [],

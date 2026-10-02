@@ -2100,6 +2100,116 @@ exports[`golden corpus: every fixture parses to a stable IR > edge-byterange.m3u
 }
 `;
 
+exports[`golden corpus: every fixture parses to a stable IR > edge-daterange-media.m3u8 parses to a stable IR 1`] = `
+{
+  "couplings": [],
+  "duration": 30,
+  "id": "https://cdn.example/path/master.m3u8",
+  "isLive": false,
+  "periods": [
+    {
+      "id": "p0",
+      "start": 0,
+      "tracks": [
+        {
+          "contentType": "video",
+          "id": "main",
+          "mimeType": "video/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 0,
+              "codecs": null,
+              "dateRanges": [
+                {
+                  "attributes": {
+                    "CLASS": "com.example.program",
+                    "END-DATE": "2026-10-02T12:00:30.000Z",
+                    "ID": "program",
+                    "START-DATE": "2026-10-02T12:00:00.000Z",
+                    "X-TITLE": "News",
+                  },
+                  "end": 30,
+                  "id": "program",
+                  "start": 0,
+                  "startDate": 1790942400,
+                },
+                {
+                  "attributes": {
+                    "DURATION": "59.5",
+                    "ID": "splice-6FFFFFF0",
+                    "PLANNED-DURATION": "59.993",
+                    "SCTE35-IN": "0xFC002A0000000000FF00000F056FFFFFF0007F9F0000000000000A0008029896F50000008700000000",
+                    "SCTE35-OUT": "0xFC002F0000000000FF000014056FFFFFF000E011622DCAFF000052636200000000000A0008029896F50000008700000000",
+                    "START-DATE": "2026-10-02T12:00:10.000Z",
+                  },
+                  "end": 69.5,
+                  "id": "splice-6FFFFFF0",
+                  "plannedEnd": 69.993,
+                  "start": 10,
+                  "startDate": 1790942410,
+                },
+                {
+                  "attributes": {
+                    "CLASS": "com.apple.hls.interstitial",
+                    "CUE": "PRE",
+                    "ID": "ad-break",
+                    "START-DATE": "2026-10-02T12:00:20.000Z",
+                    "X-ASSET-URI": "https://ads.example/ad.m3u8",
+                    "X-RESUME-OFFSET": "0",
+                  },
+                  "id": "ad-break",
+                  "start": 20,
+                  "startDate": 1790942420,
+                },
+              ],
+              "id": "r-0",
+              "init": {
+                "url": "https://cdn.example/path/init.mp4",
+              },
+              "mimeType": "video/mp4",
+              "segments": [
+                {
+                  "discontinuitySequence": 0,
+                  "duration": 6,
+                  "seq": 0,
+                  "start": 0,
+                  "url": "https://cdn.example/path/seg-0.m4s",
+                },
+                {
+                  "duration": 6,
+                  "seq": 1,
+                  "start": 6,
+                  "url": "https://cdn.example/path/seg-1.m4s",
+                },
+                {
+                  "duration": 6,
+                  "seq": 2,
+                  "start": 12,
+                  "url": "https://cdn.example/path/seg-2.m4s",
+                },
+                {
+                  "duration": 6,
+                  "seq": 3,
+                  "start": 18,
+                  "url": "https://cdn.example/path/seg-3.m4s",
+                },
+                {
+                  "duration": 6,
+                  "seq": 4,
+                  "start": 24,
+                  "url": "https://cdn.example/path/seg-4.m4s",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
+`;
+
 exports[`golden corpus: every fixture parses to a stable IR > edge-discontinuity.m3u8 parses to a stable IR 1`] = `
 {
   "couplings": [],

@@ -58,6 +58,7 @@ interface WorkerResponse {
   readonly bytes: ArrayBuffer | null;
   readonly notTransportStream: boolean;
   readonly captions: TransmuxResult['captions'];
+  readonly metadata: TransmuxResult['metadata'];
   readonly droppedAudio: boolean;
   readonly parameterSets: ParameterSets | null;
 }
@@ -103,6 +104,7 @@ export function createTransmuxRunner(
           notTransportStream: event.data.notTransportStream,
           empty: event.data.bytes === null && !event.data.notTransportStream,
           captions: event.data.captions,
+          metadata: event.data.metadata,
           droppedAudio: event.data.droppedAudio,
           parameterSets: event.data.parameterSets,
         });

@@ -464,3 +464,27 @@ describe('CEA-608 accessibility', () => {
     expect(captions([])).toEqual([]);
   });
 });
+
+describe('EventStream', () => {
+  it('puts each Event on the period timeline with its scheme and body', () => {
+    const result = parse(fixture('edge-eventstream.mpd'), BASE);
+    expect(result.error).toBeNull();
+    expect(result.presentation?.periods[0]?.events).toEqual([
+      {
+        scheme: 'urn:example:program',
+        value: '1',
+        id: '7',
+        start: 5,
+        duration: 2.5,
+        data: 'news',
+      },
+      {
+        scheme: 'urn:scte:scte35:2013:xml',
+        id: 'urn:scte:scte35:2013:xml:0',
+        start: 12,
+        duration: 30,
+        data: 'splice body',
+      },
+    ]);
+  });
+});

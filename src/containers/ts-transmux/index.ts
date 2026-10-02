@@ -20,6 +20,8 @@
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage, StageContext } from '../../types/stage.js';
 import { captionsWanted, deliverCaptions } from '../captions.js';
+import { id3Events } from '../id3.js';
+import { deliverMetadata, metadataWanted } from '../metadata.js';
 import { createTransmuxRunner, type TransmuxRunnerOptions } from './runner.js';
 import { looksLikeTransportStream } from './sniff.js';
 import { transmuxSource } from './source.js';
@@ -71,6 +73,9 @@ export default function tsTransmux(options: TransmuxRunnerOptions = {}): Stage {
           );
           if (result.parameterSets !== null) parameterSets.set(key, result.parameterSets);
           if (result.captions.length > 0) deliverCaptions(result.captions);
+          if (result.metadata.length > 0 && metadataWanted()) {
+            deliverMetadata(id3Events(result.metadata));
+          }
           if (result.droppedAudio && !announcedDrop) {
             // Once per composition: the fact belongs in the diagnostic trace,
             // but every segment of the variant would repeat it.

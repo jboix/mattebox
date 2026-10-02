@@ -204,6 +204,8 @@ export interface Rendition {
   readonly tiles?: TileGrid;
   /** The highest playback rate a trick-play rendition is made for (DASH @maxPlayoutRate). */
   readonly maxPlayoutRate?: number;
+  /** The HLS date ranges (EXT-X-DATERANGE) this rendition's playlist carries now. */
+  readonly dateRanges?: readonly DateRange[];
 }
 
 /**
@@ -268,6 +270,42 @@ export interface Period {
   /** Absent when the period runs to the next period boundary or the live edge. */
   readonly duration?: number;
   readonly tracks: readonly Track[];
+  /** Events the manifest declares for this period (DASH EventStream). */
+  readonly events?: readonly PresentationEvent[];
+}
+
+/**
+ * An HLS EXT-X-DATERANGE (RFC 8216bis §4.4.5.1), on the presentation
+ * timeline through the playlist's EXT-X-PROGRAM-DATE-TIME. Every attribute
+ * is kept as written; nothing here decides what a CLASS means.
+ */
+export interface DateRange {
+  readonly id: string;
+  /** START-DATE on the presentation timeline, in seconds. */
+  readonly start: number;
+  /** From END-DATE or DURATION, when given. */
+  readonly end?: number;
+  /** From PLANNED-DURATION, when given. */
+  readonly plannedEnd?: number;
+  /** START-DATE as epoch seconds. */
+  readonly startDate: number;
+  /** Every attribute as written: CLASS, SCTE35-OUT, X-ASSET-URI, and the rest. */
+  readonly attributes: Readonly<Record<string, string>>;
+}
+
+/**
+ * A DASH Event of an EventStream (ISO/IEC 23009-1 §5.10.2), on the
+ * presentation timeline.
+ */
+export interface PresentationEvent {
+  readonly scheme: string;
+  readonly value?: string;
+  readonly id: string;
+  /** Presentation time, in seconds. */
+  readonly start: number;
+  readonly duration?: number;
+  /** The messageData attribute, or else the element's text. */
+  readonly data?: string;
 }
 
 /**

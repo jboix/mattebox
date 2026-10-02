@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT30S" profiles="urn:mpeg:dash:profile:isoff-live:2011">
+  <Period id="p0" start="PT0S">
+    <EventStream schemeIdUri="urn:example:program" value="1" timescale="1000" presentationTimeOffset="1000">
+      <Event id="7" presentationTime="6000" duration="2500" messageData="news"/>
+    </EventStream>
+    <EventStream schemeIdUri="urn:scte:scte35:2013:xml">
+      <Event presentationTime="12" duration="30">splice body</Event>
+    </EventStream>
+    <AdaptationSet id="1" contentType="video" mimeType="video/mp4" codecs="avc1.4d401f">
+      <SegmentTemplate media="v-$Number$.m4s" initialization="v-init.mp4" duration="6" timescale="1"/>
+      <Representation id="v1" bandwidth="800000" width="640" height="360"/>
+    </AdaptationSet>
+  </Period>
+</MPD>

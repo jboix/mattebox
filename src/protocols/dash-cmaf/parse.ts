@@ -22,6 +22,7 @@ import type {
   ContentType,
   IndexedSegments,
   Presentation,
+  PresentationEvent,
   ProtectionScheme,
   Rendition,
   Segment,
@@ -179,6 +180,40 @@ function audioCharacteristics(adaptationSet: Element): string[] {
     if (tag !== undefined && !tags.includes(tag)) tags.push(tag);
   }
   return tags;
+}
+
+/**
+ * ISO/IEC 23009-1 §5.10.2: a Period's EventStreams. Each Event's
+ * presentationTime counts in the stream's timescale from its
+ * presentationTimeOffset, relative to the Period start. The body is the
+ * messageData attribute, or else the element's text. Events carry the
+ * scheme as written; nothing here decides what one means.
+ */
+function eventsOf(periodElement: Element, periodStart: number): PresentationEvent[] {
+  const out: PresentationEvent[] = [];
+  for (const stream of children(periodElement, 'EventStream')) {
+    const scheme = attr(stream, 'schemeIdUri');
+    if (scheme === null) continue;
+    const value = attr(stream, 'value');
+    const timescale = numberAttr(stream, 'timescale') ?? 1;
+    const offset = numberAttr(stream, 'presentationTimeOffset') ?? 0;
+    let index = 0;
+    for (const event of children(stream, 'Event')) {
+      const time = numberAttr(event, 'presentationTime') ?? 0;
+      const duration = numberAttr(event, 'duration');
+      const data = attr(event, 'messageData') ?? event.textContent?.trim() ?? '';
+      out.push({
+        scheme,
+        ...(value !== null ? { value } : {}),
+        id: attr(event, 'id') ?? `${scheme}:${index}`,
+        start: periodStart + (time - offset) / timescale,
+        ...(duration !== null ? { duration: duration / timescale } : {}),
+        ...(data !== '' ? { data } : {}),
+      });
+      index += 1;
+    }
+  }
+  return out.sort((a, b) => a.start - b.start);
 }
 
 const CEA608_SCHEME = 'urn:scte:dash:cc:cea-608:2015';
@@ -659,6 +694,8 @@ export function parse(text: string, baseUrl: string): ParseResult {
     };
   }
 
+  const events = eventsOf(periodElement, periodStart);
+
   return {
     presentation: {
       id: baseUrl,
@@ -670,6 +707,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
           start: periodStart,
           ...(periodDuration !== null ? { duration: periodDuration } : {}),
           tracks,
+          ...(events.length > 0 ? { events } : {}),
         },
       ],
       couplings: [],

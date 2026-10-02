@@ -32,6 +32,7 @@ import recovery from '../../src/stages/recovery/index.js';
 import textCea608 from '../../src/stages/text-cea608/index.js';
 import textWebvtt from '../../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../../src/stages/text-webvtt-segmented/index.js';
+import timedMetadata from '../../src/stages/timed-metadata/index.js';
 
 export type Source =
   | 'hls'
@@ -44,7 +45,8 @@ export type Source =
   | 'bare'
   | 'forced'
   | 'captions'
-  | 'captions-undeclared';
+  | 'captions-undeclared'
+  | 'metadata';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
 export interface BootOptions {
@@ -98,6 +100,8 @@ const sources: Record<Source, () => string> = {
   // H.264 only: CEA-608 rides in H.264 SEI, which VP9 has no place for.
   captions: () => '/streams/h264/master-captions.m3u8',
   'captions-undeclared': () => '/streams/h264/master-captions-undeclared.m3u8',
+  // The TS stream with an ID3 stream in every segment and two date ranges.
+  metadata: () => '/streams/ts/master-metadata.m3u8',
 };
 
 const live: Array<{ player: Player; stop: () => void }> = [];
@@ -175,9 +179,10 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
   // The legacy container family loads for the TS and packed-audio sources.
   // It sniffs per segment, so it passes CMAF fMP4 straight through, but it is
   // gated here to keep the CMAF tests measuring the CMAF append path.
-  if (src === 'ts' || src === 'aac' || options.ts === true) {
+  if (src === 'ts' || src === 'aac' || src === 'metadata' || options.ts === true) {
     stages.push(tsTransmux(), packedAudio(), metaId3());
   }
+  if (src === 'metadata') stages.push(timedMetadata());
   if (src === 'forced') stages.push(forcedSubtitles());
   if (options.abr === true) stages.push(abr());
   if (options.capsize === true) stages.push(abrCapSize());

@@ -10,7 +10,7 @@ order the first time, then use the table.
 | [03 HLS and DASH](03-hls-and-dash.md)                         | The protocol adapters                                   |
 | [04 Live streaming](04-live-streaming.md)                     | The live adapters, the edge, latency, wall-clock time   |
 | [05 Quality and ABR](05-quality-and-abr.md)                   | Renditions, constraints, pins, the `abr` stage          |
-| [06 Audio and text](06-audio-and-text.md)                     | Alternate audio, WebVTT, CEA-608, ID3 metadata          |
+| [06 Audio and text](06-audio-and-text.md)                     | Alternate audio, WebVTT, CEA-608, timed metadata        |
 | [07 DRM](07-drm.md)                                           | ClearKey, Widevine, PlayReady, FairPlay                 |
 | [08 Legacy transport streams](08-legacy-transport-streams.md) | MPEG-TS, packed audio, and codec probing                |
 | [09 Events and errors](09-events-and-errors.md)               | Events, error codes, the `recovery` stage               |

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { id3Cues, id3TagLength, parseId3Frames } from '../../../src/containers/id3.js';
+import { id3Cues, id3Events, id3TagLength, parseId3Frames } from '../../../src/containers/id3.js';
 import { looksLikePackedAudio, packAudio } from '../../../src/containers/packed-audio/index.js';
 
 /** Builds a minimal ID3v2.4 tag holding one TXXX-style text frame. */
@@ -55,6 +55,50 @@ describe('ID3 framing', () => {
     expect(payload.value).toBe('Chapter One');
   });
 });
+
+describe('ID3 tags as timed-metadata records', () => {
+  it('splits a TXXX frame into its description and value', () => {
+    const [event] = id3Events([{ time: 4.25, bytes: id3Tag('TXXX', 'source\0camera 2') }]);
+    expect(event).toMatchObject({ id: 'id3@4250#0', source: 'id3', start: 4.25, end: 4.25 });
+    expect(event?.frames?.[0]).toMatchObject({
+      id: 'TXXX',
+      description: 'source',
+      value: 'camera 2',
+    });
+    expect(id3Cues(id3Tag('TXXX', 'source\0camera 2'), 0)[0]?.payload).toMatchObject({
+      value: 'camera 2',
+      description: 'source',
+    });
+  });
+
+  it('numbers tags that share a time, so a refetched segment yields the same ids', () => {
+    const tags = [
+      { time: 1, bytes: id3Tag('TIT2', 'a') },
+      { time: 1, bytes: id3Tag('TIT2', 'b') },
+      { time: 2, bytes: id3Tag('TIT2', 'c') },
+    ];
+    expect(id3Events(tags).map((e) => e.id)).toEqual(['id3@1000#0', 'id3@1000#1', 'id3@2000#0']);
+    expect(id3Events(tags)).toEqual(id3Events(tags));
+  });
+
+  it('decodes UTF-16 text with either byte order', () => {
+    const tag = id3Tag('TIT2', '');
+    const frames = (body: number[]) =>
+      id3Events([{ time: 0, bytes: withBody(tag, body) }])[0]?.frames?.[0]?.value;
+    // "hé" as UTF-16 with a big-endian mark, then as UTF-16BE without one.
+    expect(frames([0x01, 0xfe, 0xff, 0x00, 0x68, 0x00, 0xe9])).toBe('hé');
+    expect(frames([0x02, 0x00, 0x68, 0x00, 0xe9])).toBe('hé');
+    expect(frames([0x01, 0xff, 0xfe, 0x68, 0x00, 0xe9, 0x00])).toBe('hé');
+    expect(frames([0x00, 0x68, 0xe9])).toBe('hé');
+  });
+});
+
+/** The tag with its one frame's body replaced, sizes updated. */
+function withBody(tag: Uint8Array, body: number[]): Uint8Array {
+  const id = [...tag.subarray(10, 14)];
+  const frame = [...id, 0, 0, 0, body.length, 0, 0, ...body];
+  return Uint8Array.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, frame.length, ...frame]);
+}
 
 describe('packed audio with a leading ID3 tag', () => {
   it('sniffs past the tag and wraps the ADTS that follows', () => {

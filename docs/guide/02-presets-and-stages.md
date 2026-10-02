@@ -100,17 +100,18 @@ memory, recovery, content steering, alternate audio with codec switching,
 WebVTT subtitles, forced subtitles, CEA-608 captions, CMAF live timing, program date time,
 and the codec probe. The HLS lines add AES-128 segment decryption.
 `-ts` adds the transmuxer, packed audio, and ID3 metadata. `-drm` adds the
-three EME stages. `full` is `dual-ts-drm` plus the four stages below, and
+three EME stages. `full` is `dual-ts-drm` plus the five stages below, and
 `kernel` is nothing, for a stack you build by hand.
 
-Four stages are only in `full`. Add them with `stages` when you need them.
+Five stages are only in `full`. Add them with `stages` when you need them.
 
-| Stage        | Why                                               |
-| ------------ | ------------------------------------------------- |
-| `thumbnails` | Fetches image playlists, so it is opt-in          |
-| `chapters`   | Only your app knows the chapters file             |
-| `trick-play` | Only your UI knows when to scan                   |
-| `cmcd`       | Changes every request to the CDN, so it is opt-in |
+| Stage            | Why                                               |
+| ---------------- | ------------------------------------------------- |
+| `thumbnails`     | Fetches image playlists, so it is opt-in          |
+| `chapters`       | Only your app knows the chapters file             |
+| `trick-play`     | Only your UI knows when to scan                   |
+| `cmcd`           | Changes every request to the CDN, so it is opt-in |
+| `timed-metadata` | Only your page reads it                           |
 
 The caption stages read the NAL unit headers of every H.264 and HEVC video
 segment, a fraction of a millisecond per segment. If your content has no

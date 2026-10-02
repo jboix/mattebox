@@ -34,6 +34,7 @@ import textCea608 from '../src/stages/text-cea608/index.js';
 import textWebvtt from '../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../src/stages/text-webvtt-segmented/index.js';
 import thumbnails from '../src/stages/thumbnails/index.js';
+import timedMetadata from '../src/stages/timed-metadata/index.js';
 import trickPlay from '../src/stages/trick-play/index.js';
 
 export const hlsFactories = { hlsCmaf, hlsLive, aes128 };
@@ -59,4 +60,4 @@ export const baseFactories = {
 /** The TS tier. ts-transmux runs its one compiled copy, from cdn/transmux-source.ts. */
 export const tsFactories = { tsTransmux, packedAudio, metaId3 };
 export const drmFactories = { emeCore, emeCenc, emeFairplay };
-export const accessoryFactories = { cmcd, thumbnails, chapters, trickPlay };
+export const accessoryFactories = { cmcd, thumbnails, chapters, trickPlay, timedMetadata };

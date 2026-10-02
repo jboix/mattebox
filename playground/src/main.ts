@@ -35,6 +35,7 @@ import type { Level, Source } from './log.js';
 import { createEventLog, toJson } from './log.js';
 import type { Check, ParsedManifest } from './manifest-checks.js';
 import { checkManifest } from './manifest-checks.js';
+import { renderMetadata } from './metadata.js';
 import type { BusinessUnit, Composition, IlResource, SearchResult } from './srgssr.js';
 import {
   BUSINESS_UNITS,
@@ -384,6 +385,11 @@ app.innerHTML = `
       <div class="sub">
         <div class="panel-head"><h3>Timeline</h3><span class="hint">the session over time: buffer, throughput, stalls, frames, and switches</span></div>
         <div id="charts" class="charts"></div>
+      </div>
+
+      <div class="sub">
+        <div class="panel-head"><h3>Timed metadata</h3><span class="hint">engine.metadata: date ranges, EventStream, emsg, and ID3, the ones under the playhead in bold</span></div>
+        <div id="metadata"></div>
       </div>
 
       <div class="sub">
@@ -1690,12 +1696,14 @@ Object.assign(window, {
 
 const dockDeps = { engine: () => engine, constraints: config.constraints };
 const qualityHost = document.querySelector('#quality') as HTMLElement;
+const metadataHost = document.querySelector('#metadata') as HTMLElement;
 setInterval(() => {
   log.poll();
   charts.poll();
   (document.querySelector('#logCount') as HTMLElement).textContent = `${log.size} rows`;
   renderQuality(qualityHost, dockDeps);
   renderEngineInfo();
+  renderMetadata(metadataHost, engine, video.currentTime);
   renderPlaybackStatus();
   transport.poll();
 }, 500);

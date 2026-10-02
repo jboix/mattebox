@@ -10,7 +10,8 @@
  * legacy segments it rides in.
  */
 
-import { id3Cues } from '../../containers/id3.js';
+import { id3Cues, id3Events } from '../../containers/id3.js';
+import { deliverMetadata, metadataWanted } from '../../containers/metadata.js';
 import { createMetadataSink } from '../../kernel/sinks/metadata-sink.js';
 import type { CueDescriptor } from '../../types/messages.js';
 import type { SegmentMeta } from '../../types/sink.js';
@@ -18,7 +19,9 @@ import type { Stage } from '../../types/stage.js';
 
 function parseId3Segment(data: Uint8Array, meta: SegmentMeta): readonly CueDescriptor[] {
   // The segment's presentation start times every cue; a zero-length cue is
-  // how a point-in-time metadata event is represented.
+  // how a point-in-time metadata event is represented. The timed-metadata
+  // stage, when loaded, gets the tag as a record too.
+  if (metadataWanted()) deliverMetadata(id3Events([{ time: meta.start, bytes: data }]));
   return id3Cues(data, meta.start);
 }
 

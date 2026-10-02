@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { registerMetadataConsumer } from '../../../src/containers/metadata.js';
 import { walkBoxes } from '../../../src/containers/mp4-box/index.js';
 import tsTransmux from '../../../src/containers/ts-transmux/index.js';
 import type { KernelState } from '../../../src/types/kernel.js';
+import type { MetadataEvent } from '../../../src/types/metadata.js';
 import type { SegmentMeta } from '../../../src/types/sink.js';
 import type { StageContext, TransformStep } from '../../../src/types/stage.js';
 
@@ -124,6 +126,20 @@ describe('ts-transmux stage', () => {
     const out = await step.transform(fixture('muxed.m2ts'), audioMeta);
     expect(trakCount(out)).toBe(1);
     expect(events).toHaveLength(0);
+  });
+
+  it('delivers the ID3 stream as records only while a metadata consumer is loaded', async () => {
+    const { ctx, transforms } = captureContext();
+    tsTransmux({ disableWorker: true }).install(ctx);
+    const step = transforms[0] as TransformStep;
+    const delivered: MetadataEvent[] = [];
+    await step.transform(fixture('muxed-id3.m2ts'), { ...videoMeta, start: 20 });
+    expect(delivered).toEqual([]);
+    const unregister = registerMetadataConsumer((events) => delivered.push(...events));
+    await step.transform(fixture('muxed-id3.m2ts'), { ...videoMeta, start: 20 });
+    unregister();
+    expect(delivered.map((e) => [e.id, e.source])).toEqual([['id3@21000#0', 'id3']]);
+    expect(delivered[0]?.frames?.[0]).toMatchObject({ id: 'TXXX', value: 'golden' });
   });
 
   it('leaves text and metadata bytes untouched', async () => {

@@ -5,7 +5,7 @@
  * output buffer is transferred back, not copied.
  */
 import type { CcPacket } from '../captions.js';
-import { type ParameterSets, type TransmuxTracks, transmux } from './transmux.js';
+import { type ParameterSets, type TimedTag, type TransmuxTracks, transmux } from './transmux.js';
 
 export interface TransmuxRequest {
   readonly id: number;
@@ -21,6 +21,7 @@ export interface TransmuxResponse {
   readonly bytes: ArrayBuffer | null;
   readonly notTransportStream: boolean;
   readonly captions: readonly CcPacket[];
+  readonly metadata: readonly TimedTag[];
   readonly droppedAudio: boolean;
   readonly parameterSets: ParameterSets | null;
 }
@@ -50,6 +51,7 @@ export function serveTransmux(scope: TransmuxScope): void {
           bytes: null,
           notTransportStream: result.notTransportStream,
           captions: [],
+          metadata: [],
           droppedAudio: result.droppedAudio,
           parameterSets: null,
         },
@@ -65,6 +67,7 @@ export function serveTransmux(scope: TransmuxScope): void {
         bytes: buffer,
         notTransportStream: false,
         captions: result.captions,
+        metadata: result.metadata,
         droppedAudio: result.droppedAudio,
         parameterSets: result.parameterSets,
       },
