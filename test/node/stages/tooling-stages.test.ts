@@ -146,6 +146,120 @@ describe('cmcd stage', () => {
     expect(draft.headers['CMCD-Request']).toContain('ot=m'); // a manifest URL
   });
 
+  it('names the next segment: nor for another file, nrr for a byte range', () => {
+    const base = initialState();
+    const rendition = (id: string, segments: unknown) => ({
+      id,
+      bitrate: 1_000_000,
+      codecs: null,
+      mimeType: 'video/mp4',
+      segments,
+    });
+    const state: KernelState = {
+      ...base,
+      presentation: {
+        id: 'p',
+        isLive: false,
+        couplings: [],
+        periods: [
+          {
+            id: 'p0',
+            start: 0,
+            tracks: [
+              {
+                id: 'v',
+                contentType: 'video',
+                mimeType: 'video/mp4',
+                protection: null,
+                renditions: [
+                  rendition('files', [
+                    { seq: 0, start: 0, duration: 4, url: 'https://cdn.example/a/v/0.m4s' },
+                    { seq: 1, start: 4, duration: 4, url: 'https://cdn.example/a/w/1.m4s?x=1' },
+                  ]),
+                  rendition('ranges', [
+                    {
+                      seq: 0,
+                      start: 0,
+                      duration: 4,
+                      url: 'https://cdn.example/f.mp4',
+                      byteRange: { start: 0, end: 99 },
+                    },
+                    {
+                      seq: 1,
+                      start: 4,
+                      duration: 4,
+                      url: 'https://cdn.example/f.mp4',
+                      byteRange: { start: 100, end: 199 },
+                    },
+                  ]),
+                ],
+              },
+            ],
+          },
+        ],
+      } as KernelState['presentation'],
+      scheduling: {
+        ...base.scheduling,
+        inflight: new Map([
+          [
+            't1',
+            {
+              token: 't1',
+              trackId: 'v',
+              seq: 0,
+              url: 'https://cdn.example/a/v/0.m4s',
+              renditionId: 'files',
+            },
+          ],
+          [
+            't2',
+            {
+              token: 't2',
+              trackId: 'v',
+              seq: 0,
+              url: 'https://cdn.example/f.mp4',
+              renditionId: 'ranges',
+            },
+          ],
+          [
+            't3',
+            {
+              token: 't3',
+              trackId: 'v',
+              seq: 1,
+              url: 'https://cdn.example/f.mp4',
+              renditionId: 'ranges',
+            },
+          ],
+        ]),
+      },
+    };
+    const { ctx, hooks } = fakeContext({
+      state,
+      element: { buffered: { length: 0, start: () => 0, end: () => 0 }, currentTime: 0 },
+    });
+    cmcd({ mode: 'header', sessionId: 'x' }).install(ctx);
+    const send = (token: string, url: string) => {
+      const draft: TransportRequestDraftView = {
+        url,
+        headers: {},
+        timeoutMs: null,
+        token,
+        attempt: 0,
+      };
+      hooks[0]?.(draft);
+      return draft.headers['CMCD-Request'] as string;
+    };
+    expect(send('t1', 'https://cdn.example/a/v/0.m4s')).toContain(
+      `nor="${encodeURIComponent('../w/1.m4s?x=1')}"`,
+    );
+    const ranged = send('t2', 'https://cdn.example/f.mp4');
+    expect(ranged).toContain('nrr="100-199"');
+    expect(ranged).not.toContain('nor=');
+    // The last segment has no next one.
+    expect(send('t3', 'https://cdn.example/f.mp4')).not.toMatch(/nor=|nrr=/);
+  });
+
   it('generates a UUID session id without randomUUID, as on a plain-HTTP page', () => {
     // randomUUID exists only in secure contexts; hide it to take the fallback.
     const saved = Object.getOwnPropertyDescriptor(globalThis.crypto, 'randomUUID');

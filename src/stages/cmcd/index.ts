@@ -6,10 +6,12 @@
  * argument or request headers.
  *
  * It computes nothing the kernel does not already track: the active rendition
- * bitrate, the measured throughput EWMA, and the buffer ahead of the playhead
- * from the media element. No new kernel state, no new effect.
+ * bitrate, the measured throughput EWMA, the buffer ahead of the playhead
+ * from the media element, and the segment after the one requested (`nor`,
+ * `nrr`), so a CDN can prefetch it. No new kernel state, no new effect.
  */
 import { findRendition } from '../../kernel/presentation.js';
+import { segmentAt } from '../../kernel/timeline.js';
 import type { Stage } from '../../types/stage.js';
 
 export interface CmcdOptions {
@@ -64,6 +66,23 @@ function sessionUuid(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/**
+ * `to` as a path relative to `from`, as `nor` needs (CTA-5004 §3.3.1):
+ * the file name in the same directory, `../` steps up, or the absolute URL
+ * on another origin.
+ */
+function relativePath(from: string, to: string): string {
+  const a = new URL(from);
+  const b = new URL(to);
+  if (a.origin !== b.origin) return to;
+  const fromDirs = a.pathname.split('/').slice(0, -1);
+  const toParts = b.pathname.split('/');
+  let common = 0;
+  while (common < fromDirs.length && fromDirs[common] === toParts[common]) common += 1;
+  const up = '../'.repeat(fromDirs.length - common);
+  return `${up}${toParts.slice(common).join('/')}${b.search}`;
+}
+
 export default function cmcd(options: CmcdOptions = {}): Stage {
   const sessionId = options.sessionId ?? sessionUuid();
   const mode = options.mode ?? 'query';
@@ -95,6 +114,23 @@ export default function cmcd(options: CmcdOptions = {}): Stage {
         const ahead = bufferAhead(el);
         if (ahead !== null) keys.bl = Math.round((ahead * 1000) / 100) * 100;
         if (ahead !== null && ahead < 1) keys.su = true;
+
+        // The next segment of the same rendition: its path (nor) when it is
+        // another object, its byte range (nrr) when it is a range request.
+        const request = state.scheduling.inflight.get(req.token);
+        if (request !== undefined && request.seq >= 0 && request.renditionId !== undefined) {
+          const site = findRendition(state.presentation, request.renditionId);
+          const next =
+            site === null
+              ? null
+              : segmentAt(site.rendition.segments, request.seq + 1, site.period.start);
+          if (next !== null) {
+            if (next.url !== request.url)
+              keys.nor = encodeURIComponent(relativePath(request.url, next.url));
+            if (next.byteRange !== undefined)
+              keys.nrr = `${next.byteRange.start}-${next.byteRange.end}`;
+          }
+        }
 
         const payload = serialize(keys);
         if (mode === 'header') {

@@ -64,6 +64,20 @@ cmcd({ contentId: 'episode-42', mode: 'query', sessionId: crypto.randomUUID() })
 | `mode`      | `query` appends a `CMCD` argument. `header` sends `CMCD-*` headers |
 | `sessionId` | Overrides the generated session id                                 |
 
+| Key   | Value                                                                         |
+| ----- | ----------------------------------------------------------------------------- |
+| `sid` | The session id                                                                |
+| `cid` | The content id, when given                                                    |
+| `ot`  | The object type: `m` manifest, `av` media, `a` audio, `c` captions            |
+| `br`  | The active rendition's bitrate, in kbps                                       |
+| `mtp` | The measured throughput, in kbps, to 100 kbps                                 |
+| `bl`  | The buffer ahead of the playhead, in ms, to 100 ms                            |
+| `su`  | Starting up or rebuffering: less than one second of buffer                    |
+| `nor` | The next segment's path, relative to this request, so the CDN can prefetch it |
+| `nrr` | The next segment's byte range, when it is a range request                     |
+
+The stage sends CMCD version 1 (CTA-5004), which defines all of these keys.
+
 Headers need a CORS preflight. Use `query` unless your CDN prefers headers.
 
 ## The content-steering stage
