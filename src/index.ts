@@ -456,6 +456,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
     config,
     hooks,
     addRequestHook: (hook) => transport.addRequestHook(hook),
+    addResponseHook: (hook) => transport.addResponseHook(hook),
     request: (url, init) => transport.request(url, init),
     register: (el) => registry.set(el, engine),
     unregister: (el) => {

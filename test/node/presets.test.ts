@@ -52,6 +52,7 @@ const ACCESSORIES = [
   'text-ttml',
   'hdr',
   'qoe',
+  'cmsd',
 ];
 
 const MATRIX: ReadonlyArray<[typeof kernel, readonly string[]]> = [
@@ -82,7 +83,7 @@ describe('the preset matrix', () => {
   it('full carries every stage of the catalogue, each name once', () => {
     const names = full.stages().map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(36);
+    expect(names.length).toBe(37);
   });
 
   it('every call returns fresh stage instances', () => {

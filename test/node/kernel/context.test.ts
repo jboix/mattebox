@@ -12,8 +12,9 @@ function deps() {
   const element = {} as HTMLMediaElement;
   const hooks: HookRegistry = {};
   const addRequestHook = () => () => undefined;
+  const addResponseHook = () => () => undefined;
   const request = async () => new Response();
-  return { bus, facade, slices, element, hooks, addRequestHook, request };
+  return { bus, facade, slices, element, hooks, addRequestHook, addResponseHook, request };
 }
 
 describe('stage context', () => {

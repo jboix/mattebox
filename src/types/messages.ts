@@ -98,6 +98,8 @@ export type Command =
   | { readonly type: 'CONSTRAIN'; readonly source: string; readonly constraint: Constraint }
   | { readonly type: 'RELEASE_CONSTRAINT'; readonly source: string }
   | { readonly type: 'SET_BUFFER_GOAL'; readonly seconds: number }
+  /** A throughput estimate from outside the engine (CMSD `etp`), bits per second; null forgets it. */
+  | { readonly type: 'THROUGHPUT_HINT'; readonly bps: number | null }
   /**
    * Asks the adapters to resolve a rendition's segments although it is not
    * playing: an HLS media playlist or a DASH index. A frame preview reads

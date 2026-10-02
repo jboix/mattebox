@@ -80,6 +80,31 @@ The stage sends CMCD version 1 (CTA-5004), which defines all of these keys.
 
 Headers need a CORS preflight. Use `query` unless your CDN prefers headers.
 
+## The cmsd stage
+
+Common Media Server Data (CTA-5006) is the reverse of CMCD: the CDN tells
+the player about the delivery in response headers. The `cmsd` stage reads
+`CMSD-Dynamic` on every response. It is in `full`; add it to another preset
+with `stages`.
+
+```ts
+import cmsd from 'mattebox/stages/cmsd';
+
+const engine = hls({ stages: [cmsd()] });
+```
+
+| Key   | Effect                                                                                                            |
+| ----- | ----------------------------------------------------------------------------------------------------------------- |
+| `etp` | The server's throughput estimate. ABR uses the lower of it and its own, and it alone before its first measurement |
+| `mb`  | The maximum bitrate the server suggests, applied as the `cmsd` constraint (`maxBitrate`)                          |
+
+When several servers append to the header, the stage reads the one
+nearest the player, the last in the list. A response without the header
+changes nothing.
+
+For a CDN on another origin, the browser hides the header unless the CDN
+sends `Access-Control-Expose-Headers: CMSD-Dynamic`.
+
 ## The content-steering stage
 
 Content steering lets a steering server move viewers between CDNs. HLS

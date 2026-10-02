@@ -36,6 +36,20 @@ export interface TransportRequestDraftView {
   readonly attempt: number;
 }
 
+/** A transport response as a hook sees it. Read-only. */
+export interface TransportResponseView {
+  readonly token: string;
+  readonly url: string;
+  readonly status: number | null;
+  /** Milliseconds from request to the last byte. */
+  readonly rtt: number;
+  readonly size: number;
+  readonly outcome: 'success' | 'failure' | 'timeout';
+  readonly attempt: number;
+  /** The response headers, null when no response arrived. Cross-origin, only those the server exposes. */
+  readonly headers: Headers | null;
+}
+
 export type Unsubscribe = () => void;
 
 export type Listener = (payload: unknown) => void;
@@ -111,6 +125,8 @@ export interface StageContext {
    * with the stage.
    */
   addRequestHook(hook: (req: TransportRequestDraftView) => void): Unsubscribe;
+  /** Observes every transport response, with its headers. CMSD reads here. Unregistered with the stage. */
+  addResponseHook(hook: (res: TransportResponseView) => void): Unsubscribe;
   /**
    * A one-off network request through the transport's request hooks and
    * fetchImpl, for license and steering fetches. Awaits the Response.

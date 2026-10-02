@@ -237,6 +237,7 @@ function composedReducer() {
       registerNamespace: () => undefined,
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
+      addResponseHook: () => () => undefined,
       request: async () => new Response(),
       registerChooser: (chooser) => {
         hooks.abr = chooser;

@@ -39,13 +39,18 @@ const DEFAULTS: Required<AbrOptions> = {
   recoveryFactor: 2,
 };
 
-/** The conservative estimate: the minimum of the slow and fast EWMAs. */
+/**
+ * The conservative estimate: the minimum of the slow and fast EWMAs, and of
+ * the server's estimate (CMSD `etp`) when one is known. Before the engine
+ * has measured anything, the server's estimate stands alone.
+ */
 function estimateBps(telemetry: AbrTelemetry): number {
   const slow = telemetry.throughputEwma;
   const fast = telemetry.throughputFastEwma ?? slow;
-  if (slow === 0) return fast;
-  if (fast === 0) return slow;
-  return Math.min(slow, fast);
+  const measured = slow === 0 ? fast : fast === 0 ? slow : Math.min(slow, fast);
+  const server = telemetry.serverThroughput;
+  if (server === undefined) return measured;
+  return measured === 0 ? server : Math.min(measured, server);
 }
 
 function choose(

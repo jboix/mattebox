@@ -94,3 +94,12 @@ it('12. three constraint sources coexist; releasing one restores only its own', 
     150_000, 300_000,
   ]);
 });
+
+it('50. CMSD: etp starts high before any measurement, mb caps the ladder', async () => {
+  const player = await boot({ src: 'cmsd', abr: true });
+  await play(player, 1, 15_000);
+  expect(player.engine.quality.constraints.get('cmsd')).toEqual({ maxBitrate: 300_000 });
+  // The first choice came from the server's 5 Mbps, capped at 300 kbps.
+  expect(player.switchLog[0]?.id).toBe('v-300000');
+  expect(player.engine.quality.active?.bitrate).toBeLessThanOrEqual(300_000);
+});

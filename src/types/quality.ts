@@ -38,6 +38,8 @@ export interface AbrTelemetry {
   readonly throughputEwma: number;
   /** Fast throughput EWMA; the minimum of the two is the conservative estimate. */
   readonly throughputFastEwma?: number;
+  /** The server's throughput estimate (CMSD `etp`), bits per second, when one is known. */
+  readonly serverThroughput?: number;
   /** Seconds of continuous buffer ahead of the playhead for this track. */
   readonly bufferAhead?: number;
   /** The rendition currently being appended. */

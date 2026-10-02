@@ -129,7 +129,11 @@ function text(res: ServerResponse, contentType: string, body: string): void {
   res.end(body);
 }
 
-function serveStream(res: ServerResponse, pathname: string): void {
+function serveStream(
+  res: ServerResponse,
+  pathname: string,
+  headers: Record<string, string> = {},
+): void {
   const path = normalize(join(STREAMS, pathname.slice('/streams/'.length)));
   if (!path.startsWith(normalize(STREAMS)) || !existsSync(path) || !statSync(path).isFile()) {
     res.writeHead(404);
@@ -139,6 +143,7 @@ function serveStream(res: ServerResponse, pathname: string): void {
   res.writeHead(200, {
     'content-type': MIME[extname(path)] ?? 'application/octet-stream',
     'cache-control': 'no-store',
+    ...headers,
   });
   createReadStream(path).pipe(res);
 }
@@ -170,6 +175,16 @@ function handle(req: IncomingMessage, res: ServerResponse): boolean {
       return true;
     }
     serveStream(res, rest);
+    return true;
+  }
+  // The corpus with CMSD (CTA-5006): the edge estimates 5 Mbps and caps the
+  // bitrate at 300 kbps, exposed as a cross-origin CDN would.
+  const cmsdMatch = /^\/cmsd(\/streams\/.*)$/.exec(url.pathname);
+  if (cmsdMatch !== null) {
+    serveStream(res, cmsdMatch[1] as string, {
+      'CMSD-Dynamic': '"edge";etp=5000;mb=300',
+      'Access-Control-Expose-Headers': 'CMSD-Dynamic',
+    });
     return true;
   }
   const liveMatch = /^\/live\/(h264|vp9)\/(live|master)\.(m3u8|mpd)$/.exec(url.pathname);

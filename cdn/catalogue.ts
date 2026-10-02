@@ -18,6 +18,7 @@ import altAudio from '../src/stages/alt-audio/index.js';
 import chapters from '../src/stages/chapters/index.js';
 import cmafTiming from '../src/stages/cmaf-timing/index.js';
 import cmcd from '../src/stages/cmcd/index.js';
+import cmsd from '../src/stages/cmsd/index.js';
 import codecProbe from '../src/stages/codec-probe/index.js';
 import codecSwitch from '../src/stages/codec-switch/index.js';
 import contentSteering from '../src/stages/content-steering/index.js';
@@ -74,4 +75,5 @@ export const accessoryFactories = {
   textTtml,
   hdr,
   qoe,
+  cmsd,
 };

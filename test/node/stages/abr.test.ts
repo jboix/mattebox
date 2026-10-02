@@ -67,6 +67,7 @@ function composeWithAbr(options?: Parameters<typeof abr>[0]) {
     registerNamespace: () => undefined,
     getState: () => initialState(),
     addRequestHook: () => () => undefined,
+    addResponseHook: () => () => undefined,
     request: async () => new Response(),
     registerChooser: (chooser) => {
       hooks.abr = chooser;

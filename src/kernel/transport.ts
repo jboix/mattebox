@@ -60,6 +60,8 @@ export interface TransportResponseInfo {
   readonly size: number;
   readonly outcome: 'success' | 'failure' | 'timeout';
   readonly attempt: number;
+  /** The response headers, null when no response arrived. Cross-origin, only those the server exposes. */
+  readonly headers: Headers | null;
 }
 
 export type RequestHook = (req: TransportRequestDraft) => void;
@@ -239,6 +241,7 @@ export function createTransport(options: TransportOptions): Transport {
             size: 0,
             outcome: 'failure',
             attempt: attemptNo,
+            headers: response.headers,
           });
           retryOrFail('NETWORK_HTTP_STATUS', response.status);
           return;
@@ -268,6 +271,7 @@ export function createTransport(options: TransportOptions): Transport {
           size: bytes.byteLength,
           outcome: refused ? 'failure' : 'success',
           attempt: attemptNo,
+          headers: response.headers,
         });
         live.delete(token);
         if (refused) {
@@ -315,6 +319,7 @@ export function createTransport(options: TransportOptions): Transport {
           size: 0,
           outcome,
           attempt: attemptNo,
+          headers: null,
         });
         retryOrFail(state.timedOut ? 'NETWORK_TIMEOUT' : 'NETWORK_FAILED');
       });

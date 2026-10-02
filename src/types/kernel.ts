@@ -167,6 +167,8 @@ export interface StatsState {
   readonly throughputEwma: number;
   /** Fast EWMA over the same samples; falls quickly when the network does. */
   readonly throughputFastEwma: number;
+  /** The server's throughput estimate, bits per second (CMSD `etp`), while one is known. */
+  readonly serverThroughput?: number;
 }
 
 /**

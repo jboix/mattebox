@@ -104,6 +104,7 @@ function compose(stages: readonly Stage[], hooks: Parameters<typeof createReduce
       registerTimeProbe: () => undefined,
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
+      addResponseHook: () => () => undefined,
       request: async () => new Response(),
       reduce: (name, reducer) => slices.push([name, reducer as SliceReducer]),
       dispatch: () => undefined,

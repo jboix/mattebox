@@ -14,6 +14,7 @@ import type {
   Teardown,
   TransformStep,
   TransportRequestDraftView,
+  TransportResponseView,
   TypeProbe,
 } from '../types/stage.js';
 import type { KernelBus } from './bus.js';
@@ -42,6 +43,8 @@ export interface ContextDeps {
   readonly hooks: HookRegistry;
   /** Registers a transport request hook; returns the unsubscribe. */
   readonly addRequestHook: (hook: (req: TransportRequestDraftView) => void) => () => void;
+  /** Registers a transport response hook; returns the unsubscribe. */
+  readonly addResponseHook: (hook: (res: TransportResponseView) => void) => () => void;
   /** A one-off request through the transport. */
   readonly request: (
     url: string,
@@ -96,6 +99,11 @@ export function createStageContext(deps: ContextDeps): { ctx: StageContext; tear
     },
     addRequestHook(hook) {
       const off = deps.addRequestHook(hook);
+      unsubscribes.push(off);
+      return off;
+    },
+    addResponseHook(hook) {
+      const off = deps.addResponseHook(hook);
       unsubscribes.push(off);
       return off;
     },

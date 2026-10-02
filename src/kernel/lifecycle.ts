@@ -9,7 +9,7 @@ import type { AttachOptions } from '../types/facade.js';
 import type { TimeRangesSnapshot } from '../types/ir.js';
 import type { KernelConfig, SliceReducer } from '../types/kernel.js';
 import type { Fact } from '../types/messages.js';
-import type { Stage, TransportRequestDraftView } from '../types/stage.js';
+import type { Stage, TransportRequestDraftView, TransportResponseView } from '../types/stage.js';
 import type { KernelBus } from './bus.js';
 import type { HookRegistry } from './context.js';
 import { createStageContext } from './context.js';
@@ -28,6 +28,8 @@ export interface LifecycleDeps {
   readonly hooks: HookRegistry;
   /** Transport request-hook registration, passed to stage contexts. */
   readonly addRequestHook: (hook: (req: TransportRequestDraftView) => void) => () => void;
+  /** Transport response-hook registration, passed to stage contexts. */
+  readonly addResponseHook: (hook: (res: TransportResponseView) => void) => () => void;
   /** A one-off transport request, passed to stage contexts. */
   readonly request: (
     url: string,
@@ -89,6 +91,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
         slices,
         hooks: deps.hooks,
         addRequestHook: deps.addRequestHook,
+        addResponseHook: deps.addResponseHook,
         request: deps.request,
       });
       const returned = (stage as Stage).install(ctx);

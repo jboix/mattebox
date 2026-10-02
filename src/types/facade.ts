@@ -7,7 +7,13 @@ import type { ContentType, Track, TrackId } from './ir.js';
 import type { KernelConfig, KernelState, TracedError, TraceEntry } from './kernel.js';
 import type { Command } from './messages.js';
 import type { QualityApi } from './quality.js';
-import type { Listener, Stage, TransportRequestDraftView, Unsubscribe } from './stage.js';
+import type {
+  Listener,
+  Stage,
+  TransportRequestDraftView,
+  TransportResponseView,
+  Unsubscribe,
+} from './stage.js';
 
 /**
  * Generic track enumeration and selection. Chromium never shipped
@@ -43,16 +49,6 @@ export interface StatsApi {
 
 /** The mutable request draft transport hooks receive. Structural twin of the transport module's type. */
 export type { TransportRequestDraftView } from './stage.js';
-
-export interface TransportResponseView {
-  readonly token: string;
-  readonly url: string;
-  readonly status: number | null;
-  readonly rtt: number;
-  readonly size: number;
-  readonly outcome: 'success' | 'failure' | 'timeout';
-  readonly attempt: number;
-}
 
 /** Network-layer configuration: hooks and overrides the transport applies. */
 export interface TransportConfig {

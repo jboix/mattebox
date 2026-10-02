@@ -18,6 +18,7 @@ import abr from '../../src/stages/abr/index.js';
 import abrCapSize from '../../src/stages/abr-cap-size/index.js';
 import altAudio from '../../src/stages/alt-audio/index.js';
 import cmafTiming from '../../src/stages/cmaf-timing/index.js';
+import cmsd from '../../src/stages/cmsd/index.js';
 import codecProbe from '../../src/stages/codec-probe/index.js';
 import codecSwitch from '../../src/stages/codec-switch/index.js';
 import contentSteering from '../../src/stages/content-steering/index.js';
@@ -51,6 +52,7 @@ export type Source =
   | 'captions-708'
   | 'ttml'
   | 'dash-list'
+  | 'cmsd'
   | 'metadata';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
@@ -113,6 +115,8 @@ const sources: Record<Source, () => string> = {
   ttml: () => `/streams/${flavor}-dash/manifest-ttml.mpd`,
   // The DASH flavor with each SegmentTemplate rewritten as a SegmentList.
   'dash-list': () => `/streams/${flavor}-dash/manifest-list.mpd`,
+  // The HLS flavor through a route that adds CMSD-Dynamic to every response.
+  cmsd: () => `/cmsd/streams/${flavor}/master.m3u8`,
   // The TS stream with an ID3 stream in every segment and two date ranges.
   metadata: () => '/streams/ts/master-metadata.m3u8',
 };
@@ -198,6 +202,7 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
   if (src === 'metadata') stages.push(timedMetadata());
   if (src === 'captions-708') stages.push(textCea708());
   if (src === 'ttml') stages.push(textTtml());
+  if (src === 'cmsd') stages.push(cmsd());
   if (src === 'forced') stages.push(forcedSubtitles());
   if (options.abr === true) stages.push(abr());
   if (options.capsize === true) stages.push(abrCapSize());

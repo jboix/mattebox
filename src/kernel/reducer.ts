@@ -705,6 +705,17 @@ function reduceCommand(
       ];
     }
 
+    case 'THROUGHPUT_HINT': {
+      if (msg.bps !== null && (!Number.isFinite(msg.bps) || msg.bps <= 0)) {
+        return reject(state, msg.type, 'invalid throughput');
+      }
+      const { serverThroughput: _old, ...stats } = state.stats;
+      return [
+        { ...state, stats: msg.bps === null ? stats : { ...stats, serverThroughput: msg.bps } },
+        [],
+      ];
+    }
+
     case 'SET_BUFFER_GOAL': {
       if (!Number.isFinite(msg.seconds) || msg.seconds <= 0) {
         return reject(state, msg.type, 'invalid buffer goal');
@@ -1666,7 +1677,7 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
         ? state.quality.version
         : `${state.quality.version}:${Math.round(state.stats.throughputEwma / 25_000)}:${Math.round(
             state.stats.throughputFastEwma / 25_000,
-          )}:${Math.round(bufferAhead)}:${state.quality.active}`;
+          )}:${Math.round((state.stats.serverThroughput ?? 0) / 25_000)}:${Math.round(bufferAhead)}:${state.quality.active}`;
     const outcome = arbiterFor(hooks, contentType).run(
       {
         renditions: found.track.renditions,
@@ -1680,6 +1691,9 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
         telemetry: {
           throughputEwma: state.stats.throughputEwma,
           throughputFastEwma: state.stats.throughputFastEwma,
+          ...(state.stats.serverThroughput !== undefined
+            ? { serverThroughput: state.stats.serverThroughput }
+            : {}),
           bufferAhead,
           current: state.quality.active,
           currentTime: state.playback.currentTime,
@@ -1924,6 +1938,7 @@ const COMMAND_TYPES: Record<Command['type'], true> = {
   CONSTRAIN: true,
   RELEASE_CONSTRAINT: true,
   SET_BUFFER_GOAL: true,
+  THROUGHPUT_HINT: true,
   RESOLVE_RENDITION: true,
   ABORT_INFLIGHT: true,
   ADD_TRACK: true,
