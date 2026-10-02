@@ -38,6 +38,13 @@ export interface EmeOptions {
   readonly clearKeys?: Readonly<Record<string, string>>;
   /** Preference order among available key systems. */
   readonly preferredKeySystems?: readonly string[];
+  /**
+   * Closes every key session when the engine suspends and requests the
+   * licenses again when it resumes, so a suspended player stops holding a
+   * license (and its renewals) against a concurrent-stream limit. Off by
+   * default: resuming then waits for a license round trip.
+   */
+  readonly releaseOnSuspend?: boolean;
 }
 
 export interface DrmApi {
@@ -339,6 +346,30 @@ export default function emeCore(options: EmeOptions = {}): Stage {
       };
       element.addEventListener('play', onPlay);
 
+      // Suspend releases the sessions; resume asks for the same licenses again.
+      let released: SessionRecord[] = [];
+      const offSuspended = ctx.on('lifecycle:suspended', () => {
+        if (options.releaseOnSuspend !== true || open.size === 0) return;
+        // A session being replaced goes with its replacement; renew both as one.
+        const live = [...open.entries()].filter(
+          ([session]) => ![...open.values()].some((r) => r.replaces === session),
+        );
+        released = live.map(([, record]) => ({
+          initDataType: record.initDataType,
+          initData: record.initData,
+          replaces: null,
+          usable: false,
+        }));
+        for (const session of [...open.keys()]) retire(session);
+        statuses.clear();
+        ctx.emit('drm:released', { sessions: released.length });
+      });
+      const offResumed = ctx.on('lifecycle:resumed', () => {
+        const records = released;
+        released = [];
+        for (const record of records) void startSession(record);
+      });
+
       // The media route: the element fires `encrypted` with init data.
       const onEncrypted = (event: Event): void => {
         const e = event as MediaEncryptedEvent;
@@ -371,6 +402,8 @@ export default function emeCore(options: EmeOptions = {}): Stage {
         element.removeEventListener('encrypted', onEncrypted);
         element.removeEventListener('play', onPlay);
         offManifest();
+        offSuspended();
+        offResumed();
         for (const session of [...open.keys()]) retire(session);
         // Only after negotiation set keys: a browser build without EME has
         // no setMediaKeys, and a clear stream never called it.

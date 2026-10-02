@@ -176,7 +176,10 @@ describe('hls-live', () => {
     // unknown until the reload lands, so no segment is scheduled.
     [state, fx] = reduce(state, { type: 'RESUME' });
     expect(state.lifecycle.phase).toBe('ready');
-    expect(fx).toEqual([expect.objectContaining({ kind: 'fetch', token: 'hls:live:refresh:r-0' })]);
+    expect(fx).toEqual([
+      { kind: 'emit', event: 'lifecycle:resumed', payload: {} },
+      expect.objectContaining({ kind: 'fetch', token: 'hls:live:refresh:r-0' }),
+    ]);
 
     // The window moved on during the freeze: the reload reports it, the
     // playhead rejoins at the edge, and the tick chain is alive again.
@@ -903,7 +906,10 @@ describe('dash-live', () => {
 
     [state, fx] = reduce(state, { type: 'RESUME' });
     expect(state.lifecycle.phase).toBe('ready');
-    expect(fx).toEqual([expect.objectContaining({ kind: 'fetch', token: 'dash:live:mpd' })]);
+    expect(fx).toEqual([
+      { kind: 'emit', event: 'lifecycle:resumed', payload: {} },
+      expect.objectContaining({ kind: 'fetch', token: 'dash:live:mpd' }),
+    ]);
 
     // The MPD's parse feeds MANIFEST_LOADED, which re-arms both loops.
     const settled = settle(

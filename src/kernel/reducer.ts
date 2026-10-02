@@ -419,7 +419,10 @@ function reduceCommand(
       // gates scheduling until a live slice reports a fresh one on resume,
       // and lets that report count as the first, so a live presentation
       // rejoins at the edge the way a fresh load does.
-      return [{ ...next, lifecycle: { phase: 'suspended' }, live: null }, aborts];
+      return [
+        { ...next, lifecycle: { phase: 'suspended' }, live: null },
+        [...aborts, { kind: 'emit', event: 'lifecycle:suspended', payload: {} }],
+      ];
     }
 
     case 'RESUME': {
@@ -429,7 +432,12 @@ function reduceCommand(
       // VOD refills from the playhead at once. Live waits: scheduling
       // declines a live presentation without a span, and the live slice
       // reloads its playlists on this same command to bring one.
-      return driveScheduling({ ...state, lifecycle: { phase: 'ready' } }, hooks, cfg);
+      const [resumed, effects] = driveScheduling(
+        { ...state, lifecycle: { phase: 'ready' } },
+        hooks,
+        cfg,
+      );
+      return [resumed, [{ kind: 'emit', event: 'lifecycle:resumed', payload: {} }, ...effects]];
     }
 
     case 'SEEK': {

@@ -62,3 +62,22 @@ it.skipIf(!hasEme)('30. two encrypted events for the same key open one session',
   const sessions = (player.engine.drm?.sessions ?? []).filter((s) => s.keyId === KID);
   expect(sessions.length).toBe(1);
 });
+
+it.skipIf(!hasEme)(
+  '49. suspend releases the key sessions, resume licenses them again',
+  async () => {
+    const player = await boot({ src: 'hls', drm: true, releaseOnSuspend: true });
+    await play(player, 1, 15_000);
+    dispatchEncrypted(player);
+    await waitForUsable(player);
+    const released: unknown[] = [];
+    player.engine.on('drm:released', (payload) => released.push(payload));
+    player.engine.suspend();
+    expect(released).toEqual([{ sessions: 1 }]);
+    expect(player.engine.drm?.sessions).toEqual([]);
+    player.engine.resume();
+    await waitForUsable(player);
+    expect(player.engine.drm?.sessions.find((s) => s.keyId === KID)?.status).toBe('usable');
+    expect(player.engine.error?.code ?? null).toBeNull();
+  },
+);

@@ -40,13 +40,14 @@ changes nothing there.
 
 ## License servers
 
-| Option                | Meaning                                                             |
-| --------------------- | ------------------------------------------------------------------- |
-| `licenseUrl`          | One server for every key system                                     |
-| `licenseUrls`         | A server per key system, keyed by name such as `com.widevine.alpha` |
-| `requestFilter`       | Rewrites the license request body, for auth tokens or wrapping      |
-| `preferredKeySystems` | The order to try when the content offers several                    |
-| `clearKeys`           | Key id to key, base64url, for ClearKey                              |
+| Option                | Meaning                                                              |
+| --------------------- | -------------------------------------------------------------------- |
+| `licenseUrl`          | One server for every key system                                      |
+| `licenseUrls`         | A server per key system, keyed by name such as `com.widevine.alpha`  |
+| `requestFilter`       | Rewrites the license request body, for auth tokens or wrapping       |
+| `preferredKeySystems` | The order to try when the content offers several                     |
+| `clearKeys`           | Key id to key, base64url, for ClearKey                               |
+| `releaseOnSuspend`    | Closes the key sessions on suspend and licenses them again on resume |
 
 ```ts
 emeCore({
@@ -81,6 +82,22 @@ once the new key is usable. Playback continues when the new key arrives.
 - A license that arrives already expired reports `DRM_KEY_EXPIRED`. The
   engine does not request it again.
 
+## Release on suspend
+
+A rights server that limits concurrent streams counts a session as long as
+it holds a license and renews it. With `releaseOnSuspend: true`,
+`engine.suspend()` closes every key session and emits `drm:released` with
+the number of sessions. `engine.resume()` requests the same licenses again.
+
+```ts
+emeCore({ licenseUrl, releaseOnSuspend: true });
+```
+
+The option is off by default: resume then waits for a license round trip
+before encrypted media plays. Closing a temporary session stops its
+renewals; how soon the server frees the stream depends on its license
+duration.
+
 ## ClearKey
 
 ClearKey needs no server. Give the stage the keys and it answers license
@@ -104,6 +121,7 @@ engine.drm.sessions;  // [{ keyId, status }]
 | `drm:keysystem` | A key system was selected                             |
 | `drm:keystatus` | A key's status changed, such as `usable` or `expired` |
 | `drm:renewing`  | An expired license is being renewed, with `keyIds`    |
+| `drm:released`  | Suspend closed the key sessions, with `sessions`      |
 | `error`         | With category `drm` when a step fails                 |
 
 A license failure is fatal. Output restrictions and expired keys carry their

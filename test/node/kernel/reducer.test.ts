@@ -950,7 +950,10 @@ describe('suspend and resume', () => {
     const [suspended, fx] = reduce(frozen(state), { type: 'SUSPEND' });
     expect(suspended.lifecycle.phase).toBe('suspended');
     expect(suspended.scheduling.inflight.size).toBe(0);
-    expect(fx).toEqual([{ kind: 'abort', token: 't1' }]);
+    expect(fx).toEqual([
+      { kind: 'abort', token: 't1' },
+      { kind: 'emit', event: 'lifecycle:suspended', payload: {} },
+    ]);
     // The source and its buffers stay: this is a freeze, not an unload.
     expect(suspended.presentation).toEqual(state.presentation);
     expect(suspended.buffers.size).toBe(1);
@@ -1022,7 +1025,7 @@ describe('suspend and resume', () => {
     // slice reloads and reports it.
     const [resumed, resumeFx] = reduce(frozen(suspended), { type: 'RESUME' });
     expect(resumed.lifecycle.phase).toBe('ready');
-    expect(resumeFx).toEqual([]);
+    expect(resumeFx).toEqual([{ kind: 'emit', event: 'lifecycle:resumed', payload: {} }]);
 
     // The fresh window counts as a first one: the playhead moves to the
     // edge and scheduling starts there.

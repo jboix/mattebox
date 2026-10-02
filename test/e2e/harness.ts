@@ -59,6 +59,8 @@ export interface BootOptions {
   readonly abr?: boolean;
   readonly capsize?: boolean;
   readonly drm?: boolean;
+  /** With `drm`: close the key sessions on suspend, and ask again on resume. */
+  readonly releaseOnSuspend?: boolean;
   /** Load the legacy container family for a CMAF source too. */
   readonly ts?: boolean;
   readonly profile?: Profile;
@@ -201,7 +203,12 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
   if (options.capsize === true) stages.push(abrCapSize());
   if (options.drm === true) {
     // ClearKey with a known KID -> KEY; the encrypted-event test drives it.
-    stages.push(emeCore({ clearKeys: { nrQFDeRLSAKTLifXUIPiZg: 'ABEiM0RVZneImaq7zN3u_w' } }));
+    stages.push(
+      emeCore({
+        clearKeys: { nrQFDeRLSAKTLifXUIPiZg: 'ABEiM0RVZneImaq7zN3u_w' },
+        ...(options.releaseOnSuspend === true ? { releaseOnSuspend: true } : {}),
+      }),
+    );
     stages.push(emeCenc());
   }
 

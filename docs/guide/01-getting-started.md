@@ -114,10 +114,12 @@ refills the buffer from the playhead. A live presentation reloads its
 playlists first and rejoins at the live edge, the way a fresh load does, so
 `engine.live.edge` reads null while suspended.
 
-Suspend does not close DRM key sessions and does not refresh signed URLs. A
-license that expires during the freeze renews when playback resumes (see
-[chapter 07](07-drm.md#license-renewal)). A token that expires makes the
-next request fail.
+Suspend does not refresh signed URLs: a token that expires makes the next
+request fail. It keeps DRM key sessions open unless you set
+`releaseOnSuspend` (see [chapter 07](07-drm.md#release-on-suspend)). A
+license that expires during the freeze renews when playback resumes.
+
+The engine emits `lifecycle:suspended` and `lifecycle:resumed`.
 
 ## Example
 
