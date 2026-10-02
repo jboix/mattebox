@@ -86,3 +86,15 @@ it('14. a media playlist with no CODECS plays: codec-probe types the buffer from
   expect(player.engine.error).toBeNull();
   expect(player.engine.codecProbe?.mimeType).toMatch(/codecs="/);
 });
+
+it('47. a SegmentList MPD plays and seeks, segment by segment URL', async () => {
+  const player = await boot({ src: 'dash-list' });
+  await play(player, 1, 5_000);
+  player.engine.dispatch({ type: 'SEEK', to: 30 });
+  await until(
+    () => player.video.currentTime > 30.1 && !player.video.seeking,
+    'playback past 30 s',
+    10_000,
+  );
+  expect(player.engine.error?.code ?? null).toBeNull();
+});

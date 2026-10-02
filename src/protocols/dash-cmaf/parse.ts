@@ -389,6 +389,79 @@ function mergeTemplates(levels: readonly Element[]): TemplateInfo | null {
  * SegmentTimeline into compressed runs. @r repeats; a negative @r repeats
  * until the next S@t, or the period end on the last S.
  */
+/**
+ * ISO/IEC 23009-1 §5.3.9.3: a SegmentList names each segment by URL and
+ * optional byte range, timed by @duration or a SegmentTimeline. The
+ * attributes and the Initialization inherit from Period to Representation;
+ * the SegmentURLs come from the deepest level that has them. Null when no
+ * level has a SegmentList.
+ */
+function segmentListOf(
+  levels: readonly Element[],
+  base: string,
+  periodStart: number,
+  periodEndUnits: (timescale: number, offset: number) => number | null,
+): { segments: Segment[]; init: SegmentRef | null } | 'invalid' | null {
+  let timescale = 1;
+  let duration: number | null = null;
+  let startNumber = 1;
+  let offset = 0;
+  let initialization: Element | null = null;
+  let timelineElement: Element | null = null;
+  let urls: readonly Element[] = [];
+  let found = false;
+  for (const level of levels) {
+    const list = children(level, 'SegmentList')[0];
+    if (list === undefined) continue;
+    found = true;
+    timescale = numberAttr(list, 'timescale') ?? timescale;
+    duration = numberAttr(list, 'duration') ?? duration;
+    startNumber = numberAttr(list, 'startNumber') ?? startNumber;
+    offset = numberAttr(list, 'presentationTimeOffset') ?? offset;
+    initialization = children(list, 'Initialization')[0] ?? initialization;
+    timelineElement = children(list, 'SegmentTimeline')[0] ?? timelineElement;
+    const here = children(list, 'SegmentURL');
+    if (here.length > 0) urls = here;
+  }
+  if (!found) return null;
+  // Start and duration of each listed segment, in timescale units.
+  const times: Array<readonly [number, number]> = [];
+  if (timelineElement !== null) {
+    const runs = parseTimeline(timelineElement, periodEndUnits(timescale, offset));
+    if (runs === null) return 'invalid';
+    for (const run of runs) {
+      for (let i = 0; i < run.count; i += 1)
+        times.push([run.start + i * run.duration, run.duration]);
+    }
+  } else if (duration !== null) {
+    for (let i = 0; i < urls.length; i += 1) times.push([offset + i * duration, duration]);
+  } else if (urls.length > 1) {
+    // Several segments need a duration; a single one spans the period.
+    return 'invalid';
+  }
+  const segments: Segment[] = [];
+  urls.forEach((url, i) => {
+    const [time, length] = times[i] ?? [offset, 0];
+    const range = parseByteRange(attr(url, 'mediaRange'));
+    segments.push({
+      seq: startNumber + i,
+      start: periodStart + (time - offset) / timescale,
+      duration: length / timescale,
+      url: resolve(attr(url, 'media') ?? '', base),
+      ...(range !== null ? { byteRange: range } : {}),
+    });
+  });
+  const initRange = initialization === null ? null : parseByteRange(attr(initialization, 'range'));
+  const init: SegmentRef | null =
+    initialization === null
+      ? null
+      : {
+          url: resolve(attr(initialization, 'sourceURL') ?? '', base),
+          ...(initRange !== null ? { byteRange: initRange } : {}),
+        };
+  return { segments, init };
+}
+
 function parseTimeline(
   timelineElement: Element,
   periodEndUnits: number | null,
@@ -620,6 +693,44 @@ export function parse(text: string, baseUrl: string): ParseResult {
         continue;
       }
 
+      const list = segmentListOf(
+        [periodElement, adaptationSet, representation],
+        repBase,
+        periodStart,
+        (timescale, offset) =>
+          periodDuration !== null ? Math.round(offset + periodDuration * timescale) : null,
+      );
+      if (list === 'invalid') {
+        return { presentation: null, error: manifestError(`bad SegmentList in '${id}'`) };
+      }
+      if (list !== null) {
+        // A single segment with no duration spans the period.
+        const segments = list.segments.map((segment) =>
+          segment.duration === 0 && periodDuration !== null
+            ? { ...segment, duration: periodDuration }
+            : segment,
+        );
+        renditions.push({
+          id,
+          bitrate: bandwidth,
+          codecs: attr(representation, 'codecs') ?? asCodecs,
+          mimeType,
+          segments,
+          ...(list.init !== null ? { init: list.init } : {}),
+          ...(numberAttr(representation, 'width') !== null
+            ? { width: numberAttr(representation, 'width') as number }
+            : {}),
+          ...(numberAttr(representation, 'height') !== null
+            ? { height: numberAttr(representation, 'height') as number }
+            : {}),
+          ...videoRangeOf(
+            representation,
+            adaptationSet,
+            attr(representation, 'codecs') ?? asCodecs,
+          ),
+        });
+        continue;
+      }
       const template = mergeTemplates([periodElement, adaptationSet, representation]);
       if (template === null || template.media === null) {
         // No addressing and no index: the representation is one whole file

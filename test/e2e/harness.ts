@@ -50,6 +50,7 @@ export type Source =
   | 'captions-undeclared'
   | 'captions-708'
   | 'ttml'
+  | 'dash-list'
   | 'metadata';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
@@ -108,6 +109,8 @@ const sources: Record<Source, () => string> = {
   'captions-708': () => '/streams/h264/master-captions-708.m3u8',
   // The DASH flavor with a TTML sidecar (English) and an stpp track (German).
   ttml: () => `/streams/${flavor}-dash/manifest-ttml.mpd`,
+  // The DASH flavor with each SegmentTemplate rewritten as a SegmentList.
+  'dash-list': () => `/streams/${flavor}-dash/manifest-list.mpd`,
   // The TS stream with an ID3 stream in every segment and two date ranges.
   metadata: () => '/streams/ts/master-metadata.m3u8',
 };

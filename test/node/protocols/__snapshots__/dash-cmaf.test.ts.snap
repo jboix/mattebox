@@ -2122,6 +2122,117 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > edge-pto.mpd p
 }
 `;
 
+exports[`golden corpus: every MPD fixture parses to a stable IR > edge-segmentlist.mpd parses to a stable IR 1`] = `
+{
+  "couplings": [],
+  "duration": 12,
+  "id": "https://cdn.example/path/manifest.mpd",
+  "isLive": false,
+  "periods": [
+    {
+      "duration": 12,
+      "id": "p0",
+      "start": 0,
+      "tracks": [
+        {
+          "contentType": "video",
+          "id": "as-1",
+          "mimeType": "video/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 800000,
+              "codecs": "avc1.4d401f",
+              "height": 360,
+              "id": "v1",
+              "init": {
+                "url": "https://cdn.example/list/video/init.mp4",
+              },
+              "mimeType": "video/mp4",
+              "segments": [
+                {
+                  "duration": 4,
+                  "seq": 1,
+                  "start": 0,
+                  "url": "https://cdn.example/list/video/1.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 2,
+                  "start": 4,
+                  "url": "https://cdn.example/list/video/2.m4s",
+                },
+                {
+                  "duration": 4,
+                  "seq": 3,
+                  "start": 8,
+                  "url": "https://cdn.example/list/video/3.m4s",
+                },
+              ],
+              "width": 640,
+            },
+          ],
+        },
+        {
+          "contentType": "audio",
+          "id": "as-2",
+          "lang": "en",
+          "mimeType": "audio/mp4",
+          "protection": null,
+          "renditions": [
+            {
+              "bitrate": 128000,
+              "codecs": "mp4a.40.2",
+              "id": "a1",
+              "init": {
+                "byteRange": {
+                  "end": 799,
+                  "start": 0,
+                },
+                "url": "https://cdn.example/list/audio.mp4",
+              },
+              "mimeType": "audio/mp4",
+              "segments": [
+                {
+                  "byteRange": {
+                    "end": 50799,
+                    "start": 800,
+                  },
+                  "duration": 4,
+                  "seq": 1,
+                  "start": 0,
+                  "url": "https://cdn.example/list/audio.mp4",
+                },
+                {
+                  "byteRange": {
+                    "end": 100799,
+                    "start": 50800,
+                  },
+                  "duration": 4,
+                  "seq": 2,
+                  "start": 4,
+                  "url": "https://cdn.example/list/audio.mp4",
+                },
+                {
+                  "byteRange": {
+                    "end": 125799,
+                    "start": 100800,
+                  },
+                  "duration": 2,
+                  "seq": 3,
+                  "start": 8,
+                  "url": "https://cdn.example/list/audio.mp4",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
+`;
+
 exports[`golden corpus: every MPD fixture parses to a stable IR > equiv-local-h264.mpd parses to a stable IR 1`] = `
 {
   "couplings": [],

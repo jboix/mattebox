@@ -153,6 +153,7 @@ if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
   [ -f "$OUT/ts/master-metadata.m3u8" ] || node "$ROOT/test/e2e/inject-id3.mjs" "$OUT/ts"
   for flavor in h264 vp9; do
     [ -f "$OUT/$flavor-dash/manifest-ttml.mpd" ] || node "$ROOT/test/e2e/gen-ttml.mjs" "$OUT/$flavor-dash"
+    [ -f "$OUT/$flavor-dash/manifest-list.mpd" ] || node "$ROOT/test/e2e/gen-segmentlist.mjs" "$OUT/$flavor-dash"
   done
   echo "streams present, skipping generation"
   exit 0
@@ -327,6 +328,7 @@ master h264 "$H_LOW" "$H_HIGH" "$H_TOP" aac mp4a.40.2
 captions_master
 dash h264 libx264 -profile:v baseline
 node "$ROOT/test/e2e/gen-ttml.mjs" "$OUT/h264-dash"
+node "$ROOT/test/e2e/gen-segmentlist.mjs" "$OUT/h264-dash"
 
 V_LOW=$(variant vp9 low 320x180 150k libvpx-vp9 -deadline realtime -cpu-used 8)
 V_HIGH=$(variant vp9 high 480x270 300k libvpx-vp9 -deadline realtime -cpu-used 8)
@@ -334,6 +336,7 @@ V_TOP=$(variant vp9 top 640x360 600k libvpx-vp9 -deadline realtime -cpu-used 8)
 master vp9 "$V_LOW" "$V_HIGH" "$V_TOP" libopus opus
 dash vp9 libvpx-vp9 -deadline realtime -cpu-used 8
 node "$ROOT/test/e2e/gen-ttml.mjs" "$OUT/vp9-dash"
+node "$ROOT/test/e2e/gen-segmentlist.mjs" "$OUT/vp9-dash"
 
 ts_flavor
 node "$ROOT/test/e2e/inject-id3.mjs" "$OUT/ts"

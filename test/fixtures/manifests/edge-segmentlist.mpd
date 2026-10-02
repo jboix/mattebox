@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT12S" minBufferTime="PT2S" profiles="urn:mpeg:dash:profile:full:2011">
+  <BaseURL>https://cdn.example/list/</BaseURL>
+  <Period id="p0" start="PT0S">
+    <AdaptationSet id="1" contentType="video" mimeType="video/mp4" codecs="avc1.4d401f">
+      <SegmentList timescale="1000" duration="4000">
+        <Initialization sourceURL="video/init.mp4"/>
+      </SegmentList>
+      <Representation id="v1" bandwidth="800000" width="640" height="360">
+        <SegmentList>
+          <SegmentURL media="video/1.m4s"/>
+          <SegmentURL media="video/2.m4s"/>
+          <SegmentURL media="video/3.m4s"/>
+        </SegmentList>
+      </Representation>
+    </AdaptationSet>
+    <AdaptationSet id="2" contentType="audio" mimeType="audio/mp4" codecs="mp4a.40.2" lang="en">
+      <Representation id="a1" bandwidth="128000">
+        <BaseURL>audio.mp4</BaseURL>
+        <SegmentList timescale="48000" presentationTimeOffset="48000">
+          <Initialization range="0-799"/>
+          <SegmentTimeline>
+            <S t="48000" d="192000" r="1"/>
+            <S d="96000"/>
+          </SegmentTimeline>
+          <SegmentURL mediaRange="800-50799"/>
+          <SegmentURL mediaRange="50800-100799"/>
+          <SegmentURL mediaRange="100800-125799"/>
+        </SegmentList>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>

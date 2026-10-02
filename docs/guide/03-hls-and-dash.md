@@ -13,12 +13,12 @@ both. Moving from HLS to DASH changes the manifest URL and nothing else.
 
 ## Protocol adapters
 
-| Adapter     | Handles                                                                                                 |
-| ----------- | ------------------------------------------------------------------------------------------------------- |
-| `hls-cmaf`  | Multivariant playlists, media playlists, `EXT-X-MAP`, byte ranges, `EXT-X-MEDIA` groups, keys           |
-| `dash-cmaf` | `SegmentTemplate` with `$Number$` and `$Time$`, `SegmentTimeline`, `SegmentBase` with `sidx`, `BaseURL` |
-| `hls-live`  | Everything live needs on top of `hls-cmaf`. See [chapter 04](04-live-streaming.md)                      |
-| `dash-live` | Everything live needs on top of `dash-cmaf`. See [chapter 04](04-live-streaming.md)                     |
+| Adapter     | Handles                                                                                                                |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `hls-cmaf`  | Multivariant playlists, media playlists, `EXT-X-MAP`, byte ranges, `EXT-X-MEDIA` groups, keys                          |
+| `dash-cmaf` | `SegmentTemplate` with `$Number$` and `$Time$`, `SegmentTimeline`, `SegmentBase` with `sidx`, `SegmentList`, `BaseURL` |
+| `hls-live`  | Everything live needs on top of `hls-cmaf`. See [chapter 04](04-live-streaming.md)                                     |
+| `dash-live` | Everything live needs on top of `dash-cmaf`. See [chapter 04](04-live-streaming.md)                                    |
 
 Load one or both. Each adapter checks the manifest bytes and skips what is
 not its format.

@@ -486,6 +486,39 @@ describe('CEA-608 and CEA-708 accessibility', () => {
   });
 });
 
+describe('SegmentList', () => {
+  it('lists each segment by URL, timed by @duration, with an inherited Initialization', () => {
+    const result = parse(fixture('edge-segmentlist.mpd'), BASE);
+    expect(result.error).toBeNull();
+    const video = result.presentation?.periods[0]?.tracks.find((t) => t.contentType === 'video');
+    const rendition = video?.renditions[0];
+    expect(rendition?.init).toEqual({ url: 'https://cdn.example/list/video/init.mp4' });
+    expect(rendition?.segments).toEqual([
+      { seq: 1, start: 0, duration: 4, url: 'https://cdn.example/list/video/1.m4s' },
+      { seq: 2, start: 4, duration: 4, url: 'https://cdn.example/list/video/2.m4s' },
+      { seq: 3, start: 8, duration: 4, url: 'https://cdn.example/list/video/3.m4s' },
+    ]);
+  });
+
+  it('reads byte ranges in one file, timed by a SegmentTimeline past the offset', () => {
+    const result = parse(fixture('edge-segmentlist.mpd'), BASE);
+    const audio = result.presentation?.periods[0]?.tracks.find((t) => t.contentType === 'audio');
+    const rendition = audio?.renditions[0];
+    const file = 'https://cdn.example/list/audio.mp4';
+    expect(rendition?.init).toEqual({ url: file, byteRange: { start: 0, end: 799 } });
+    expect(rendition?.segments).toEqual([
+      { seq: 1, start: 0, duration: 4, url: file, byteRange: { start: 800, end: 50799 } },
+      { seq: 2, start: 4, duration: 4, url: file, byteRange: { start: 50800, end: 100799 } },
+      { seq: 3, start: 8, duration: 2, url: file, byteRange: { start: 100800, end: 125799 } },
+    ]);
+  });
+
+  it('refuses several segments with no duration', () => {
+    const mpd = fixture('edge-segmentlist.mpd').replace(' duration="4000"', '');
+    expect(parse(mpd, BASE).error?.code).toBe('MANIFEST_PARSE_FAILED');
+  });
+});
+
 describe('video range', () => {
   it('reads the CICP transfer characteristics on the Representation or its AdaptationSet', () => {
     const cicp = (value: string, kind = 'EssentialProperty') =>
