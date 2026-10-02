@@ -23,7 +23,6 @@ import { parse, parseMediaPlaylist } from '../../src/protocols/hls-cmaf/parse.js
 import emeCore from '../../src/stages/eme-core/index.js';
 import emeFairplay from '../../src/stages/eme-fairplay/index.js';
 import type { HdrApi } from '../../src/stages/hdr/index.js';
-import type { QoeMetrics } from '../../src/stages/qoe/index.js';
 import type { Requirement } from '../../src/types/stage.js';
 import { renderCapabilities } from './capabilities.js';
 import type { CatalogueEntry, StreamEntry } from './catalogue.js';
@@ -38,6 +37,7 @@ import { createEventLog, toJson } from './log.js';
 import type { Check, ParsedManifest } from './manifest-checks.js';
 import { checkManifest } from './manifest-checks.js';
 import { renderMetadata } from './metadata.js';
+import { createQoePanel } from './qoe.js';
 import type { BusinessUnit, Composition, IlResource, SearchResult } from './srgssr.js';
 import {
   BUSINESS_UNITS,
@@ -191,6 +191,7 @@ async function rebuild(): Promise<void> {
   await engine.attach(video);
   log.attach(engine, video);
   charts.attach(engine);
+  qoePanel.attach(engine);
   for (const [source, constraint] of Object.entries(config.constraints)) {
     engine.quality.constrain(source, constraint);
   }
@@ -388,6 +389,11 @@ app.innerHTML = `
       <div class="sub">
         <div class="panel-head"><h3>Timeline</h3><span class="hint">the session over time: buffer, throughput, stalls, frames, and switches</span></div>
         <div id="charts" class="charts"></div>
+      </div>
+
+      <div class="sub">
+        <div class="panel-head"><h3>QoE</h3><span class="hint">engine.qoe: the viewer's experience, measured in the page and sent nowhere. Each qoe:metrics event is logged below, newest first.</span></div>
+        <div id="qoe"></div>
       </div>
 
       <div class="sub">
@@ -1271,6 +1277,7 @@ function renderNetwork(): void {
 // ---- event log -------------------------------------------------------------
 
 const log = createEventLog(document.querySelector('#log') as HTMLElement);
+const qoePanel = createQoePanel(document.querySelector('#qoe') as HTMLElement);
 
 function readLogFilter(): void {
   const levels = new Set<Level>();
@@ -1539,15 +1546,6 @@ function renderEngineInfo(): void {
         return `${view.allowed ? 'allowed' : 'excluded'} by ${view.source} · display ${display}`;
       })(),
     ],
-    [
-      'qoe',
-      (() => {
-        const q = (engine as { qoe?: QoeMetrics }).qoe;
-        if (q === undefined) return 'stage not loaded';
-        const startup = q.startupTime === null ? '—' : `${q.startupTime.toFixed(2)} s`;
-        return `startup ${startup} · ${q.rebuffers} rebuffers (${q.rebufferDuration.toFixed(1)} s) · ${q.switches} switches`;
-      })(),
-    ],
     ['capabilities', [...engine.capabilities()].join(', ') || '(none)'],
     ['trace', `${engine.stats.trace().length} entries · ${log.size} log rows`],
   ];
@@ -1726,6 +1724,7 @@ setInterval(() => {
   renderQuality(qualityHost, dockDeps);
   renderEngineInfo();
   renderMetadata(metadataHost, engine, video.currentTime);
+  qoePanel.render(engine);
   renderPlaybackStatus();
   transport.poll();
 }, 500);
