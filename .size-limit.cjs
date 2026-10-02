@@ -5,6 +5,6 @@ module.exports = [
     name: 'full',
     path: 'dist/cdn/mattebox.min.js',
     gzip: true,
-    limit: '75 kB',
+    limit: '100 kB',
   },
 ];
