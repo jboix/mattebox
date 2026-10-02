@@ -677,6 +677,14 @@ export function parse(text: string, baseUrl: string): ParseResult {
     const codecs =
       video !== null && !hasAudioGroup && audio !== null ? `${video}, ${audio}` : video;
     const frameRate = Number(variant.attributes['FRAME-RATE']);
+    // RFC 8216bis §4.4.6.2; a Dolby Vision codec without it is PQ.
+    const range = variant.attributes['VIDEO-RANGE'];
+    const videoRange =
+      range === 'SDR' || range === 'PQ' || range === 'HLG'
+        ? range
+        : video !== null && /^dv(h1|he|a1|av)/.test(video)
+          ? 'PQ'
+          : undefined;
     const pathway = variant.attributes['PATHWAY-ID'];
     const id = pathway !== undefined ? `v-${bandwidth}-${pathway}` : `v-${bandwidth}`;
     if (renditions.some((r) => r.id === id)) continue;
@@ -691,6 +699,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
       ...(width !== undefined ? { width } : {}),
       ...(height !== undefined ? { height } : {}),
       ...(Number.isFinite(frameRate) ? { frameRate } : {}),
+      ...(videoRange !== undefined ? { videoRange } : {}),
     });
     const requires: Record<string, string> = {};
     if (variant.attributes.AUDIO !== undefined) requires.audio = variant.attributes.AUDIO;

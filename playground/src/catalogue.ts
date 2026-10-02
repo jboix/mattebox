@@ -38,6 +38,7 @@ import emeCenc from '../../src/stages/eme-cenc/index.js';
 import emeCore from '../../src/stages/eme-core/index.js';
 import emeFairplay from '../../src/stages/eme-fairplay/index.js';
 import forcedSubtitles from '../../src/stages/forced-subtitles/index.js';
+import hdr from '../../src/stages/hdr/index.js';
 import metaId3 from '../../src/stages/meta-id3/index.js';
 import mp4Box from '../../src/stages/mp4-box/index.js';
 import nalScan from '../../src/stages/nal-scan/index.js';
@@ -110,6 +111,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('stages', timedMetadata),
   built('stages', textCea708),
   built('stages', textTtml),
+  built('stages', () => hdr()),
 ];
 
 /**

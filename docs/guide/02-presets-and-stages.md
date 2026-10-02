@@ -100,10 +100,10 @@ memory, recovery, content steering, alternate audio with codec switching,
 WebVTT subtitles, forced subtitles, CEA-608 captions, CMAF live timing, program date time,
 and the codec probe. The HLS lines add AES-128 segment decryption.
 `-ts` adds the transmuxer, packed audio, and ID3 metadata. `-drm` adds the
-three EME stages. `full` is `dual-ts-drm` plus the seven stages below, and
+three EME stages. `full` is `dual-ts-drm` plus the eight stages below, and
 `kernel` is nothing, for a stack you build by hand.
 
-Seven stages are only in `full`. Add them with `stages` when you need them.
+Eight stages are only in `full`. Add them with `stages` when you need them.
 
 | Stage            | Why                                                            |
 | ---------------- | -------------------------------------------------------------- |
@@ -114,6 +114,7 @@ Seven stages are only in `full`. Add them with `stages` when you need them.
 | `timed-metadata` | Only your page reads it                                        |
 | `text-cea708`    | Streams that carry it also carry CEA-608, which the base reads |
 | `text-ttml`      | Most streams carry WebVTT, which the base reads                |
+| `hdr`            | Excludes HDR where nothing is known, which you may not want    |
 
 The caption stages read the NAL unit headers of every H.264 and HEVC video
 segment, a fraction of a millisecond per segment. If your content has no

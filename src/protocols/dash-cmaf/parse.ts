@@ -280,6 +280,32 @@ function captionServices(adaptationSet: Element): Array<readonly [string, string
   return out;
 }
 
+const TRANSFER_CHARACTERISTICS = 'urn:mpeg:mpegB:cicp:TransferCharacteristics';
+
+/**
+ * The video range a representation signals: the CICP transfer
+ * characteristics property (ISO/IEC 23001-8; DASH-IF IOP), 16 for PQ and 18
+ * for HLG, on the Representation or its AdaptationSet; else PQ for a Dolby
+ * Vision codec; else nothing.
+ */
+function videoRangeOf(
+  representation: Element,
+  adaptationSet: Element,
+  codecs: string | null,
+): { videoRange?: 'SDR' | 'PQ' | 'HLG' } {
+  for (const element of [representation, adaptationSet]) {
+    for (const property of [
+      ...children(element, 'EssentialProperty'),
+      ...children(element, 'SupplementalProperty'),
+    ]) {
+      if (attr(property, 'schemeIdUri') !== TRANSFER_CHARACTERISTICS) continue;
+      const value = attr(property, 'value');
+      return { videoRange: value === '16' ? 'PQ' : value === '18' ? 'HLG' : 'SDR' };
+    }
+  }
+  return codecs !== null && /^dv(h1|he|a1|av)/.test(codecs) ? { videoRange: 'PQ' } : {};
+}
+
 /**
  * A trick-mode AdaptationSet: the DASH-IF trickmode EssentialProperty, or a
  * representation declaring a playout rate other than 1. Both mark an
@@ -585,6 +611,11 @@ export function parse(text: string, baseUrl: string): ParseResult {
           ...(w !== null ? { width: w } : {}),
           ...(h !== null ? { height: h } : {}),
           ...(fr !== null ? { frameRate: fr } : {}),
+          ...videoRangeOf(
+            representation,
+            adaptationSet,
+            attr(representation, 'codecs') ?? asCodecs,
+          ),
         });
         continue;
       }
@@ -668,6 +699,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
         ...(width !== null ? { width } : {}),
         ...(height !== null ? { height } : {}),
         ...(frameRate !== null ? { frameRate } : {}),
+        ...videoRangeOf(representation, adaptationSet, attr(representation, 'codecs') ?? asCodecs),
         ...(tiles !== null ? { tiles } : {}),
         ...(playoutRate !== null ? { maxPlayoutRate: playoutRate } : {}),
       });

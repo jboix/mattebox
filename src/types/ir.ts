@@ -188,6 +188,12 @@ export interface Rendition {
   readonly width?: number;
   readonly height?: number;
   readonly frameRate?: number;
+  /**
+   * The video's transfer function: HLS VIDEO-RANGE, DASH CICP
+   * TransferCharacteristics (16 is PQ, 18 is HLG), or PQ for a Dolby Vision
+   * codec without either. Absent means unknown, which counts as SDR.
+   */
+  readonly videoRange?: 'SDR' | 'PQ' | 'HLG';
   /** RFC 6381 codec string. Null when the manifest does not declare one, common for text. */
   readonly codecs: string | null;
   readonly mimeType: string;

@@ -67,8 +67,12 @@ function matches(rendition: Rendition, constraint: Constraint): boolean {
       return false;
     }
   }
-  // constraint.hdr is accepted but not evaluated: the IR carries no HDR
-  // signal yet. Registered in the debt register.
+  if (
+    constraint.hdr === false &&
+    (rendition.videoRange === 'PQ' || rendition.videoRange === 'HLG')
+  ) {
+    return false;
+  }
   if (constraint.filter !== undefined && !constraint.filter(rendition)) return false;
   return true;
 }

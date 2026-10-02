@@ -5475,6 +5475,7 @@ exports[`golden corpus: every fixture parses to a stable IR > unified-tears-mast
               "mimeType": "video/mp4",
               "playlistUrl": "https://cdn.example/path/tears-of-steel-audio_eng=128002-video_eng=1501000.m3u8",
               "segments": [],
+              "videoRange": "SDR",
               "width": 1680,
             },
             {
@@ -5486,6 +5487,7 @@ exports[`golden corpus: every fixture parses to a stable IR > unified-tears-mast
               "mimeType": "video/mp4",
               "playlistUrl": "https://cdn.example/path/tears-of-steel-audio_eng=128002-video_eng=2200000.m3u8",
               "segments": [],
+              "videoRange": "SDR",
               "width": 1680,
             },
           ],

@@ -54,7 +54,7 @@ engine.quality.release('saver');
 | `maxFrameRate` | Drops renditions above this frame rate |
 | `codecs`       | Keeps only these codec strings         |
 | `excludeIds`   | Drops these rendition ids              |
-| `hdr`          | Keeps HDR or SDR renditions            |
+| `hdr`          | `false` drops PQ and HLG renditions    |
 
 If the intersection is empty, the engine drops constraints newest first
 until something is left, and emits `quality:constraints-unsatisfiable`.
@@ -119,6 +119,45 @@ to HEVC say, needs either a `changeType` call or a buffer reload.
 engine reloads across families.
 
 Load it whenever a ladder mixes codecs, or when `alt-audio` is loaded.
+
+## The hdr stage
+
+`hdr` keeps HDR renditions off a screen or a decoder that cannot show them.
+It is in `full`; add it to another preset with `stages`.
+
+Each rendition carries `videoRange`: `'SDR'`, `'PQ'`, or `'HLG'`, from HLS
+`VIDEO-RANGE` or the DASH CICP transfer characteristics property. A Dolby
+Vision codec without either counts as PQ. A rendition without it counts as
+SDR.
+
+The stage decides when a presentation with an HDR rendition loads, in this
+order:
+
+1. The `supported` option, a value or a function, when you pass one.
+2. The display: the `(dynamic-range: high)` media query, when the browser
+   knows the feature.
+3. The decoder: `navigator.mediaCapabilities.decodingInfo` with the HDR
+   fields, when the browser reads them. A format it refuses is excluded on
+   its own.
+4. Otherwise, HDR is excluded when the track also has SDR renditions.
+
+A track with only HDR renditions plays them. The stage asks again when the
+window moves to another display.
+
+Chromium 76 and 79, the 2021 Samsung and LG TVs, know neither probe. Pass
+your platform's answer as `supported`:
+
+```ts
+import hdr from 'mattebox/stages/hdr';
+
+const engine = hls({
+  stages: [hdr({ supported: () => tizenSaysHdr() })],
+});
+```
+
+`engine.hdr` reports the answer: `allowed`, `source` (`'option'`,
+`'probe'`, or `'default'`), `display`, and `formats`, so your player can
+show why HDR is off.
 
 ## Example
 

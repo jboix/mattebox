@@ -486,6 +486,40 @@ describe('CEA-608 and CEA-708 accessibility', () => {
   });
 });
 
+describe('video range', () => {
+  it('reads the CICP transfer characteristics on the Representation or its AdaptationSet', () => {
+    const cicp = (value: string, kind = 'EssentialProperty') =>
+      `<${kind} schemeIdUri="urn:mpeg:mpegB:cicp:TransferCharacteristics" value="${value}"/>`;
+    const mpd = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1M">
+  <Period>
+    <AdaptationSet id="v" mimeType="video/mp4" codecs="hvc1.2.4.L150.B0">
+      ${cicp('16')}
+      <SegmentTemplate media="v-$RepresentationID$-$Number$.m4s" initialization="v-$RepresentationID$.mp4" duration="6" timescale="1"/>
+      <Representation id="pq" bandwidth="2000"/>
+      <Representation id="hlg" bandwidth="3000">${cicp('18', 'SupplementalProperty')}</Representation>
+      <Representation id="sdr" bandwidth="1000">${cicp('1')}</Representation>
+      <Representation id="dv" bandwidth="4000" codecs="dvh1.05.06"/>
+    </AdaptationSet>
+    <AdaptationSet id="w" mimeType="video/mp4" codecs="dvhe.05.06">
+      <SegmentTemplate media="w-$Number$.m4s" initialization="w.mp4" duration="6" timescale="1"/>
+      <Representation id="dvhe" bandwidth="5000"/>
+      <Representation id="avc" bandwidth="500" codecs="avc1.640028"/>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+    const tracks = parse(mpd, BASE).presentation?.periods[0]?.tracks ?? [];
+    expect(tracks.flatMap((t) => t.renditions.map((r) => [r.id, r.videoRange]))).toEqual([
+      ['pq', 'PQ'],
+      ['hlg', 'HLG'],
+      ['sdr', 'SDR'],
+      ['dv', 'PQ'],
+      ['dvhe', 'PQ'],
+      ['avc', undefined],
+    ]);
+  });
+});
+
 describe('subtitles in fMP4', () => {
   it('takes an application/mp4 set with stpp codecs as text, contentType or not', () => {
     const mpd = `<?xml version="1.0"?>

@@ -446,6 +446,34 @@ describe('closed captions', () => {
   });
 });
 
+describe('video range', () => {
+  it('reads VIDEO-RANGE, and takes a Dolby Vision codec without it as PQ', () => {
+    const master = [
+      '#EXTM3U',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1000,CODECS="avc1.640028",VIDEO-RANGE=SDR',
+      'sdr.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=2000,CODECS="hvc1.2.4.L150.B0",VIDEO-RANGE=PQ',
+      'pq.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=3000,CODECS="hvc1.2.4.L150.B0",VIDEO-RANGE=HLG',
+      'hlg.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=4000,CODECS="dvh1.05.06"',
+      'dv.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=5000,CODECS="avc1.640028"',
+      'plain.m3u8',
+    ].join('\n');
+    const video = parse(master, BASE).presentation?.periods[0]?.tracks.find(
+      (t) => t.contentType === 'video',
+    );
+    expect(video?.renditions.map((r) => r.videoRange)).toEqual([
+      'SDR',
+      'PQ',
+      'HLG',
+      'PQ',
+      undefined,
+    ]);
+  });
+});
+
 describe('subtitles in fMP4', () => {
   it('types a subtitle group as application/mp4 with the stpp codec the variants name', () => {
     const master = [

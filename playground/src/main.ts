@@ -22,6 +22,7 @@ import { parse as parseDash } from '../../src/protocols/dash-cmaf/parse.js';
 import { parse, parseMediaPlaylist } from '../../src/protocols/hls-cmaf/parse.js';
 import emeCore from '../../src/stages/eme-core/index.js';
 import emeFairplay from '../../src/stages/eme-fairplay/index.js';
+import type { HdrApi } from '../../src/stages/hdr/index.js';
 import type { Requirement } from '../../src/types/stage.js';
 import { renderCapabilities } from './capabilities.js';
 import type { CatalogueEntry, StreamEntry } from './catalogue.js';
@@ -1525,6 +1526,16 @@ function renderEngineInfo(): void {
     [
       'active tracks',
       [...state.tracks.active.entries()].map(([type, id]) => `${type}: ${id}`).join(' · ') || '—',
+    ],
+    [
+      'hdr',
+      (() => {
+        const view = (engine as { hdr?: HdrApi }).hdr;
+        if (view === undefined) return 'stage not loaded';
+        if (view.source === null) return 'no HDR renditions';
+        const display = view.display === null ? 'unknown' : view.display ? 'HDR' : 'SDR';
+        return `${view.allowed ? 'allowed' : 'excluded'} by ${view.source} · display ${display}`;
+      })(),
     ],
     ['capabilities', [...engine.capabilities()].join(', ') || '(none)'],
     ['trace', `${engine.stats.trace().length} entries · ${log.size} log rows`],

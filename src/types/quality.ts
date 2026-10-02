@@ -23,6 +23,7 @@ export interface Constraint {
    * steering stages need; `filter` cannot travel in loop-back commands.
    */
   readonly excludeIds?: readonly RenditionId[];
+  /** `false` excludes PQ and HLG renditions. A track with nothing else drops the constraint. */
   readonly hdr?: boolean;
   /** Escape hatch. A constraint carrying a filter is not serializable; prefer the declarative fields. */
   readonly filter?: (r: Rendition) => boolean;
