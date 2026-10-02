@@ -206,6 +206,7 @@ it('46. TTML plays as a sidecar and as stpp in fMP4, each through its parser', a
   expect(text.map((t) => [t.id, t.lang, player.engine.tracks.selectable(t.id)])).toEqual([
     ['as-10', 'en', true],
     ['as-11', 'de', true],
+    ['as-12', 'fr', true],
   ]);
   player.engine.tracks.select('as-10');
   await until(
@@ -228,5 +229,22 @@ it('46. TTML plays as a sidecar and as stpp in fMP4, each through its parser', a
   expect([second.startTime, second.endTime]).toEqual([4.5, 7.5]);
   expect(nativeText(player.video, 'as-11')?.mode).toBe('showing');
   expect(nativeText(player.video, 'as-10')?.mode).toBe('disabled');
+  expect(player.engine.error?.code ?? null).toBeNull();
+});
+
+it('48. WebVTT in fMP4 plays through text-webvtt, one cue per vttc span', async () => {
+  const player = await boot({ src: 'ttml' });
+  await play(player, 1, 15_000);
+  player.engine.tracks.select('as-12');
+  await until(
+    () => (nativeText(player.video, 'as-12')?.cues?.length ?? 0) > 1,
+    'wvtt cues',
+    15_000,
+  );
+  const second = [...(nativeText(player.video, 'as-12')?.cues ?? [])].find(
+    (cue) => (cue as VTTCue).text === 'wvtt 2',
+  ) as VTTCue;
+  expect([second.startTime, second.endTime, second.line]).toEqual([4, 6, 85]);
+  expect(nativeText(player.video, 'as-12')?.mode).toBe('showing');
   expect(player.engine.error?.code ?? null).toBeNull();
 });

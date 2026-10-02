@@ -83,7 +83,7 @@ and lists them in its caption menu.
 
 | Stage                   | Handles                                                                        |
 | ----------------------- | ------------------------------------------------------------------------------ |
-| `text-webvtt`           | WebVTT files and DASH WebVTT segments                                          |
+| `text-webvtt`           | WebVTT files, DASH WebVTT segments, and WebVTT in fMP4 (`wvtt`)                |
 | `text-webvtt-segmented` | HLS subtitle playlists, where each segment carries an `X-TIMESTAMP-MAP` offset |
 
 Load both for HLS, only `text-webvtt` for DASH. A DASH subtitle

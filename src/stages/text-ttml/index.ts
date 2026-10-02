@@ -16,7 +16,7 @@
  * not write. Each cue's `payload` holds its resolved styles, for a player
  * that draws captions itself.
  */
-import { fragmentSamples, trackTimescales } from '../../containers/mp4-box/index.js';
+import { timedSamples, trackTimescales } from '../../containers/mp4-box/index.js';
 import { joinTextSink } from '../../kernel/sinks/text-formats.js';
 import type { CueDescriptor } from '../../types/messages.js';
 import type { SegmentMeta } from '../../types/sink.js';
@@ -56,24 +56,12 @@ export default function textTtml(): Stage {
           timescales.set(meta.renditionId, trackTimescales(data));
           return [];
         }
-        const scales = timescales.get(meta.renditionId);
         const cues: CueDescriptor[] = [];
-        for (const fragment of fragmentSamples(data)) {
-          const scale = scales?.get(fragment.trackId);
-          const first = fragment.samples[0];
-          if (scale === undefined || first === undefined) continue;
-          // The segment's first decode time lands at its start.
-          const shift = meta.start - first.decodeTime / scale;
-          for (const sample of fragment.samples) {
-            if (sample.offset + sample.size > data.byteLength) continue;
-            const from = sample.decodeTime / scale;
-            const to = (sample.decodeTime + sample.duration) / scale;
-            const parsed = parseTtml(
-              new TextDecoder().decode(data.subarray(sample.offset, sample.offset + sample.size)),
-            );
-            const relative = parsed.some((cue) => cue.start < from - 0.5);
-            cues.push(...finish(parsed, relative ? shift + from : shift, to + shift));
-          }
+        for (const sample of timedSamples(data, timescales.get(meta.renditionId), meta.start)) {
+          const parsed = parseTtml(new TextDecoder().decode(sample.bytes));
+          // Times before the sample's own start mean the document counts from it.
+          const relative = parsed.some((cue) => cue.start + sample.shift < sample.start - 0.5);
+          cues.push(...finish(parsed, relative ? sample.start : sample.shift, sample.end));
         }
         return cues;
       }

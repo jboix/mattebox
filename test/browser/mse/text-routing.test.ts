@@ -106,7 +106,7 @@ describe('one text sink, a parser per format', () => {
 
   it('fails a segment whose format no stage parses', () => {
     const h = compose([]);
-    expect(() => h.sink.accept('w', bytes('x'), meta('application/mp4;wvtt'))).toThrow(RangeError);
+    expect(() => h.sink.accept('w', bytes('x'), meta('application/mp4;tx3g'))).toThrow(RangeError);
   });
 
   it('mirrors each stage its own tracks: both listed natively, the selected one showing', () => {

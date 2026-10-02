@@ -138,3 +138,15 @@ describe('manifest types', () => {
     expect(mattebox({}).accepts('text/vtt')).toBe(false);
   });
 });
+
+describe('cue formats in fMP4', () => {
+  it('lets two stages provide application/mp4 text with different codec families', () => {
+    const stage = (name: string, codecs: string): Stage => ({
+      name,
+      provides: [{ contentType: 'text', mimeType: 'application/mp4', codecs }],
+      install() {},
+    });
+    expect(() => compose([stage('a', 'wvtt'), stage('b', 'stpp')])).not.toThrow();
+    expect(() => compose([stage('a', 'wvtt'), stage('b', 'wvtt')])).toThrow(/both provide/);
+  });
+});

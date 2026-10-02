@@ -5,7 +5,7 @@
  * are errors with both names in the message.
  */
 import type { Capability, Stage } from '../types/stage.js';
-import { isManifestType, normalizeMimeType } from './mime.js';
+import { cueFormat, isManifestType, normalizeMimeType } from './mime.js';
 
 /**
  * Names the kernel itself provides. A stage's `requires` naming one of
@@ -29,7 +29,8 @@ export const KERNEL_PROVIDES: ReadonlySet<string> = new Set([
 
 function capabilityKey(capability: Capability): string {
   if (typeof capability === 'string') return capability;
-  return `${capability.contentType}:${capability.mimeType}`;
+  // In fMP4 the codec family is the format: stpp and wvtt are two.
+  return `${capability.contentType}:${cueFormat(capability.mimeType, capability.codecs)}`;
 }
 
 /**

@@ -489,6 +489,47 @@ export function fragmentSamples(
 }
 
 /** What a WebCodecs VideoDecoder needs from an init segment besides the codec string. */
+/** One sample of a cue track in fMP4, placed on the presentation timeline. */
+export interface TimedSample {
+  readonly bytes: Uint8Array;
+  /** Presentation seconds. */
+  readonly start: number;
+  readonly end: number;
+  /** Seconds to add to a time on the track's media timeline to place it on the presentation one. */
+  readonly shift: number;
+}
+
+/**
+ * The samples of a cue segment in fMP4 (stpp, wvtt), each placed on the
+ * presentation timeline. The segment's first decode time lands at `start`,
+ * the segment's presentation start, as the kernel lands media segments. A
+ * track without a known timescale is skipped.
+ */
+export function timedSamples(
+  segment: Uint8Array,
+  timescales: ReadonlyMap<number, number> | undefined,
+  start: number,
+): TimedSample[] {
+  const out: TimedSample[] = [];
+  for (const fragment of fragmentSamples(segment)) {
+    const scale = timescales?.get(fragment.trackId);
+    const first = fragment.samples[0];
+    if (scale === undefined || first === undefined) continue;
+    const shift = start - first.decodeTime / scale;
+    for (const sample of fragment.samples) {
+      if (sample.offset + sample.size > segment.byteLength) continue;
+      const at = (sample.decodeTime + sample.cts) / scale + shift;
+      out.push({
+        bytes: segment.subarray(sample.offset, sample.offset + sample.size),
+        start: at,
+        end: at + sample.duration / scale,
+        shift,
+      });
+    }
+  }
+  return out;
+}
+
 export interface DecoderConfigBox {
   /** The sample entry format, such as 'avc1' or 'hvc1'. */
   readonly format: string;

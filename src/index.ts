@@ -416,7 +416,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
       return composition.capabilities.map((capability) =>
         typeof capability === 'string'
           ? capability
-          : `${capability.contentType}:${capability.mimeType}`,
+          : `${capability.contentType}:${cueFormat(capability.mimeType, capability.codecs)}`,
       );
     },
     accepts,

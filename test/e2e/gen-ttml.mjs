@@ -1,15 +1,19 @@
-// Writes TTML subtitles beside a DASH flavor of the E2E corpus: a sidecar
-// file and an stpp track (TTML in fMP4, ISO/IEC 14496-30), and an MPD that
-// declares both next to the flavor's video.
+// Writes subtitles in three formats beside a DASH flavor of the E2E corpus:
+// a TTML sidecar file, an stpp track (TTML in fMP4), and a wvtt track
+// (WebVTT in fMP4, both ISO/IEC 14496-30), and an MPD that declares them
+// next to the flavor's video.
 //
 // - subs.ttml: "sidecar n" from 4n + 1 s to 4n + 3 s, English.
 // - stpp-init.mp4 and stpp-N.m4s: one 4 s segment per video segment, each
 //   one sample whose document says "stpp N" from 0.5 s to 3.5 s into the
 //   segment, in media time (the sample's decode time plus the offset), German.
+// - wvtt-init.mp4 and wvtt-N.m4s: one 4 s segment per video segment, two
+//   2 s samples: "wvtt N" in a vttc box, then an empty vtte span, French.
 //
 // Usage: node gen-ttml.mjs <dash dir>
 //   reads  <dir>/manifest.mpd
-//   writes <dir>/manifest-ttml.mpd, subs.ttml, stpp-init.mp4, stpp-N.m4s
+//   writes <dir>/manifest-ttml.mpd, subs.ttml, stpp-init.mp4, stpp-N.m4s,
+//          wvtt-init.mp4, wvtt-N.m4s
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -70,7 +74,9 @@ const stpp = box('stpp', [
   0, // schema_location
   0, // auxiliary_mime_types
 ]);
-const init = [
+// wvtt sample entry with its WebVTT header (ISO/IEC 14496-30 §7.5).
+const wvtt = box('wvtt', [0, 0, 0, 0, 0, 0, 0, 1, ...box('vttC', ascii('WEBVTT'))]);
+const initWith = (entry) => [
   ...box('ftyp', [...ascii('iso6'), ...u32(0), ...ascii('iso6'), ...ascii('dash')]),
   ...box('moov', [
     ...box('mvhd', [
@@ -128,7 +134,7 @@ const init = [
         ...box('minf', [
           ...box('sthd', [0, 0, 0, 0]),
           ...box('stbl', [
-            ...box('stsd', [0, 0, 0, 0, ...u32(1), ...stpp]),
+            ...box('stsd', [0, 0, 0, 0, ...u32(1), ...entry]),
             ...box('stts', [0, 0, 0, 0, ...u32(0)]),
             ...box('stsc', [0, 0, 0, 0, ...u32(0)]),
             ...box('stsz', [0, 0, 0, 0, ...u32(0), ...u32(0)]),
@@ -142,7 +148,8 @@ const init = [
     ]),
   ]),
 ];
-writeFileSync(join(dir, 'stpp-init.mp4'), Uint8Array.from(init));
+writeFileSync(join(dir, 'stpp-init.mp4'), Uint8Array.from(initWith(stpp)));
+writeFileSync(join(dir, 'wvtt-init.mp4'), Uint8Array.from(initWith(wvtt)));
 
 for (let n = 1; n <= count; n += 1) {
   const start = (n - 1) * SEGMENT;
@@ -173,6 +180,31 @@ for (let n = 1; n <= count; n += 1) {
     join(dir, `stpp-${n}.m4s`),
     Uint8Array.from([...moof(size + 8), ...box('mdat', sample)]),
   );
+
+  // wvtt: a cue for the first half of the segment, nothing for the second.
+  const half = (SEGMENT / 2) * TIMESCALE;
+  const shown = box('vttc', [
+    ...box('sttg', ascii('line:85%')),
+    ...box('payl', ascii(`wvtt ${n}`)),
+  ]);
+  const empty = box('vtte', []);
+  const wvttMoof = (offset) =>
+    box('moof', [
+      ...box('mfhd', [0, 0, 0, 0, ...u32(n)]),
+      ...box('traf', [
+        ...box('tfhd', [0, 0x02, 0, 0, ...u32(1)]),
+        ...box('tfdt', [0, 0, 0, 0, ...u32(start * TIMESCALE)]),
+        ...box('trun', [
+          ...[0, 0, 0x03, 0x01, ...u32(2), ...u32(offset)],
+          ...[...u32(half), ...u32(shown.length), ...u32(half), ...u32(empty.length)],
+        ]),
+      ]),
+    ]);
+  const wvttSize = wvttMoof(0).length;
+  writeFileSync(
+    join(dir, `wvtt-${n}.m4s`),
+    Uint8Array.from([...wvttMoof(wvttSize + 8), ...box('mdat', [...shown, ...empty])]),
+  );
 }
 
 const sets = `		<AdaptationSet id="10" contentType="text" mimeType="application/ttml+xml" lang="en">
@@ -183,6 +215,12 @@ const sets = `		<AdaptationSet id="10" contentType="text" mimeType="application/
 			<Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>
 			<Representation id="stpp" bandwidth="1000">
 				<SegmentTemplate timescale="${TIMESCALE}" duration="${SEGMENT * TIMESCALE}" startNumber="1" initialization="stpp-init.mp4" media="stpp-$Number$.m4s"/>
+			</Representation>
+		</AdaptationSet>
+		<AdaptationSet id="12" contentType="text" mimeType="application/mp4" codecs="wvtt" lang="fr">
+			<Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>
+			<Representation id="wvtt" bandwidth="1000">
+				<SegmentTemplate timescale="${TIMESCALE}" duration="${SEGMENT * TIMESCALE}" startNumber="1" initialization="wvtt-init.mp4" media="wvtt-$Number$.m4s"/>
 			</Representation>
 		</AdaptationSet>
 	</Period>`;
