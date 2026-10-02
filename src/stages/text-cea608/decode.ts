@@ -17,7 +17,8 @@ export interface Cue {
   text: string;
 }
 
-type Mode = 'popOn' | 'rollUp' | 'paintOn' | 'none';
+/** `text`: a text service (T1 to T4, after TR or RTD), whose characters are not captions. */
+type Mode = 'popOn' | 'rollUp' | 'paintOn' | 'text' | 'none';
 
 const ROWS = 15;
 const COLS = 32;
@@ -77,15 +78,18 @@ export class Cea608Decoder {
   private openText: string | null = null;
   private openStart = 0;
 
-  /** Feeds one CEA-608 byte pair at a presentation time in seconds. */
-  push(a: number, b: number, time: number): void {
+  /**
+   * Feeds one CEA-608 byte pair at a presentation time in seconds. Control
+   * codes are transmitted twice for reliability and a repeat is dropped,
+   * unless `dedupe` is false because the caller already dropped it.
+   */
+  push(a: number, b: number, time: number, dedupe = true): void {
     const b0 = a & 0x7f;
     const b1 = b & 0x7f;
-    // Control codes are the pairs whose first byte is 0x10-0x1f. They are
-    // transmitted twice for reliability; a repeat is dropped.
+    // Control codes are the pairs whose first byte is 0x10-0x1f.
     if (b0 >= 0x10 && b0 <= 0x1f) {
       const packed = (b0 << 8) | b1;
-      if (packed === this.lastControl) {
+      if (dedupe && packed === this.lastControl) {
         this.lastControl = 0;
         return;
       }
@@ -94,6 +98,7 @@ export class Cea608Decoder {
       return;
     }
     this.lastControl = 0;
+    if (this.mode === 'text') return;
     // Two printable characters (a null 0x00 pads an odd count).
     if (b0 !== 0) this.write(basicChar(b0));
     if (b1 !== 0) this.write(basicChar(b1));
@@ -143,6 +148,10 @@ export class Cea608Decoder {
         break;
       case 0x29: // RDC: resume direct captioning -> paint-on
         this.mode = 'paintOn';
+        break;
+      case 0x2a: // TR: text restart -> a text service, not captions
+      case 0x2b: // RTD: resume text display
+        this.mode = 'text';
         break;
       case 0x2c: // EDM: erase displayed memory
         this.closeCue(time);
@@ -237,4 +246,50 @@ function screenText(screen: readonly string[]): string {
     .map((line) => line.replace(/\s+$/, ''))
     .filter((line) => line !== '')
     .join('\n');
+}
+
+/** A caption channel within one field: 1 for CC1 or CC3, 2 for CC2 or CC4. */
+export type FieldChannel = 1 | 2;
+
+/**
+ * One CEA-608 field: two data channels in one byte-pair stream. A control
+ * code names its channel in its first byte (0x10 to 0x17 for channel 1, 0x18
+ * to 0x1f for channel 2), and the characters that follow belong to it until
+ * the next control code. Field 1 carries CC1 and CC2, field 2 carries CC3 and
+ * CC4. Each channel has its own decoder, fed channel-1 codes.
+ */
+export class Cea608Field {
+  private channel: FieldChannel = 1;
+  private lastControl = 0;
+  private readonly decoders: Readonly<Record<FieldChannel, Cea608Decoder>> = {
+    1: new Cea608Decoder(),
+    2: new Cea608Decoder(),
+  };
+
+  push(a: number, b: number, time: number): void {
+    const b0 = a & 0x7f;
+    const b1 = b & 0x7f;
+    if (b0 >= 0x10 && b0 <= 0x1f) {
+      // The repeat of a control code is dropped here, per field: the other
+      // channel's characters may arrive between two of a decoder's codes.
+      const packed = (b0 << 8) | b1;
+      if (packed === this.lastControl) {
+        this.lastControl = 0;
+        return;
+      }
+      this.lastControl = packed;
+      this.channel = (b0 & 0x08) !== 0 ? 2 : 1;
+      this.decoders[this.channel].push(b0 & ~0x08, b1, time, false);
+      return;
+    }
+    this.lastControl = 0;
+    // Padding between captions is a null pair on no channel.
+    if (b0 === 0 && b1 === 0) return;
+    this.decoders[this.channel].push(b0, b1, time, false);
+  }
+
+  /** The cues each channel completed since the last drain. */
+  drain(): Readonly<Record<FieldChannel, Cue[]>> {
+    return { 1: this.decoders[1].drain(), 2: this.decoders[2].drain() };
+  }
 }

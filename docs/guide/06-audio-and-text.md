@@ -169,12 +169,13 @@ a menu lists it.
 - The manifest declares it: HLS `EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS` with
   `INSTREAM-ID="CC1"`, or DASH `Accessibility` with
   `urn:scte:dash:cc:cea-608:2015`.
-- A stream that declares none gets the track `cea608:CC1` when its first
-  caption arrives, with a `tracks:changed` event.
-- The decoder reads CC1. Declared CC2 to CC4 tracks are listed and show
-  nothing.
+- A channel the manifest does not declare gets the track `cea608:CC1` to
+  `cea608:CC4` when its first caption arrives, with a `tracks:changed` event.
+- All four channels are decoded: CC1 and CC2 on field 1, CC3 and CC4 on
+  field 2. CEA-708 services are not read.
 
-On the element, the cues go to a native caption track labelled `CC1`. It
+On the element, each channel's cues go to a native caption track labelled
+`CC1` to `CC4`. It
 shows while the caption track is selected, and a pick in the browser's
 caption menu selects it in the engine. If your packager can emit WebVTT
 sidecars instead, skip these stages.

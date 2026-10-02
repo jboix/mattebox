@@ -108,8 +108,8 @@ function install(tracks: readonly Track[], stages: Array<() => Stage> = [textCea
   return harness;
 }
 
-function caption(element: HTMLVideoElement): TextTrack | undefined {
-  return [...element.textTracks].find((t) => t.kind === 'captions' && t.label === 'CC1');
+function caption(element: HTMLVideoElement, label = 'CC1'): TextTrack | undefined {
+  return [...element.textTracks].find((t) => t.kind === 'captions' && t.label === label);
 }
 
 /** The TextTrackList `change` event is async; wait a turn for it. */
@@ -119,15 +119,21 @@ function changed(el: HTMLVideoElement): Promise<void> {
   });
 }
 
-/** A pop-on caption "HI" shown from `start` to `end`, as CC1 byte pairs. */
-function popOn(start: number, end: number): void {
-  const pair = (a: number, b: number, time: number) => ({ time, triples: [{ type: 0, a, b }] });
+/**
+ * A pop-on caption "HI" shown from `start` to `end`, as byte pairs on one
+ * channel: CC1 and CC2 on field 1 (cc_type 0), CC3 and CC4 on field 2
+ * (cc_type 1), the second channel of a field with the 0x08 bit.
+ */
+function popOn(start: number, end: number, channel: 1 | 2 | 3 | 4 = 1): void {
+  const type = channel <= 2 ? 0 : 1;
+  const bit = channel % 2 === 0 ? 0x08 : 0;
+  const pair = (a: number, b: number, time: number) => ({ time, triples: [{ type, a, b }] });
   deliverCaptions([
-    pair(0x14, 0x20, start), // resume caption loading
-    pair(0x14, 0x40, start), // row preamble
+    pair(0x14 | bit, 0x20, start), // resume caption loading
+    pair(0x14 | bit, 0x40, start), // row preamble
     pair(0x48, 0x49, start), // "HI"
-    pair(0x14, 0x2f, start), // end of caption: shows it
-    pair(0x14, 0x2c, end), // erase displayed memory: ends it
+    pair(0x14 | bit, 0x2f, start), // end of caption: shows it
+    pair(0x14 | bit, 0x2c, end), // erase displayed memory: ends it
   ]);
 }
 
@@ -196,5 +202,28 @@ describe('text-cea608 makes in-band captions a selectable text track', () => {
     await changed(h.element);
     expect(caption(h.element)?.mode).toBe('hidden');
     expect(h.dispatched).toEqual([]);
+  });
+
+  it('adds a track per channel the stream reveals: CC3 on field 2, CC4 beside it', () => {
+    const h = install([SUBS]);
+    popOn(1, 3, 3);
+    popOn(5, 7, 4);
+    const adds = h.dispatched.flatMap((cmd) => (cmd.type === 'ADD_TRACK' ? [cmd.track.id] : []));
+    expect(adds).toEqual(['cea608:CC3', 'cea608:CC4']);
+    expect(caption(h.element, 'CC3')?.cues?.length).toBe(1);
+    expect(caption(h.element, 'CC4')?.cues?.length).toBe(1);
+    expect(caption(h.element, 'CC1')).toBeUndefined();
+  });
+
+  it('shows a declared CC3 track while it is selected, CC1 staying hidden', () => {
+    const cc3 = { ...DECLARED, id: 'cc:Español', lang: 'es', instreamId: 'CC3' };
+    const h = install([DECLARED, cc3]);
+    popOn(1, 3, 1);
+    popOn(1, 3, 3);
+    h.active = new Map([['text', 'cc:Español']]);
+    h.emit('tracks:selected', { contentType: 'text', trackId: 'cc:Español' });
+    expect(caption(h.element, 'CC3')?.mode).toBe('showing');
+    expect(caption(h.element, 'CC3')?.language).toBe('es');
+    expect(caption(h.element, 'CC1')?.mode).toBe('hidden');
   });
 });

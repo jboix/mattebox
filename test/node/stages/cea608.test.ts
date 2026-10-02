@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ccTriplesFromSei } from '../../../src/containers/sei.js';
-import { Cea608Decoder } from '../../../src/stages/text-cea608/decode.js';
+import { Cea608Decoder, Cea608Field } from '../../../src/stages/text-cea608/decode.js';
 
 // Control codes.
 const RCL: [number, number] = [0x14, 0x20]; // resume caption loading (pop-on)
@@ -58,6 +58,75 @@ describe('CEA-608 decode', () => {
     expect(cues.length).toBeGreaterThanOrEqual(1);
     expect(cues[0]?.text).toContain('ONE');
     expect(cues.at(-1)?.text).toContain('TWO');
+  });
+});
+
+describe('CEA-608 fields carry two channels', () => {
+  /** A pop-on caption on one channel: its control codes with the channel bit (0x08) when 2. */
+  function popOn(field: Cea608Field, channel: 1 | 2, text: string, on: number, off: number) {
+    const bit = channel === 2 ? 0x08 : 0;
+    field.push(0x14 | bit, 0x20, on); // RCL
+    field.push(0x14 | bit, 0x40, on); // PAC row 15
+    for (const [a, b] of chars(text)) field.push(a, b, on);
+    field.push(0x14 | bit, 0x2f, on); // EOC: shows it
+    field.push(0x14 | bit, 0x2c, off); // EDM: ends it
+  }
+
+  it('routes channel-2 control codes and the characters after them to CC2', () => {
+    const field = new Cea608Field();
+    popOn(field, 1, 'ONE', 1, 2);
+    popOn(field, 2, 'TWO', 3, 4);
+    const cues = field.drain();
+    expect(cues[1].map((c) => [c.text, c.start, c.end])).toEqual([['ONE', 1, 2]]);
+    expect(cues[2].map((c) => [c.text, c.start, c.end])).toEqual([['TWO', 3, 4]]);
+  });
+
+  it('keeps two channels apart when their pairs interleave', () => {
+    const field = new Cea608Field();
+    field.push(0x14, 0x20, 0); // CC1 RCL
+    field.push(0x1c, 0x20, 0); // CC2 RCL
+    field.push(0x14, 0x40, 0); // CC1 PAC, then CC1 text
+    field.push(0x41, 0x41, 0);
+    field.push(0x1c, 0x40, 0); // CC2 PAC, then CC2 text
+    field.push(0x42, 0x42, 0);
+    field.push(0x14, 0x2f, 1); // CC1 EOC
+    field.push(0x1c, 0x2f, 1); // CC2 EOC
+    field.push(0x14, 0x2c, 2);
+    field.push(0x1c, 0x2c, 2);
+    const cues = field.drain();
+    expect(cues[1].map((c) => c.text)).toEqual(['AA']);
+    expect(cues[2].map((c) => c.text)).toEqual(['BB']);
+  });
+
+  it('reads field 2 miscellaneous codes (0x15, 0x1d) for CC3 and CC4', () => {
+    const field = new Cea608Field();
+    field.push(0x15, 0x20, 0); // CC3 RCL
+    field.push(0x14, 0x40, 0);
+    for (const [a, b] of chars('THREE')) field.push(a, b, 0);
+    field.push(0x15, 0x2f, 1);
+    field.push(0x15, 0x2c, 2);
+    field.push(0x1d, 0x20, 3); // CC4 RCL
+    field.push(0x1c, 0x40, 3);
+    for (const [a, b] of chars('FOUR')) field.push(a, b, 3);
+    field.push(0x1d, 0x2f, 4);
+    field.push(0x1d, 0x2c, 5);
+    const cues = field.drain();
+    expect(cues[1].map((c) => c.text)).toEqual(['THREE']);
+    expect(cues[2].map((c) => c.text)).toEqual(['FOUR']);
+  });
+
+  it('drops a repeated control code once, and ignores text-service characters', () => {
+    const field = new Cea608Field();
+    field.push(0x14, 0x20, 0);
+    field.push(0x14, 0x20, 0); // the repeat
+    field.push(0x14, 0x40, 0);
+    for (const [a, b] of chars('CAP')) field.push(a, b, 0);
+    field.push(0x14, 0x2a, 0); // TR: a text service starts
+    for (const [a, b] of chars('TEXT')) field.push(a, b, 0);
+    field.push(0x14, 0x20, 0); // back to captions
+    field.push(0x14, 0x2f, 1);
+    field.push(0x14, 0x2c, 2);
+    expect(field.drain()[1].map((c) => c.text)).toEqual(['CAP']);
   });
 });
 
