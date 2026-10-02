@@ -67,6 +67,19 @@ export type Mattebox = MatteboxBase & Partial<MatteboxNamespaces>;
 const registry = new WeakMap<HTMLMediaElement, Mattebox>();
 
 /** Creates an engine. The element is supplied later via `attach`. */
+/**
+ * A page-relative URL made absolute, as the IR stores URLs and parsers
+ * resolve against the manifest URL. Without a document base (tests,
+ * workers) the URL stands as given.
+ */
+function absolutize(url: string): string {
+  try {
+    return new URL(url, globalThis.location?.href).href;
+  } catch {
+    return url;
+  }
+}
+
 export function mattebox(options: MatteboxOptions): Mattebox {
   const composition = compose(options.stages ?? []);
   const config: Partial<KernelConfig> = { ...options.config };
@@ -382,14 +395,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
       lifecycle.detach();
     },
     load(url, loadOptions) {
-      // Consumers hand over page-relative URLs; the IR stores absolute ones
-      // and parsers resolve against the manifest URL, so absolutize here.
-      let absolute = url;
-      try {
-        absolute = new URL(url, globalThis.location?.href).href;
-      } catch {
-        // No document base (tests, workers): the caller's URL stands.
-      }
+      const absolute = absolutize(url);
       lastError = null;
       // A load replaces whatever is loaded, the way setting `src` does.
       const { phase } = bus.getState().lifecycle;
@@ -399,6 +405,24 @@ export function mattebox(options: MatteboxOptions): Mattebox {
         url: absolute,
         ...(loadOptions?.mimeType !== undefined ? { mimeType: loadOptions.mimeType } : {}),
       });
+    },
+    async preload(url, loadOptions) {
+      const absolute = absolutize(url);
+      if (loadOptions?.mimeType !== undefined && !accepts(loadOptions.mimeType)) {
+        throw Object.assign(new Error(`no protocol reads ${loadOptions.mimeType}`), {
+          category: 'manifest',
+          code: 'MANIFEST_UNSUPPORTED',
+        });
+      }
+      const response = await transport.request(absolute, { method: 'GET' });
+      if (!response.ok) {
+        throw Object.assign(new Error(`preload ${absolute}: HTTP ${response.status}`), {
+          category: 'network',
+          code: 'NETWORK_HTTP_STATUS',
+          status: response.status,
+        });
+      }
+      transport.prime(absolute, await response.arrayBuffer(), response.headers);
     },
     unload() {
       bus.dispatch({ type: 'UNLOAD' });

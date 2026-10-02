@@ -107,7 +107,16 @@ export interface Transport {
   ): Promise<Response>;
   /** Tokens with live network activity or a pending retry. For tests and diagnostics. */
   pending(): readonly string[];
+  /**
+   * Keeps a response for the next fetch of `url`, which then answers from
+   * it once instead of the network: a preloaded manifest. At most three,
+   * the oldest dropped first; each expires after 30 s.
+   */
+  prime(url: string, bytes: ArrayBuffer, headers: Headers): void;
 }
+
+const PRIMED_LIMIT = 3;
+const PRIMED_TTL_MS = 30_000;
 
 interface LiveRequest {
   controller: AbortController;
@@ -126,6 +135,16 @@ export function createTransport(options: TransportOptions): Transport {
   const requestHooks = new Set<RequestHook>();
   const responseHooks = new Set<ResponseHook>();
   const live = new Map<string, LiveRequest>();
+  const primed = new Map<string, { bytes: ArrayBuffer; headers: Headers; at: number }>();
+
+  /** The primed response for a URL, once; null when none or expired. */
+  function takePrimed(url: string): Response | null {
+    const entry = primed.get(url);
+    if (entry === undefined) return null;
+    primed.delete(url);
+    if (now() - entry.at > PRIMED_TTL_MS) return null;
+    return new Response(entry.bytes, { status: 200, headers: entry.headers });
+  }
 
   function fail(
     token: string,
@@ -229,7 +248,13 @@ export function createTransport(options: TransportOptions): Transport {
       );
     };
 
-    fetchImpl(draft.url, { headers: draft.headers, signal: state.controller.signal })
+    // A preloaded manifest answers by the URL the effect named, before the
+    // hooks changed it, and only once.
+    const answer = takePrimed(effectUrl);
+    (answer !== null
+      ? Promise.resolve(answer)
+      : fetchImpl(draft.url, { headers: draft.headers, signal: state.controller.signal })
+    )
       .then(async (response) => {
         if (state.timeoutId !== null) clearTimeout(state.timeoutId);
         if (!response.ok) {
@@ -385,6 +410,11 @@ export function createTransport(options: TransportOptions): Transport {
     },
     pending() {
       return [...live.keys()];
+    },
+    prime(url, bytes, headers) {
+      primed.delete(url);
+      primed.set(url, { bytes, headers, at: now() });
+      while (primed.size > PRIMED_LIMIT) primed.delete(primed.keys().next().value as string);
     },
   };
 }

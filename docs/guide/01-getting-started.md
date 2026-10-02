@@ -73,6 +73,24 @@ const engine = mattebox.from(video);
 The CDN bundles expose the same `mattebox` as a global, plus the bundle's
 preset and stage factories. [Chapter 14](14-cdn.md) has the script tag.
 
+## Preload the next source
+
+`engine.preload(url)` fetches a source's manifest while the current source
+plays, so the next `load` of the same URL starts without that round trip.
+
+```ts
+await engine.preload(next.url);
+// later, when the current item ends
+engine.load(next.url);
+```
+
+- The manifest is kept for 30 seconds, at most three at a time.
+- The request goes through your request hooks, as a load's would.
+- The promise rejects when the fetch fails, or when you pass a `mimeType`
+  no composed protocol reads. The load then fetches as usual.
+- Only the manifest is preloaded. One engine plays one source; your
+  playlist decides what comes next and when to preload it.
+
 ## Unload and detach
 
 Unload stops fetching and clears the buffers. Detach removes the engine from

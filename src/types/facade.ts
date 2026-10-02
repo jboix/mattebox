@@ -119,6 +119,13 @@ export interface MatteboxBase {
   /** Idempotent and safe to call from an error state. */
   detach(): Promise<void>;
   load(url: string, options?: LoadOptions): void;
+  /**
+   * Fetches a source's manifest now, so a later `load` of the same URL
+   * starts without that round trip, while the current source plays on.
+   * Resolves when the bytes are kept for 30 s; rejects when the fetch fails
+   * or no composed protocol reads `mimeType`.
+   */
+  preload(url: string, options?: LoadOptions): Promise<void>;
   unload(): void;
   /**
    * Stops every request while the element stays attached and its buffers

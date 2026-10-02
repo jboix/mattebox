@@ -330,3 +330,45 @@ describe('manifest Content-Type guard', () => {
     expect(h.facts[0]).toMatchObject({ type: 'SEGMENT_LOADED', trackId: 'a' });
   });
 });
+
+describe('primed responses', () => {
+  const URL_A = 'https://cdn.example/v/3.m4s';
+
+  it('answer a fetch of their URL once, with no network call, even when a hook changes the URL', async () => {
+    const h = harness(ok(8));
+    h.transport.addRequestHook((req) => {
+      req.url = `${req.url}?CMCD=x`;
+    });
+    h.transport.prime(
+      URL_A,
+      new Uint8Array([1, 2, 3]).buffer,
+      new Headers({ 'content-type': 'x/y' }),
+    );
+    h.runner.run([{ kind: 'fetch', token: 't1', url: URL_A }]);
+    await vi.runAllTimersAsync();
+    expect(h.calls).toEqual([]);
+    expect(h.facts[0]).toMatchObject({ type: 'SEGMENT_LOADED', size: 3 });
+    h.runner.run([{ kind: 'fetch', token: 't2', url: URL_A }]);
+    await vi.runAllTimersAsync();
+    expect(h.calls).toHaveLength(1);
+  });
+
+  it('expire after 30 s and keep at most three, the oldest dropped first', async () => {
+    const h = harness(ok(8));
+    h.transport.prime(URL_A, new ArrayBuffer(1), new Headers());
+    vi.advanceTimersByTime(30_001);
+    h.runner.run([{ kind: 'fetch', token: 't1', url: URL_A }]);
+    await vi.runAllTimersAsync();
+    expect(h.calls.map((c) => c.url)).toEqual([URL_A]);
+
+    for (const name of ['a', 'b', 'c', 'd']) {
+      h.transport.prime(`https://cdn.example/${name}`, new ArrayBuffer(1), new Headers());
+    }
+    h.runner.run([
+      { kind: 'fetch', token: 't2', url: 'https://cdn.example/a' },
+      { kind: 'fetch', token: 't3', url: 'https://cdn.example/d' },
+    ]);
+    await vi.runAllTimersAsync();
+    expect(h.calls.map((c) => c.url)).toEqual([URL_A, 'https://cdn.example/a']);
+  });
+});
