@@ -147,3 +147,47 @@ it.skipIf(!decodesH264)('19. undeclared channels become tracks on their first cu
   player.engine.tracks.select('cea608:CC2');
   await until(() => nativeCaption(player.video, 'CC2')?.mode === 'showing', 'CC2 showing', 5_000);
 });
+
+it.skipIf(!decodesH264)('45. CEA-708 services are tracks beside the 608 channels', async () => {
+  const player = await boot({ src: 'captions-708' });
+  await play(player, 2, 15_000);
+  // Service 1 is declared; service 2 appears on its first cue.
+  await until(
+    () => player.engine.tracks.available.some((t) => t.id === 'cea708:SERVICE2'),
+    'service 2 added',
+    15_000,
+  );
+  const services = player.engine.tracks.available.filter(
+    (t) => t.mimeType === 'application/cea-708',
+  );
+  expect(services.map((t) => t.instreamId).sort()).toEqual(['SERVICE1', 'SERVICE2']);
+  for (const [label, text, line] of [
+    ['SERVICE1', 'SERVICE1 0', 90],
+    ['SERVICE2', 'SERVICE2 0', 10],
+  ] as const) {
+    await until(
+      () => (nativeCaption(player.video, label)?.cues?.length ?? 0) > 0,
+      `${label} cues`,
+      15_000,
+    );
+    const first = nativeCaption(player.video, label)?.cues?.[0] as VTTCue;
+    expect(first.text).toBe(text);
+    expect(first.line).toBe(line);
+    expect(first.endTime).toBeCloseTo(100 / 30, 1);
+  }
+  // The 608 channels keep working beside them.
+  await until(
+    () => (nativeCaption(player.video, 'CC1')?.cues?.length ?? 0) > 0,
+    'CC1 cues',
+    15_000,
+  );
+  const declared = services.find((t) => t.instreamId === 'SERVICE1');
+  player.engine.tracks.select(declared?.id as string);
+  await until(
+    () => nativeCaption(player.video, 'SERVICE1')?.mode === 'showing',
+    'SERVICE1 showing',
+    5_000,
+  );
+  expect(nativeCaption(player.video, 'SERVICE1')?.language).toBe('en');
+  expect(player.engine.error?.code ?? null).toBeNull();
+});

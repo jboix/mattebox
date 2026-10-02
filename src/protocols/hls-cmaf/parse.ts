@@ -377,19 +377,24 @@ function characteristicsOf(entry: MediaEntry): string[] {
 
 /**
  * RFC 8216bis §4.4.6.1: a CLOSED-CAPTIONS rendition names an in-band
- * CEA-608 channel (INSTREAM-ID CC1 to CC4) inside the video. It becomes a
- * text track with no segments; the caption stage reads the cues from the
- * video. CEA-708 services (SERVICEn) are left out until a stage decodes them.
+ * caption channel inside the video: a CEA-608 channel (INSTREAM-ID CC1 to
+ * CC4) or a CEA-708 service (SERVICE1 to SERVICE63). It becomes a text
+ * track with no segments; a caption stage reads the cues from the video.
  */
 function captionTrack(entry: MediaEntry): Track | null {
   if (entry.type !== 'CLOSED-CAPTIONS') return null;
-  const instreamId = entry.attributes['INSTREAM-ID'];
-  if (instreamId === undefined || !/^CC[1-4]$/.test(instreamId)) return null;
+  const instreamId = entry.attributes['INSTREAM-ID'] ?? '';
+  const mimeType = /^CC[1-4]$/.test(instreamId)
+    ? 'application/cea-608'
+    : /^SERVICE([1-9]|[1-5]\d|6[0-3])$/.test(instreamId)
+      ? 'application/cea-708'
+      : null;
+  if (mimeType === null) return null;
   const characteristics = characteristicsOf(entry);
   return {
     id: `${entry.groupId}:${entry.name}`,
     contentType: 'text',
-    mimeType: 'application/cea-608',
+    mimeType,
     protection: null,
     ...(entry.attributes.LANGUAGE !== undefined ? { lang: entry.attributes.LANGUAGE } : {}),
     role: 'caption',

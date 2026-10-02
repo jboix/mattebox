@@ -414,19 +414,25 @@ describe('roles, accessibility, and forced subtitles', () => {
   });
 });
 
-describe('CEA-608 accessibility', () => {
-  function captions(values: readonly string[]): Array<{ id: string; lang?: string }> {
-    const descriptors = values
-      .map(
+describe('CEA-608 and CEA-708 accessibility', () => {
+  function captions(
+    values: readonly string[],
+    services = ['1=lang:eng'],
+    format = '608',
+  ): Array<{ id: string; lang?: string }> {
+    const descriptors = [
+      ...values.map(
         (value) => `<Accessibility schemeIdUri="urn:scte:dash:cc:cea-608:2015" value="${value}"/>`,
-      )
-      .join('');
+      ),
+      ...services.map(
+        (value) => `<Accessibility schemeIdUri="urn:scte:dash:cc:cea-708:2015" value="${value}"/>`,
+      ),
+    ].join('');
     const mpd = `<?xml version="1.0"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1M">
   <Period>
     <AdaptationSet id="v" contentType="video" mimeType="video/mp4" codecs="avc1.4d401f">
       ${descriptors}
-      <Accessibility schemeIdUri="urn:scte:dash:cc:cea-708:2015" value="1=lang:eng"/>
       <SegmentTemplate media="v-$Number$.m4s" initialization="v-init.mp4" duration="6" timescale="1"/>
       <Representation id="v1" bandwidth="800000"/>
     </AdaptationSet>
@@ -435,7 +441,7 @@ describe('CEA-608 accessibility', () => {
     const result = parse(mpd, BASE);
     expect(result.error).toBeNull();
     return (result.presentation?.periods[0]?.tracks ?? [])
-      .filter((t) => t.role === 'caption')
+      .filter((t) => t.role === 'caption' && t.mimeType === `application/cea-${format}`)
       .map((t) => ({ id: t.id, ...(t.lang !== undefined ? { lang: t.lang } : {}) }));
   }
 
@@ -459,9 +465,24 @@ describe('CEA-608 accessibility', () => {
     expect(captions([''])).toEqual([{ id: 'cea608:CC1' }]);
   });
 
-  it('declares each channel once and leaves CEA-708 out', () => {
+  it('declares each channel once', () => {
     expect(captions(['CC1=eng', 'CC1=eng'])).toEqual([{ id: 'cea608:CC1', lang: 'eng' }]);
     expect(captions([])).toEqual([]);
+  });
+
+  it('reads CEA-708 services with their lang key, bare languages, and an empty value', () => {
+    const services = (values: string[]) => captions([], values, '708');
+    expect(services(['1=lang:eng;2=lang:spa,war:1,er:1'])).toEqual([
+      { id: 'cea708:SERVICE1', lang: 'eng' },
+      { id: 'cea708:SERVICE2', lang: 'spa' },
+    ]);
+    expect(services(['eng;fra'])).toEqual([
+      { id: 'cea708:SERVICE1', lang: 'eng' },
+      { id: 'cea708:SERVICE2', lang: 'fra' },
+    ]);
+    expect(services(['3=deu'])).toEqual([{ id: 'cea708:SERVICE3', lang: 'deu' }]);
+    expect(services([''])).toEqual([{ id: 'cea708:SERVICE1' }]);
+    expect(services(['64=lang:eng'])).toEqual([]);
   });
 });
 

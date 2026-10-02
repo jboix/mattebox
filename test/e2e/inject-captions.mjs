@@ -1,8 +1,9 @@
-// Writes a CEA-608 captioned copy of an H.264 fMP4 rendition for the E2E
-// corpus: ffmpeg cannot emit 608 captions, so this puts an ATSC A/53 caption
+// Writes a captioned copy of an H.264 fMP4 rendition for the E2E corpus:
+// ffmpeg cannot emit 608 or 708 captions, so this puts an ATSC A/53 caption
 // SEI NAL in front of every video sample. Each segment n shows "CC1 n" to
 // "CC4 n", one pop-on caption per channel: CC1 and CC2 on field 1, CC3 and
-// CC4 on field 2.
+// CC4 on field 2. Beside them, CEA-708 DTVCC packets show "SERVICE1 n" in a
+// window at the bottom center and "SERVICE2 n" in one at the top left.
 //
 // Only sizes change: each sample's trun size, the mdat size, and the sidx
 // referenced size. The moof keeps its size, so the trun data offset holds.
@@ -76,8 +77,48 @@ function schedule(n, frames) {
   return [field1, field2];
 }
 
+/**
+ * The CEA-708 packets of segment n, by frame: each a list of service blocks
+ * (CTA-708-E §6.2). Service 1 defines window 0 hidden at the bottom center,
+ * writes, and shows it; service 2 defines window 1 visible at the top left.
+ * Both end at the frame the 608 captions end.
+ */
+function schedule708(n, frames) {
+  const ascii = (text) => [...text].map((c) => c.charCodeAt(0));
+  const block = (service, data) => [(service << 5) | data.length, ...data];
+  // DFn: id, visible, relative anchor v/h, anchor point, rows, columns, window style 1, pen style 1.
+  const define = (id, visible, v, h, point) => [
+    0x98 + id,
+    visible ? 0x20 : 0,
+    0x80 | v,
+    h,
+    point << 4,
+    31,
+    0x09,
+  ];
+  const end = Math.min(frames - 2, 100);
+  return new Map([
+    [0, [block(1, [...define(0, false, 90, 50, 7), ...ascii(`SERVICE1 ${n}`), 0x89, 0x01])]],
+    [1, [block(2, [...define(1, true, 10, 10, 0), ...ascii(`SERVICE2 ${n}`)])]],
+    [end, [block(1, [0x8a, 0x01]), block(2, [0x8c, 0x02])]],
+  ]);
+}
+
+let sequence = 0;
+
+/** A DTVCC packet as cc_data triples: a start (cc_type 3) and data pairs (cc_type 2). */
+function dtvccTriples(blocks) {
+  const bytes = blocks.flat();
+  if (bytes.length % 2 === 0) bytes.push(0);
+  const header = (sequence << 6) | ((bytes.length + 1) / 2);
+  sequence = (sequence + 1) % 4;
+  const triples = [[3, header, bytes[0]]];
+  for (let i = 1; i < bytes.length; i += 2) triples.push([2, bytes[i], bytes[i + 1]]);
+  return triples;
+}
+
 /** One H.264 SEI NAL, length-prefixed, with ATSC caption data for this frame. */
-function captionNal(pair1, pair2) {
+function captionNal(pair1, pair2, dtvcc = []) {
   const cc = (valid, type, pair) => [0xf8 | (valid ? 0x04 : 0) | type, ...(pair ?? [0x80, 0x80])];
   const payload = [
     0xb5,
@@ -88,10 +129,12 @@ function captionNal(pair1, pair2) {
     0x39,
     0x34, // T.35 United States, ATSC, "GA94"
     0x03, // user_data_type_code: cc_data
-    0x40 | 2, // process_cc_data_flag, cc_count 2
+    0x40 | (2 + dtvcc.length), // process_cc_data_flag, cc_count
     0xff, // em_data
     ...cc(pair1 !== undefined, 0, pair1?.map(parity)),
     ...cc(pair2 !== undefined, 1, pair2?.map(parity)),
+    // 708 bytes carry no parity.
+    ...dtvcc.flatMap(([type, a, b]) => cc(true, type, [a, b])),
     0xff, // marker_bits
   ];
   const rbsp = [0x06, 0x04, payload.length, ...payload, 0x80];
@@ -129,6 +172,7 @@ function inject(segment, n) {
   const count = view.getUint32(trunAt + 12);
   let cursor = trunAt + 16 + ((flags & 0x1) !== 0 ? 4 : 0) + ((flags & 0x4) !== 0 ? 4 : 0);
   const [field1, field2] = schedule(n, count);
+  const services = schedule708(n, count);
   const chunks = [];
   let source = mdatAt + 8;
   let added = 0;
@@ -136,7 +180,12 @@ function inject(segment, n) {
   const outView = new DataView(out.buffer);
   for (let i = 0; i < count; i += 1) {
     const size = view.getUint32(cursor);
-    const nal = captionNal(field1.get(i), field2.get(i));
+    const packet = services.get(i);
+    const nal = captionNal(
+      field1.get(i),
+      field2.get(i),
+      packet === undefined ? [] : dtvccTriples(packet),
+    );
     chunks.push(nal, segment.subarray(source, source + size));
     outView.setUint32(cursor, size + nal.length);
     source += size;

@@ -397,12 +397,13 @@ describe('rendition characteristics and forced subtitles', () => {
 });
 
 describe('closed captions', () => {
-  it('turns CEA-608 CLOSED-CAPTIONS renditions into caption tracks with no segments', () => {
+  it('turns CLOSED-CAPTIONS renditions into caption tracks with no segments', () => {
     const master = [
       '#EXTM3U',
       '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="English",LANGUAGE="en",INSTREAM-ID="CC1"',
       '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="Español",LANGUAGE="es",INSTREAM-ID="CC3",CHARACTERISTICS="public.accessibility.transcribes-spoken-dialog"',
       '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="708",LANGUAGE="en",INSTREAM-ID="SERVICE1"',
+      '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="none",INSTREAM-ID="SERVICE64"',
       '#EXT-X-STREAM-INF:BANDWIDTH=800000,CODECS="avc1.4d401f,mp4a.40.2",CLOSED-CAPTIONS="cc"',
       'v.m3u8',
     ].join('\n');
@@ -429,6 +430,16 @@ describe('closed captions', () => {
         role: 'caption',
         characteristics: ['public.accessibility.transcribes-spoken-dialog'],
         instreamId: 'CC3',
+        renditions: [],
+      },
+      {
+        id: 'cc:708',
+        contentType: 'text',
+        mimeType: 'application/cea-708',
+        protection: null,
+        lang: 'en',
+        role: 'caption',
+        instreamId: 'SERVICE1',
         renditions: [],
       },
     ]);

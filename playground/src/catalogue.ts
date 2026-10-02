@@ -44,6 +44,7 @@ import nalScan from '../../src/stages/nal-scan/index.js';
 import pdt from '../../src/stages/pdt/index.js';
 import recovery from '../../src/stages/recovery/index.js';
 import textCea608 from '../../src/stages/text-cea608/index.js';
+import textCea708 from '../../src/stages/text-cea708/index.js';
 import textWebvtt from '../../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../../src/stages/text-webvtt-segmented/index.js';
 import thumbnails from '../../src/stages/thumbnails/index.js';
@@ -106,6 +107,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('stages', chapters),
   built('stages', trickPlay),
   built('stages', timedMetadata),
+  built('stages', textCea708),
 ];
 
 /**
@@ -233,6 +235,12 @@ const LOCAL_STREAMS: readonly StreamEntry[] =
           url: local('h264/master-captions-undeclared.m3u8'),
           topic: 'local',
           tags: ['generated', 'in-band captions'],
+        },
+        {
+          label: 'h264, CEA-708 services 1 and 2 beside CEA-608',
+          url: local('h264/master-captions-708.m3u8'),
+          topic: 'local',
+          tags: ['generated', 'in-band captions', 'CEA-708'],
         },
         { label: 'h264, three rungs', url: local('h264-dash/manifest.mpd'), topic: 'local' },
         { label: 'vp9, three rungs', url: local('vp9-dash/manifest.mpd'), topic: 'local' },

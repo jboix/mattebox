@@ -172,13 +172,44 @@ a menu lists it.
 - A channel the manifest does not declare gets the track `cea608:CC1` to
   `cea608:CC4` when its first caption arrives, with a `tracks:changed` event.
 - All four channels are decoded: CC1 and CC2 on field 1, CC3 and CC4 on
-  field 2. CEA-708 services are not read.
+  field 2. CEA-708 services need `text-cea708` (next section).
 
 On the element, each channel's cues go to a native caption track labelled
 `CC1` to `CC4`. It
 shows while the caption track is selected, and a pick in the browser's
 caption menu selects it in the engine. If your packager can emit WebVTT
 sidecars instead, skip these stages.
+
+## CEA-708 captions
+
+CEA-708 captions ride in the same video data as CEA-608. `text-cea708`
+decodes them, with the same source stages as `text-cea608`. It is in
+`full`; add it to another preset with `stages`.
+
+```ts
+import hls from 'mattebox/presets/hls';
+import textCea708 from 'mattebox/stages/text-cea708';
+
+const engine = hls({ stages: [textCea708()] });
+```
+
+Each service is a text track with `role: 'caption'` and `mimeType:
+'application/cea-708'`.
+
+- The manifest declares it: HLS `INSTREAM-ID="SERVICE1"` to `"SERVICE63"`,
+  or DASH `Accessibility` with `urn:scte:dash:cc:cea-708:2015`.
+- A service the manifest does not declare gets the track `cea708:SERVICEn`
+  when its first caption arrives.
+- A stream that carries both formats lists the 608 channels and the 708
+  services side by side. Your menu decides which to offer.
+
+Each visible caption window becomes a cue on a native caption track
+labelled `SERVICE1` to `SERVICE63`. The cue sits where the window sits:
+its anchor sets `line` and `position`, its width sets `size`, and its
+justification sets `align`. Italics and underline show. Colors, edges, and
+fonts do not: a `VTTCue` carries no color without page CSS. Each cue keeps
+the window layout in a `cea708` property, for a player that draws captions
+itself.
 
 ## Timed metadata
 

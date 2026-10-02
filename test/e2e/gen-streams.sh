@@ -136,6 +136,10 @@ captions_master() {
     "$cc" "$audio" "$codecs" > "$dir/master-captions.m3u8"
   printf '#EXTM3U\n#EXT-X-VERSION:7\n%s\n#EXT-X-STREAM-INF:BANDWIDTH=150000,RESOLUTION=320x180,%s,AUDIO="aud-lo"\ncc-low.m3u8\n' \
     "$audio" "$codecs" > "$dir/master-captions-undeclared.m3u8"
+  # CEA-708: service 1 declared, service 2 left for the stage to find.
+  printf '#EXTM3U\n#EXT-X-VERSION:7\n%s\n%s\n#EXT-X-STREAM-INF:BANDWIDTH=150000,RESOLUTION=320x180,%s,AUDIO="aud-lo",CLOSED-CAPTIONS="cc"\ncc-low.m3u8\n' \
+    '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="English 708",LANGUAGE="en",INSTREAM-ID="SERVICE1"' \
+    "$audio" "$codecs" > "$dir/master-captions-708.m3u8"
 }
 
 if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
@@ -145,7 +149,7 @@ if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
   for flavor in h264 vp9; do
     [ -f "$OUT/$flavor/master-accessibility.m3u8" ] || accessibility_master "$flavor"
   done
-  [ -f "$OUT/h264/master-captions.m3u8" ] || captions_master
+  [ -f "$OUT/h264/master-captions-708.m3u8" ] || captions_master
   [ -f "$OUT/ts/master-metadata.m3u8" ] || node "$ROOT/test/e2e/inject-id3.mjs" "$OUT/ts"
   echo "streams present, skipping generation"
   exit 0

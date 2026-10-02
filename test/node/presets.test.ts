@@ -42,7 +42,14 @@ const BASE = [
 ];
 const TS = ['ts-transmux', 'packed-audio', 'meta-id3'];
 const DRM = ['eme-core', 'eme-cenc', 'eme-fairplay'];
-const ACCESSORIES = ['cmcd', 'thumbnails', 'chapters', 'trick-play', 'timed-metadata'];
+const ACCESSORIES = [
+  'cmcd',
+  'thumbnails',
+  'chapters',
+  'trick-play',
+  'timed-metadata',
+  'text-cea708',
+];
 
 const MATRIX: ReadonlyArray<[typeof kernel, readonly string[]]> = [
   [kernel, []],
@@ -72,7 +79,7 @@ describe('the preset matrix', () => {
   it('full carries every stage of the catalogue, each name once', () => {
     const names = full.stages().map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(32);
+    expect(names.length).toBe(33);
   });
 
   it('every call returns fresh stage instances', () => {

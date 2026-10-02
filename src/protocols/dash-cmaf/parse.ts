@@ -250,6 +250,36 @@ function captionChannels(adaptationSet: Element): Array<readonly [string, string
   return out;
 }
 
+const CEA708_SCHEME = 'urn:scte:dash:cc:cea-708:2015';
+
+/**
+ * SCTE 214-1: an Accessibility descriptor with the CEA-708 scheme names the
+ * caption services of a video AdaptationSet, as "1=lang:eng;2=lang:spa"
+ * (other keys such as `war` and `er` beside `lang` are ignored), "1=eng", or
+ * bare languages in service order. An empty value means service 1.
+ */
+function captionServices(adaptationSet: Element): Array<readonly [string, string | null]> {
+  const out: Array<readonly [string, string | null]> = [];
+  for (const descriptor of children(adaptationSet, 'Accessibility')) {
+    if (attr(descriptor, 'schemeIdUri') !== CEA708_SCHEME) continue;
+    const value = (attr(descriptor, 'value') ?? '').trim();
+    if (value === '') {
+      out.push(['SERVICE1', null]);
+      continue;
+    }
+    value.split(';').forEach((entry, index) => {
+      const [left, right] = entry.split('=') as [string, string | undefined];
+      const service = right === undefined ? index + 1 : Number.parseInt(left, 10);
+      const keys = (right ?? left).split(',');
+      const lang =
+        keys.find((key) => key.trim().startsWith('lang:'))?.split(':')[1] ??
+        (keys.length === 1 && !keys[0]?.includes(':') ? keys[0] : undefined);
+      if (service >= 1 && service <= 63) out.push([`SERVICE${service}`, lang?.trim() || null]);
+    });
+  }
+  return out;
+}
+
 /**
  * A trick-mode AdaptationSet: the DASH-IF trickmode EssentialProperty, or a
  * representation declaring a playout rate other than 1. Both mark an
@@ -665,13 +695,18 @@ export function parse(text: string, baseUrl: string): ParseResult {
   // Without a video track there is nothing to carry them.
   const hasVideo = tracks.some((t) => t.contentType === 'video');
   for (const adaptationSet of hasVideo ? adaptationSets : []) {
-    for (const [instreamId, lang] of captionChannels(adaptationSet)) {
-      const id = `cea608:${instreamId}`;
-      if (!/^CC[1-4]$/.test(instreamId) || tracks.some((t) => t.id === id)) continue;
+    const channels = [
+      ...captionChannels(adaptationSet).map(([channel, lang]) => ['608', channel, lang] as const),
+      ...captionServices(adaptationSet).map(([service, lang]) => ['708', service, lang] as const),
+    ];
+    for (const [format, instreamId, lang] of channels) {
+      const id = `cea${format}:${instreamId}`;
+      if (format === '608' && !/^CC[1-4]$/.test(instreamId)) continue;
+      if (tracks.some((t) => t.id === id)) continue;
       tracks.push({
         id,
         contentType: 'text',
-        mimeType: 'application/cea-608',
+        mimeType: `application/cea-${format}`,
         protection: null,
         ...(lang !== null ? { lang } : {}),
         role: 'caption',

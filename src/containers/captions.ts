@@ -2,9 +2,10 @@
  * The caption seam of entanglement #1. Two sources reach in-band captions:
  * ts-transmux, which already splits NALs in its Worker and returns the SEI
  * caption bytes it finds, and nal-scan, which walks an fMP4 mdat for the same
- * bytes. Both deliver here; text-cea608 registers the one consumer that
- * decodes them. Nobody imports text-cea608 to do it, and when no caption
- * stage has registered, `wanted()` is false and neither source does the work.
+ * bytes. Both deliver here; text-cea608 and text-cea708 each register a
+ * consumer and read the cc_type values they decode, so a SEI is parsed once
+ * for both. Nobody imports a caption stage to do it, and when none has
+ * registered, `captionsWanted()` is false and neither source does the work.
  */
 import type { CcTriple } from './sei.js';
 
@@ -16,21 +17,21 @@ export interface CcPacket {
 
 export type CaptionConsumer = (packets: readonly CcPacket[]) => void;
 
-let consumer: CaptionConsumer | null = null;
+const consumers = new Set<CaptionConsumer>();
 let lastFingerprint = '';
 
-/** Registers the caption decoder. Returns an unregister for stage teardown. */
+/** Registers a caption decoder. Returns an unregister for stage teardown. */
 export function registerCaptionConsumer(fn: CaptionConsumer): () => void {
-  consumer = fn;
+  consumers.add(fn);
   lastFingerprint = '';
   return () => {
-    if (consumer === fn) consumer = null;
+    consumers.delete(fn);
   };
 }
 
 /** True when a caption stage is loaded, so a SEI source should extract. */
 export function captionsWanted(): boolean {
-  return consumer !== null;
+  return consumers.size > 0;
 }
 
 function fingerprint(packets: readonly CcPacket[]): string {
@@ -40,15 +41,15 @@ function fingerprint(packets: readonly CcPacket[]): string {
 }
 
 /**
- * Hands extracted caption packets to the registered decoder. When both a
+ * Hands extracted caption packets to every registered decoder. When both a
  * ts-transmux and a nal-scan source are composed they extract the same SEI
  * from the same segment back to back; an identical batch arriving twice in a
  * row is dropped so the decoder never sees a caption doubled.
  */
 export function deliverCaptions(packets: readonly CcPacket[]): void {
-  if (packets.length === 0 || consumer === null) return;
+  if (packets.length === 0 || consumers.size === 0) return;
   const print = fingerprint(packets);
   if (print === lastFingerprint) return;
   lastFingerprint = print;
-  consumer(packets);
+  for (const consumer of consumers) consumer(packets);
 }
