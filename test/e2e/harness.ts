@@ -30,6 +30,7 @@ import mp4Box from '../../src/stages/mp4-box/index.js';
 import nalScan from '../../src/stages/nal-scan/index.js';
 import pdt from '../../src/stages/pdt/index.js';
 import recovery from '../../src/stages/recovery/index.js';
+import renditionNames from '../../src/stages/rendition-names/index.js';
 import textCea608 from '../../src/stages/text-cea608/index.js';
 import textCea708 from '../../src/stages/text-cea708/index.js';
 import textTtml from '../../src/stages/text-ttml/index.js';
@@ -53,6 +54,7 @@ export type Source =
   | 'ttml'
   | 'dash-list'
   | 'cmsd'
+  | 'names'
   | 'metadata';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
@@ -117,6 +119,8 @@ const sources: Record<Source, () => string> = {
   'dash-list': () => `/streams/${flavor}-dash/manifest-list.mpd`,
   // The HLS flavor through a route that adds CMSD-Dynamic to every response.
   cmsd: () => `/cmsd/streams/${flavor}/master.m3u8`,
+  // The accessibility master with a localized-rendition-names dictionary.
+  names: () => `/streams/${flavor}/master-names.m3u8`,
   // The TS stream with an ID3 stream in every segment and two date ranges.
   metadata: () => '/streams/ts/master-metadata.m3u8',
 };
@@ -203,6 +207,7 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
   if (src === 'captions-708') stages.push(textCea708());
   if (src === 'ttml') stages.push(textTtml());
   if (src === 'cmsd') stages.push(cmsd());
+  if (src === 'names') stages.push(renditionNames());
   if (src === 'forced') stages.push(forcedSubtitles());
   if (options.abr === true) stages.push(abr());
   if (options.capsize === true) stages.push(abrCapSize());

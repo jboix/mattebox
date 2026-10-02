@@ -100,23 +100,24 @@ memory, recovery, content steering, alternate audio with codec switching,
 WebVTT subtitles, forced subtitles, CEA-608 captions, CMAF live timing, program date time,
 and the codec probe. The HLS lines add AES-128 segment decryption.
 `-ts` adds the transmuxer, packed audio, and ID3 metadata. `-drm` adds the
-three EME stages. `full` is `dual-ts-drm` plus the ten stages below, and
+three EME stages. `full` is `dual-ts-drm` plus the eleven stages below, and
 `kernel` is nothing, for a stack you build by hand.
 
-Ten stages are only in `full`. Add them with `stages` when you need them.
+Eleven stages are only in `full`. Add them with `stages` when you need them.
 
-| Stage            | Why                                                            |
-| ---------------- | -------------------------------------------------------------- |
-| `thumbnails`     | Fetches image playlists, so it is opt-in                       |
-| `chapters`       | Only your app knows the chapters file                          |
-| `trick-play`     | Only your UI knows when to scan                                |
-| `cmcd`           | Changes every request to the CDN, so it is opt-in              |
-| `timed-metadata` | Only your page reads it                                        |
-| `text-cea708`    | Streams that carry it also carry CEA-608, which the base reads |
-| `text-ttml`      | Most streams carry WebVTT, which the base reads                |
-| `hdr`            | Excludes HDR where nothing is known, which you may not want    |
-| `qoe`            | Only your analytics read it                                    |
-| `cmsd`           | Acts only on headers your CDN sends and exposes                |
+| Stage             | Why                                                            |
+| ----------------- | -------------------------------------------------------------- |
+| `thumbnails`      | Fetches image playlists, so it is opt-in                       |
+| `chapters`        | Only your app knows the chapters file                          |
+| `trick-play`      | Only your UI knows when to scan                                |
+| `cmcd`            | Changes every request to the CDN, so it is opt-in              |
+| `timed-metadata`  | Only your page reads it                                        |
+| `text-cea708`     | Streams that carry it also carry CEA-608, which the base reads |
+| `text-ttml`       | Most streams carry WebVTT, which the base reads                |
+| `hdr`             | Excludes HDR where nothing is known, which you may not want    |
+| `qoe`             | Only your analytics read it                                    |
+| `cmsd`            | Acts only on headers your CDN sends and exposes                |
+| `rendition-names` | Only your menu reads it                                        |
 
 The caption stages read the NAL unit headers of every H.264 and HEVC video
 segment, a fraction of a millisecond per segment. If your content has no

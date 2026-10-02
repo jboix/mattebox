@@ -222,6 +222,10 @@ export interface Track {
   readonly id: TrackId;
   readonly contentType: ContentType;
   readonly mimeType: string;
+  /** The manifest's display name: HLS NAME, DASH Label. */
+  readonly name?: string;
+  /** HLS AUTOSELECT=YES: a primary rendition, which a player may name from its language. */
+  readonly autoselect?: boolean;
   readonly lang?: string;
   /**
    * Free-form role, such as 'main', 'alternate', 'subtitle', 'caption'.

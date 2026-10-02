@@ -33,6 +33,7 @@ import nalScan from '../src/stages/nal-scan/index.js';
 import pdt from '../src/stages/pdt/index.js';
 import qoe from '../src/stages/qoe/index.js';
 import recovery from '../src/stages/recovery/index.js';
+import renditionNames from '../src/stages/rendition-names/index.js';
 import textCea608 from '../src/stages/text-cea608/index.js';
 import textCea708 from '../src/stages/text-cea708/index.js';
 import textTtml from '../src/stages/text-ttml/index.js';
@@ -76,4 +77,5 @@ export const accessoryFactories = {
   hdr,
   qoe,
   cmsd,
+  renditionNames,
 };

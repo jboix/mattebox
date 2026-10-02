@@ -75,6 +75,37 @@ const engine = mattebox({ stages: [hlsCmaf(), codecSwitch(), altAudio()] });
 A language chosen through `engine.tracks.select` is remembered and re-applied
 after every group switch.
 
+## Track names
+
+Each track carries what the manifest says about it:
+
+- `lang`: the language as written (HLS `LANGUAGE`, DASH `lang`).
+- `name`: the display name (HLS `NAME`, DASH `Label`).
+- `autoselect`: HLS `AUTOSELECT=YES`, a primary rendition.
+
+An HLS stream can also give localized names in a dictionary
+(`_hls.localized-rendition-names`, HLS 2nd Edition Appendix E). The
+`rendition-names` stage fetches it and answers a track's name for a
+locale. It is in `full`; add it to another preset with `stages`.
+
+```ts
+import renditionNames from 'mattebox/stages/rendition-names';
+
+const engine = hls({ stages: [renditionNames()] });
+
+const display = new Intl.DisplayNames([locale], { type: 'language' });
+const label = (track) =>
+  engine.renditionNames.nameOf(track, locale, (language) => display.of(language)) ??
+  track.lang ??
+  track.id;
+```
+
+`nameOf` follows Appendix E: the dictionary's translation of the track's
+`NAME`, then, for a primary rendition, the language's name in the locale
+from the function you pass, then the `NAME`. The engine calls no `Intl`
+API. `Intl.DisplayNames` needs Chromium 81: on Tizen 6 and webOS 6, test
+for it and pass nothing, and `nameOf` answers the `NAME`.
+
 ## WebVTT subtitles
 
 Text is a third pipeline next to audio and video, with its own fetching and

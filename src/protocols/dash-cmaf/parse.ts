@@ -825,10 +825,13 @@ export function parse(text: string, baseUrl: string): ParseResult {
     const forced =
       contentType === 'text' &&
       (roles.includes('forced-subtitle') || roles.includes('forced_subtitle'));
+    // ISO/IEC 23009-1 §5.3.10: the first Label is the display name.
+    const label = children(adaptationSet, 'Label')[0]?.textContent?.trim();
     tracks.push({
       id: attr(adaptationSet, 'id') !== null ? `as-${attr(adaptationSet, 'id')}` : `as-i${asIndex}`,
       contentType,
       mimeType,
+      ...(label !== undefined && label !== '' ? { name: label } : {}),
       protection: protectionSchemes.length > 0 ? { schemes: protectionSchemes } : null,
       renditions,
       ...(lang !== null ? { lang } : {}),

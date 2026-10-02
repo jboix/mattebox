@@ -7,7 +7,8 @@
  * streams carry 608 beside them, which the base reads), TTML subtitles
  * (opt-in by the owner's decision), HDR by capability (it excludes HDR
  * where nothing is known, which a page may not want by default), local
- * QoE metrics, and CMSD (it acts on response headers a CDN must expose).
+ * QoE metrics, CMSD (it acts on response headers a CDN must expose), and
+ * localized rendition names (a menu reads them).
  * Feature parity with
  * videojs-http-streaming; the modularity claim is measured against it, and
  * the main CDN bundle exposes it.
@@ -17,6 +18,7 @@ import cmcd from '../../stages/cmcd/index.js';
 import cmsd from '../../stages/cmsd/index.js';
 import hdr from '../../stages/hdr/index.js';
 import qoe from '../../stages/qoe/index.js';
+import renditionNames from '../../stages/rendition-names/index.js';
 import textCea708 from '../../stages/text-cea708/index.js';
 import textTtml from '../../stages/text-ttml/index.js';
 import thumbnails from '../../stages/thumbnails/index.js';
@@ -41,6 +43,7 @@ const preset = definePreset('full', () => [
   hdr(),
   qoe(),
   cmsd(),
+  renditionNames(),
 ]);
 export default preset;
 export type { Preset, PresetOptions, PresetStageOptions } from '../define.js';

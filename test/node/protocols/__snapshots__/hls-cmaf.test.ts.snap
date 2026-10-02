@@ -582,10 +582,12 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
           ],
         },
         {
+          "autoselect": true,
           "contentType": "audio",
           "id": "aud1:English",
           "lang": "en",
           "mimeType": "audio/mp4",
+          "name": "English",
           "protection": null,
           "renditions": [
             {
@@ -600,10 +602,12 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
           "role": "main",
         },
         {
+          "autoselect": true,
           "contentType": "audio",
           "id": "aud2:English",
           "lang": "en",
           "mimeType": "audio/mp4",
+          "name": "English",
           "protection": null,
           "renditions": [
             {
@@ -618,10 +622,12 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
           "role": "main",
         },
         {
+          "autoselect": true,
           "contentType": "audio",
           "id": "aud3:English",
           "lang": "en",
           "mimeType": "audio/mp4",
+          "name": "English",
           "protection": null,
           "renditions": [
             {
@@ -636,20 +642,24 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
           "role": "main",
         },
         {
+          "autoselect": true,
           "contentType": "text",
           "id": "cc1:English",
           "instreamId": "CC1",
           "lang": "en",
           "mimeType": "application/cea-608",
+          "name": "English",
           "protection": null,
           "renditions": [],
           "role": "caption",
         },
         {
+          "autoselect": true,
           "contentType": "text",
           "id": "sub1:English",
           "lang": "en",
           "mimeType": "text/vtt",
+          "name": "English",
           "protection": null,
           "renditions": [
             {
@@ -2472,6 +2482,7 @@ exports[`golden corpus: every fixture parses to a stable IR > edge-multi-audio-g
           "id": "aac-lo:Stereo",
           "lang": "de",
           "mimeType": "audio/mp4",
+          "name": "Stereo",
           "protection": null,
           "renditions": [
             {
@@ -2490,6 +2501,7 @@ exports[`golden corpus: every fixture parses to a stable IR > edge-multi-audio-g
           "id": "aac-hi:Surround",
           "lang": "de",
           "mimeType": "audio/mp4",
+          "name": "Surround",
           "protection": null,
           "renditions": [
             {
@@ -2603,6 +2615,7 @@ exports[`golden corpus: every fixture parses to a stable IR > edge-quoted-commas
           "id": "aud:Suisse, Romande",
           "lang": "fr",
           "mimeType": "audio/mp4",
+          "name": "Suisse, Romande",
           "protection": null,
           "renditions": [
             {
@@ -3219,10 +3232,12 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-rts-vod-mas
           ],
         },
         {
+          "autoselect": true,
           "contentType": "audio",
           "id": "audio0:Français",
           "lang": "fr",
           "mimeType": "audio/mp4",
+          "name": "Français",
           "protection": null,
           "renditions": [
             {
@@ -3237,6 +3252,7 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-rts-vod-mas
           "role": "alternate",
         },
         {
+          "autoselect": true,
           "characteristics": [
             "public.accessibility.describes-spoken-dialog",
             "public.accessibility.describes-music-and-sound",
@@ -3245,6 +3261,7 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-rts-vod-mas
           "id": "subs0:Français (SDH)",
           "lang": "fr",
           "mimeType": "text/vtt",
+          "name": "Français (SDH)",
           "protection": null,
           "renditions": [
             {
@@ -5355,10 +5372,12 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-srf-style-m
           ],
         },
         {
+          "autoselect": true,
           "contentType": "audio",
           "id": "audio0:Deutsch",
           "lang": "de",
           "mimeType": "audio/mp4",
+          "name": "Deutsch",
           "protection": null,
           "renditions": [
             {
@@ -5373,10 +5392,12 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-srf-style-m
           "role": "main",
         },
         {
+          "autoselect": true,
           "contentType": "audio",
           "id": "audio0:Original",
           "lang": "en",
           "mimeType": "audio/mp4",
+          "name": "Original",
           "protection": null,
           "renditions": [
             {
@@ -5391,6 +5412,7 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-srf-style-m
           "role": "alternate",
         },
         {
+          "autoselect": true,
           "characteristics": [
             "public.accessibility.describes-spoken-dialog",
           ],
@@ -5398,6 +5420,7 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-srf-style-m
           "id": "subs0:Deutsch (SDH)",
           "lang": "de",
           "mimeType": "text/vtt",
+          "name": "Deutsch (SDH)",
           "protection": null,
           "renditions": [
             {

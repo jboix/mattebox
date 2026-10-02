@@ -116,6 +116,17 @@ accessibility_master() { # flavor
 #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English forced",LANGUAGE="en",AUTOSELECT=YES,FORCED=YES,URI="subs.m3u8"\
 #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="French forced",LANGUAGE="fr",AUTOSELECT=YES,FORCED=YES,URI="subs.m3u8"' \
     "$OUT/$1/master.m3u8" > "$OUT/$1/master-accessibility.m3u8"
+  names_master "$1"
+}
+
+# The accessibility master with an HLS 2nd Edition localization dictionary
+# (Appendix E): the audio description track gets German and French names.
+names_master() { # flavor
+  printf '%s\n' '{"English (AD)":{"de":"Englisch mit Audiodeskription","fr":"Anglais avec audiodescription"}}' \
+    > "$OUT/$1/names.json"
+  sed -e '1a\
+#EXT-X-SESSION-DATA:DATA-ID="_hls.localized-rendition-names",URI="names.json"' \
+    "$OUT/$1/master-accessibility.m3u8" > "$OUT/$1/master-names.m3u8"
 }
 
 # The h264 flavor's lowest rung with CEA-608 captions on all four channels,
@@ -148,6 +159,7 @@ if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
   [ -f "$OUT/h264-images/chapters/chapters.json" ] || images_flavor
   for flavor in h264 vp9; do
     [ -f "$OUT/$flavor/master-accessibility.m3u8" ] || accessibility_master "$flavor"
+    [ -f "$OUT/$flavor/master-names.m3u8" ] || names_master "$flavor"
   done
   [ -f "$OUT/h264/master-captions-708.m3u8" ] || captions_master
   [ -f "$OUT/ts/master-metadata.m3u8" ] || node "$ROOT/test/e2e/inject-id3.mjs" "$OUT/ts"

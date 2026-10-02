@@ -1,4 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
+import type { RenditionNamesApi } from '../../src/stages/rendition-names/index.js';
+import type { Track } from '../../src/types/ir.js';
 import type { Player } from './harness.js';
 import { boot, disposeAll, play, sleep, until } from './harness.js';
 
@@ -77,3 +79,20 @@ it('27. the abr suite still holds with audio present', async () => {
   await sleep(2_000);
   expect(video.currentTime).toBeGreaterThan(t1 + 1);
 }, 90_000);
+
+it('51. localized rendition names come from the session-data dictionary', async () => {
+  const player = await boot({ src: 'names' });
+  const loaded = new Promise((resolve) => player.engine.on('rendition-names:loaded', resolve));
+  await play(player, 1, 15_000);
+  expect(await loaded).toEqual({ count: 1 });
+  const names = (player.engine as unknown as { renditionNames: RenditionNamesApi }).renditionNames;
+  const audio = player.engine.tracks.available.filter((t) => t.contentType === 'audio');
+  const described = audio.find((t) => t.name === 'English (AD)') as Track;
+  expect(names.nameOf(described, 'de-CH')).toBe('Englisch mit Audiodeskription');
+  expect(names.nameOf(described, 'it')).toBe('English (AD)');
+  // A primary rendition takes the language name the page passes.
+  const french = audio.find((t) => t.name === 'French') as Track;
+  expect(
+    names.nameOf(french, 'de', (language) => (language === 'fr' ? 'Französisch' : undefined)),
+  ).toBe('Französisch');
+});
