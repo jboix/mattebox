@@ -10,6 +10,7 @@
  * from the media element, and the segment after the one requested (`nor`,
  * `nrr`), so a CDN can prefetch it. No new kernel state, no new effect.
  */
+import { bytesToHex } from '../../kernel/base64.js';
 import { findRendition } from '../../kernel/presentation.js';
 import { segmentAt } from '../../kernel/timeline.js';
 import type { Stage } from '../../types/stage.js';
@@ -62,7 +63,7 @@ function sessionUuid(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   bytes[6] = ((bytes[6] as number) & 0x0f) | 0x40;
   bytes[8] = ((bytes[8] as number) & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  const hex = bytesToHex(bytes);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 

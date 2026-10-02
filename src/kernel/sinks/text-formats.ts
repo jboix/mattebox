@@ -19,6 +19,7 @@
 import type { Track } from '../../types/ir.js';
 import type { ParserFn, StageContext } from '../../types/stage.js';
 import { cueFormat } from '../mime.js';
+import { syncNativeTracks } from './native-sync.js';
 import { type CueSink, createTextTrackSink } from './text-track-sink.js';
 
 interface Shared {
@@ -71,51 +72,24 @@ export function joinTextSink(
       period.tracks.filter((track) => track.contentType === 'text'),
     );
   }
-  function own(): readonly Track[] {
-    return texts().filter((track) => formats.has(trackFormat(track)));
-  }
-  function activeId(): string | undefined {
-    return ctx.getState().tracks.active.get('text');
-  }
 
-  // Engine to element. A track no longer in the presentation (a new source
-  // on the same engine) is retired first, so its last cue does not outlive
-  // it on screen.
-  function mirror(): void {
-    const active = activeId();
-    const current = new Set(texts().map((track) => track.id));
-    for (const id of sink.trackIds()) {
-      if (!current.has(id)) sink.retire(id);
-    }
-    for (const track of own()) {
-      const native = sink.declare(track.id);
-      const mode = track.id === active ? 'showing' : 'disabled';
-      if (native.mode !== mode) native.mode = mode;
-    }
-  }
-  // Element to engine. Fires for the mirror's own writes too; those find the
-  // element already in step and dispatch nothing.
-  function onNativeChange(): void {
-    const active = activeId();
-    const tracks = own();
-    const showing = tracks.find((track) => sink.nativeTrack(track.id)?.mode === 'showing');
-    if (showing !== undefined) {
-      if (showing.id !== active) ctx.dispatch({ type: 'SELECT_TRACK', trackId: showing.id });
-    } else if (tracks.some((track) => track.id === active)) {
-      // Only a track of this stage went off; another stage's track is its own to mirror.
-      ctx.dispatch({ type: 'DESELECT_TRACK', contentType: 'text' });
-    }
-  }
-
-  const offChanged = ctx.on('tracks:changed', mirror);
-  const offSelected = ctx.on('tracks:selected', (payload) => {
-    if ((payload as { contentType?: string }).contentType === 'text') mirror();
+  // Every track of this stage's formats exists natively from the manifest
+  // on, so the browser's caption menu lists them all. A track no longer in
+  // the presentation (a new source on the same engine) is retired first, so
+  // its last cue does not outlive it on screen.
+  const stopSync = syncNativeTracks(ctx, {
+    tracks: () => texts().filter((track) => formats.has(trackFormat(track))),
+    native: (track) => sink.declare(track.id),
+    idle: 'disabled',
+    before() {
+      const current = new Set(texts().map((track) => track.id));
+      for (const id of sink.trackIds()) {
+        if (!current.has(id)) sink.retire(id);
+      }
+    },
   });
-  element.textTracks.addEventListener('change', onNativeChange);
   return () => {
-    offChanged();
-    offSelected();
-    element.textTracks.removeEventListener('change', onNativeChange);
+    stopSync();
     for (const format of formats) entry.parsers.delete(format);
     if (owner) {
       sink.dispose();

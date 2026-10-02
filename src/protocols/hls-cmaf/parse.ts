@@ -9,6 +9,8 @@
  * EXT-X-MEDIA entries into their own tracks, and records the bundle in the
  * coupling table as data. Generic descriptors only; the kernel routes.
  */
+
+import { byteToHex } from '../../kernel/base64.js';
 import type { PlaylistRefresh } from '../../kernel/refresh.js';
 import { applyRefresh } from '../../kernel/refresh.js';
 import { resolveUrl as resolve } from '../../kernel/url.js';
@@ -188,8 +190,7 @@ function tileGridFrom(attributes: Readonly<Record<string, string>>): TileGrid | 
 export function normalizeAvcCodec(codec: string): string {
   const match = /^(avc1|avc3)\.(\d+)\.(\d+)$/.exec(codec);
   if (match === null) return codec;
-  const hex = (n: number) => (Number(n) & 0xff).toString(16).padStart(2, '0');
-  return `${match[1]}.${hex(Number(match[2]))}00${hex(Number(match[3]))}`;
+  return `${match[1]}.${byteToHex(Number(match[2]))}00${byteToHex(Number(match[3]))}`;
 }
 
 function splitCodecs(value: string | undefined): {

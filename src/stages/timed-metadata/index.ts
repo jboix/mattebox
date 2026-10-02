@@ -22,6 +22,7 @@ import { id3Frames } from '../../containers/id3.js';
 import { registerMetadataConsumer } from '../../containers/metadata.js';
 import { earliestDecodeTime, findBox, trackTimescales } from '../../containers/mp4-box/index.js';
 import { scte35Summary } from '../../containers/scte35.js';
+import { bytesToHex } from '../../kernel/base64.js';
 import { adoptTextTrack, emptyTextTrack } from '../../kernel/sinks/text-track-sink.js';
 import type { Presentation } from '../../types/ir.js';
 import type { MetadataEvent } from '../../types/metadata.js';
@@ -193,13 +194,11 @@ function spans(event: MetadataEvent, time: number): boolean {
 
 /** The record as JSON for the native cue: bytes as hex, so the text stays readable. */
 function cueText(event: MetadataEvent): string {
-  const hex = (bytes: Uint8Array) =>
-    [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
   return JSON.stringify({
     ...event,
-    ...(event.data !== undefined ? { data: hex(event.data) } : {}),
+    ...(event.data !== undefined ? { data: bytesToHex(event.data) } : {}),
     ...(event.frames !== undefined
-      ? { frames: event.frames.map((f) => ({ ...f, data: hex(f.data) })) }
+      ? { frames: event.frames.map((f) => ({ ...f, data: bytesToHex(f.data) })) }
       : {}),
   });
 }

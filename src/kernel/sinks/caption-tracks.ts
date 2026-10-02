@@ -10,6 +10,7 @@
  */
 import type { Track } from '../../types/ir.js';
 import type { StageContext } from '../../types/stage.js';
+import { syncNativeTracks } from './native-sync.js';
 import { adoptTextTrack, emptyTextTrack } from './text-track-sink.js';
 
 // A minimal VTTCue view; the DOM lib's shape without pulling it in here.
@@ -46,10 +47,6 @@ export function inbandCaptions(ctx: StageContext, mime: string, prefix: string):
     return declared().find((track) => track.instreamId === channel) ?? null;
   }
 
-  function selected(track: Track | null): boolean {
-    return track !== null && ctx.getState().tracks.active.get('text') === track.id;
-  }
-
   /** The channel's native track, created on first need. Hidden keeps cues arriving and removable. */
   function ensureNative(channel: string): TextTrack {
     let native = natives.get(channel);
@@ -61,49 +58,20 @@ export function inbandCaptions(ctx: StageContext, mime: string, prefix: string):
     return native;
   }
 
-  // Engine to element.
-  function mirror(): void {
-    const channels = new Set(natives.keys());
-    for (const track of declared())
-      if (track.instreamId !== undefined) channels.add(track.instreamId);
-    for (const channel of channels) {
-      const showing = selected(captionTrack(channel));
-      if (!natives.has(channel) && !showing) continue;
-      const target = ensureNative(channel);
-      const mode = showing ? 'showing' : 'hidden';
-      if (target.mode !== mode) target.mode = mode;
-    }
-  }
-
-  // Element to engine: a pick in the browser's caption menu. Fires for the
-  // mirror's own writes too; those find the engine in step.
-  function onNativeChange(): void {
-    for (const [channel, native] of natives) {
-      const track = captionTrack(channel);
-      if (track === null) continue;
-      const on = native.mode === 'showing';
-      if (on && !selected(track)) {
-        ctx.dispatch({ type: 'SELECT_TRACK', trackId: track.id });
-        return;
+  const stopSync = syncNativeTracks(ctx, {
+    tracks: () => declared().filter((track) => track.instreamId !== undefined),
+    native: (track, create) => {
+      const channel = track.instreamId as string;
+      return natives.get(channel) ?? (create ? ensureNative(channel) : null);
+    },
+    idle: 'hidden',
+    before() {
+      // A new source has no added track until its own first cue.
+      for (const channel of [...adding]) {
+        if (captionTrack(channel) === null) adding.delete(channel);
       }
-      if (!on && selected(track)) {
-        ctx.dispatch({ type: 'DESELECT_TRACK', contentType: 'text' });
-        return;
-      }
-    }
-  }
-
-  const offChanged = ctx.on('tracks:changed', () => {
-    // A new source has no added track until its own first cue.
-    for (const channel of [...adding]) {
-      if (captionTrack(channel) === null) adding.delete(channel);
-    }
-    mirror();
+    },
   });
-  const offSelected = ctx.on('tracks:selected', (payload) => {
-    if ((payload as { contentType?: string }).contentType === 'text') mirror();
-  });
-  element.textTracks.addEventListener('change', onNativeChange);
 
   return {
     show(channel, cues) {
@@ -130,9 +98,7 @@ export function inbandCaptions(ctx: StageContext, mime: string, prefix: string):
       for (const cue of cues) target.addCue(cue);
     },
     dispose() {
-      offChanged();
-      offSelected();
-      element.textTracks.removeEventListener('change', onNativeChange);
+      stopSync();
       for (const native of natives.values()) {
         emptyTextTrack(native);
         native.mode = 'disabled';

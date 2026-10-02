@@ -8,6 +8,7 @@
  * Times come back in document time; `Infinity` marks an end the document
  * leaves open, for the caller to close at its segment's end.
  */
+import { escapeCueText } from '../../containers/webvtt.js';
 import type { CueDescriptor } from '../../types/messages.js';
 
 const TTP = 'http://www.w3.org/ns/ttml#parameter';
@@ -102,10 +103,6 @@ function inlineStyle(element: Element): Style {
     if (value !== null) style[key] = value.trim();
   }
   return style;
-}
-
-function escapeText(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /** A length as a percent of the root container: `%`, `px` against the root extent, `c` against the cell grid. */
@@ -220,7 +217,7 @@ export function parseTtml(xml: string): CueDescriptor[] {
       if (child.nodeType === 3) {
         const text = (child.nodeValue ?? '').replace(/[ \t\r\n]+/g, ' ');
         if (text === '') continue;
-        let markup = escapeText(text);
+        let markup = escapeCueText(text);
         if (style.textDecoration?.includes('underline') === true) markup = `<u>${markup}</u>`;
         if (style.fontWeight === 'bold') markup = `<b>${markup}</b>`;
         if (style.fontStyle === 'italic' || style.fontStyle === 'oblique')

@@ -4,6 +4,7 @@
  * strings; when the manifest and the probe disagree, the probe wins,
  * because the probe read the actual bytes the decoder will see.
  */
+import { byteToHex } from '../../kernel/base64.js';
 import { typeString } from '../../kernel/mime.js';
 import type { MatteboxError } from '../../types/error.js';
 import type { BoxRef } from '../mp4-box/index.js';
@@ -39,10 +40,6 @@ const AUDIO_FORMATS = new Set(['mp4a', 'Opus', 'opus', 'ac-3', 'ec-3']);
 /** AudioSampleEntry fixed part (8 + 20 bytes) before its codec config child boxes. */
 const AUDIO_ENTRY_HEADER = 8 + 20;
 
-function hex(byte: number): string {
-  return byte.toString(16).padStart(2, '0');
-}
-
 function childBox(entry: Uint8Array, fixedOffset: number, type: string): Uint8Array | null {
   // Child boxes start after the sample entry's fixed part. A malformed or
   // versioned entry shifts them; scan forward conservatively.
@@ -63,7 +60,7 @@ function childBox(entry: Uint8Array, fixedOffset: number, type: string): Uint8Ar
 function avcCodec(format: string, entry: Uint8Array): string | null {
   const config = childBox(entry, VISUAL_ENTRY_HEADER, 'avcC');
   if (config === null || config.byteLength < 4) return null;
-  return `${format}.${hex(config[1] as number)}${hex(config[2] as number)}${hex(config[3] as number)}`;
+  return `${format}.${byteToHex(config[1] as number)}${byteToHex(config[2] as number)}${byteToHex(config[3] as number)}`;
 }
 
 /** hvcC -> the full hvc1/hev1 form. ISO 14496-15 annex E. */
@@ -135,7 +132,7 @@ function aacCodec(entry: Uint8Array): string | null {
     const audioObjectType = ((specific[0] as number) >> 3) & 0x1f;
     return `mp4a.40.${audioObjectType}`;
   }
-  return `mp4a.${hex(objectType)}`;
+  return `mp4a.${byteToHex(objectType)}`;
 }
 
 /** vpcC -> vp09.PP.LL.DD. VP9-in-ISOBMFF binding. */

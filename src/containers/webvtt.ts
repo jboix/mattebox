@@ -77,3 +77,8 @@ export function parseVtt(text: string): VttParseResult {
   }
   return { cues, skipped };
 }
+
+/** Text made safe as WebVTT cue text: `&`, `<`, and `>` escaped (WebVTT §4.2.2). */
+export function escapeCueText(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}

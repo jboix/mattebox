@@ -11,6 +11,8 @@
  * `drain` returns closed cues.
  */
 
+import { escapeCueText } from '../../containers/webvtt.js';
+
 /** Where and how a window sits on screen: what a cue placement needs (§8.4). */
 export interface WindowLayout {
   readonly priority: number;
@@ -87,10 +89,6 @@ const G2: Record<number, string> = {
 /** The predefined window styles that center their text (§8.4.11, styles 3 and 6). */
 const CENTERED_STYLES = new Set([3, 6]);
 
-function escapeChar(char: string): string {
-  return char === '&' ? '&amp;' : char === '<' ? '&lt;' : char === '>' ? '&gt;' : char;
-}
-
 /** One row as cue text, with tags where the pen's italics or underline change. */
 function rowText(row: ReadonlyArray<Cell | undefined>): string {
   let out = '';
@@ -106,7 +104,7 @@ function rowText(row: ReadonlyArray<Cell | undefined>): string {
     if (cell.underline && !underline) out += '<u>';
     italic = cell.italic;
     underline = cell.underline;
-    out += escapeChar(cell.char);
+    out += escapeCueText(cell.char);
   }
   if (underline) out += '</u>';
   if (italic) out += '</i>';
