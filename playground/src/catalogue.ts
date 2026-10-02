@@ -45,6 +45,7 @@ import pdt from '../../src/stages/pdt/index.js';
 import recovery from '../../src/stages/recovery/index.js';
 import textCea608 from '../../src/stages/text-cea608/index.js';
 import textCea708 from '../../src/stages/text-cea708/index.js';
+import textTtml from '../../src/stages/text-ttml/index.js';
 import textWebvtt from '../../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../../src/stages/text-webvtt-segmented/index.js';
 import thumbnails from '../../src/stages/thumbnails/index.js';
@@ -108,6 +109,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('stages', trickPlay),
   built('stages', timedMetadata),
   built('stages', textCea708),
+  built('stages', textTtml),
 ];
 
 /**
@@ -243,6 +245,12 @@ const LOCAL_STREAMS: readonly StreamEntry[] =
           tags: ['generated', 'in-band captions', 'CEA-708'],
         },
         { label: 'h264, three rungs', url: local('h264-dash/manifest.mpd'), topic: 'local' },
+        {
+          label: 'h264, TTML sidecar (English) and stpp in fMP4 (German)',
+          url: local('h264-dash/manifest-ttml.mpd'),
+          topic: 'local',
+          tags: ['generated', 'TTML', 'needs text-ttml'],
+        },
         { label: 'vp9, three rungs', url: local('vp9-dash/manifest.mpd'), topic: 'local' },
         {
           label: 'Muxed MPEG-TS',

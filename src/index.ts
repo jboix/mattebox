@@ -10,7 +10,7 @@ import type { HookRegistry } from './kernel/context.js';
 import { createEffectRunner } from './kernel/effects.js';
 import { createLifecycle } from './kernel/lifecycle.js';
 import { compose } from './kernel/loader.js';
-import { normalizeMimeType } from './kernel/mime.js';
+import { cueFormat, normalizeMimeType } from './kernel/mime.js';
 import { createMseController, decodable } from './kernel/mse.js';
 import { createSegmentPreparer } from './kernel/prepare.js';
 import { findTrackSite, isTrick } from './kernel/presentation.js';
@@ -224,11 +224,14 @@ export function mattebox(options: MatteboxOptions): Mattebox {
     dispatch: (cmd) => bus.dispatch(cmd),
     emitEvent: (event, payload) => bus.emitEvent(event, payload),
     hasSink: (contentType) => bus.sinkFor(contentType) !== undefined,
-    plays: (contentType, mimeType) =>
+    plays: (contentType, format) =>
       bus
         .capabilities()
         .some(
-          (c) => typeof c !== 'string' && c.contentType === contentType && c.mimeType === mimeType,
+          (c) =>
+            typeof c !== 'string' &&
+            c.contentType === contentType &&
+            cueFormat(c.mimeType, c.codecs) === format,
         ),
   });
 

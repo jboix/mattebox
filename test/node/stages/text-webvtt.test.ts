@@ -222,6 +222,72 @@ describe('the kernel schedules and delivers cue tracks', () => {
     expect(next.cues.get('subs:English')).toEqual([{ start: 0, end: 4 }]);
   });
 
+  it('cues in fMP4 fetch and deliver their init first, and a failed init still lets segments follow', () => {
+    const withInit = (): KernelState => {
+      const state = textReadyState();
+      const presentation = state.presentation as Presentation;
+      const [period] = presentation.periods;
+      const [video, subs] = period?.tracks ?? [];
+      const rendition = subs?.renditions[0];
+      return {
+        ...state,
+        presentation: {
+          ...presentation,
+          periods: [
+            {
+              ...(period as Presentation['periods'][number]),
+              tracks: [
+                video as NonNullable<typeof video>,
+                {
+                  ...(subs as NonNullable<typeof subs>),
+                  mimeType: 'application/mp4',
+                  renditions: [
+                    {
+                      ...(rendition as NonNullable<typeof rendition>),
+                      codecs: 'stpp.ttml.im1t',
+                      mimeType: 'application/mp4',
+                      init: { url: 'https://cdn.example/s/init.mp4' },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      };
+    };
+    const [state, fx] = reduce(withInit(), { type: 'TIME_UPDATE', currentTime: 0, buffered: [] });
+    expect(fx.filter((e) => e.kind === 'fetch').map((e) => (e as { url: string }).url)).toEqual([
+      'https://cdn.example/s/init.mp4',
+    ]);
+    const bytes = new Uint8Array(8).buffer as ArrayBuffer;
+    const [loaded, loadedFx] = reduce(state, {
+      type: 'SEGMENT_LOADED',
+      trackId: 'subs:English',
+      seq: -1,
+      bytes,
+      rtt: 5,
+      size: 8,
+    });
+    expect(loadedFx.find((e) => e.kind === 'deliver')).toMatchObject({
+      meta: { isInit: true, format: 'application/mp4;stpp' },
+    });
+    expect(loaded.cueInits.get('subs:English')).toBe('subs:English');
+    expect(loadedFx.find((e) => e.kind === 'fetch')).toMatchObject({
+      url: 'https://cdn.example/s/0.vtt',
+    });
+    // A failed init counts as done: the segments follow, and degrade at parse.
+    const [failed, failedFx] = reduce(state, {
+      type: 'SEGMENT_FAILED',
+      trackId: 'subs:English',
+      seq: -1,
+      status: 404,
+      error: { category: 'network', code: 'NETWORK_HTTP_STATUS', fatal: true, recoverable: false },
+    });
+    expect(failedFx[0]).toMatchObject({ payload: { fatal: false } });
+    expect(failed.cueInits.get('subs:English')).toBe('subs:English');
+  });
+
   it('deselecting clears coverage, aborts, and emits clearCues; video and audio refuse', () => {
     const [state] = reduce(textReadyState(), { type: 'TIME_UPDATE', currentTime: 0, buffered: [] });
     const [next, fx] = reduce(state, { type: 'DESELECT_TRACK', contentType: 'text' });

@@ -44,6 +44,8 @@ export type Listener = (payload: unknown) => void;
 export interface CapabilityDescriptor {
   readonly contentType: ContentType;
   readonly mimeType: string;
+  /** For cues in fMP4 (`application/mp4`): the codec family, such as `stpp` or `wvtt`. */
+  readonly codecs?: string;
 }
 
 /**

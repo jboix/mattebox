@@ -32,6 +32,7 @@ import pdt from '../src/stages/pdt/index.js';
 import recovery from '../src/stages/recovery/index.js';
 import textCea608 from '../src/stages/text-cea608/index.js';
 import textCea708 from '../src/stages/text-cea708/index.js';
+import textTtml from '../src/stages/text-ttml/index.js';
 import textWebvtt from '../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../src/stages/text-webvtt-segmented/index.js';
 import thumbnails from '../src/stages/thumbnails/index.js';
@@ -68,4 +69,5 @@ export const accessoryFactories = {
   trickPlay,
   timedMetadata,
   textCea708,
+  textTtml,
 };

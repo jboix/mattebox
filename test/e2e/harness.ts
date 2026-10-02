@@ -31,6 +31,7 @@ import pdt from '../../src/stages/pdt/index.js';
 import recovery from '../../src/stages/recovery/index.js';
 import textCea608 from '../../src/stages/text-cea608/index.js';
 import textCea708 from '../../src/stages/text-cea708/index.js';
+import textTtml from '../../src/stages/text-ttml/index.js';
 import textWebvtt from '../../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../../src/stages/text-webvtt-segmented/index.js';
 import timedMetadata from '../../src/stages/timed-metadata/index.js';
@@ -48,6 +49,7 @@ export type Source =
   | 'captions'
   | 'captions-undeclared'
   | 'captions-708'
+  | 'ttml'
   | 'metadata';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
@@ -104,6 +106,8 @@ const sources: Record<Source, () => string> = {
   'captions-undeclared': () => '/streams/h264/master-captions-undeclared.m3u8',
   // The same segments, with CEA-708 service 1 declared and service 2 not.
   'captions-708': () => '/streams/h264/master-captions-708.m3u8',
+  // The DASH flavor with a TTML sidecar (English) and an stpp track (German).
+  ttml: () => `/streams/${flavor}-dash/manifest-ttml.mpd`,
   // The TS stream with an ID3 stream in every segment and two date ranges.
   metadata: () => '/streams/ts/master-metadata.m3u8',
 };
@@ -188,6 +192,7 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
   }
   if (src === 'metadata') stages.push(timedMetadata());
   if (src === 'captions-708') stages.push(textCea708());
+  if (src === 'ttml') stages.push(textTtml());
   if (src === 'forced') stages.push(forcedSubtitles());
   if (options.abr === true) stages.push(abr());
   if (options.capsize === true) stages.push(abrCapSize());

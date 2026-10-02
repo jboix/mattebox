@@ -486,6 +486,30 @@ describe('CEA-608 and CEA-708 accessibility', () => {
   });
 });
 
+describe('subtitles in fMP4', () => {
+  it('takes an application/mp4 set with stpp codecs as text, contentType or not', () => {
+    const mpd = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1M">
+  <Period>
+    <AdaptationSet id="v" mimeType="video/mp4" codecs="avc1.4d401f">
+      <SegmentTemplate media="v-$Number$.m4s" initialization="v-init.mp4" duration="6" timescale="1"/>
+      <Representation id="v1" bandwidth="800000"/>
+    </AdaptationSet>
+    <AdaptationSet id="t" mimeType="application/mp4" lang="en">
+      <SegmentTemplate media="t-$Number$.m4s" initialization="t-init.mp4" duration="6" timescale="1"/>
+      <Representation id="t1" bandwidth="1000" codecs="stpp.ttml.im1t"/>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+    const text = parse(mpd, BASE).presentation?.periods[0]?.tracks.find((t) => t.id === 'as-t');
+    expect([text?.contentType, text?.mimeType, text?.renditions[0]?.codecs]).toEqual([
+      'text',
+      'application/mp4',
+      'stpp.ttml.im1t',
+    ]);
+  });
+});
+
 describe('EventStream', () => {
   it('puts each Event on the period timeline with its scheme and body', () => {
     const result = parse(fixture('edge-eventstream.mpd'), BASE);

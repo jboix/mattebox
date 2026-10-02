@@ -415,6 +415,12 @@ function contentTypeOf(adaptationSet: Element, mimeType: string): ContentType {
   if (mimeType.startsWith('audio/')) return 'audio';
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('text/') || mimeType === 'application/ttml+xml') return 'text';
+  // Subtitles in fMP4 share video's MIME type; the codec tells them apart.
+  const codecs =
+    attr(adaptationSet, 'codecs') ??
+    attr(children(adaptationSet, 'Representation')[0] ?? adaptationSet, 'codecs');
+  if (mimeType === 'application/mp4' && codecs !== null && /^(stpp|wvtt)/.test(codecs))
+    return 'text';
   return 'video';
 }
 

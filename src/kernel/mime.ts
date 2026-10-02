@@ -22,3 +22,15 @@ export function typeString(mimeType: string, codecs: string | null): string {
 export function isManifestType(capability: string): boolean {
   return capability.includes('/');
 }
+
+/**
+ * The key a cue format is routed by: the MIME type, and for cues in fMP4 the
+ * codec family, since one MIME type carries several formats there:
+ * `text/vtt`, `application/ttml+xml`, `application/mp4;stpp`,
+ * `application/mp4;wvtt`.
+ */
+export function cueFormat(mimeType: string, codecs?: string | null): string {
+  const mime = normalizeMimeType(mimeType);
+  if (mime !== 'application/mp4' || codecs === undefined || codecs === null) return mime;
+  return `${mime};${(codecs.split('.')[0] as string).trim().toLowerCase()}`;
+}

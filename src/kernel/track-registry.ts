@@ -10,6 +10,7 @@ import type { TracksApi } from '../types/facade.js';
 import type { ContentType, Track, TrackId } from '../types/ir.js';
 import type { KernelState } from '../types/kernel.js';
 import type { Command } from '../types/messages.js';
+import { cueFormat } from './mime.js';
 import { findTrackSite, isTrick } from './presentation.js';
 import { isUndecodable } from './reducer.js';
 
@@ -19,18 +20,19 @@ export interface TrackRegistryDeps {
   emitEvent(event: string, payload: unknown): void;
   /** Whether a sink is registered for the content type, from the bus registry. */
   hasSink(contentType: ContentType): boolean;
-  /** Whether a stage declares it plays the format, from the composition's capabilities. */
-  plays(contentType: ContentType, mimeType: string): boolean;
+  /** Whether a stage declares it plays the cue format (`cueFormat`), from the composition's capabilities. */
+  plays(contentType: ContentType, format: string): boolean;
 }
 
 /**
  * Cue tracks need a stage for their format, not only a sink: one text sink
- * serves every subtitle format, and a WebVTT stage cannot read TTML. Media
- * formats are the browser's to decode, which the codec filter answers.
+ * serves every subtitle format, and a WebVTT stage cannot read TTML. In fMP4
+ * the codec family tells the formats apart (stpp, wvtt). Media formats are
+ * the browser's to decode, which the codec filter answers.
  */
 function formatPlays(deps: TrackRegistryDeps, track: Track): boolean {
   if (track.contentType !== 'text' && track.contentType !== 'metadata') return true;
-  return deps.plays(track.contentType, track.mimeType);
+  return deps.plays(track.contentType, cueFormat(track.mimeType, track.renditions[0]?.codecs));
 }
 
 function allTracks(state: KernelState): readonly Track[] {

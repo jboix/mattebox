@@ -446,6 +446,33 @@ describe('closed captions', () => {
   });
 });
 
+describe('subtitles in fMP4', () => {
+  it('types a subtitle group as application/mp4 with the stpp codec the variants name', () => {
+    const master = [
+      '#EXTM3U',
+      '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="imsc",NAME="English",LANGUAGE="en",URI="subs.m3u8"',
+      '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="vtt",NAME="English",LANGUAGE="en",URI="vtt.m3u8"',
+      '#EXT-X-STREAM-INF:BANDWIDTH=800000,CODECS="stpp.ttml.im1t,avc1.4d401f,mp4a.40.2",SUBTITLES="imsc"',
+      'v.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=800001,CODECS="avc1.4d401f,mp4a.40.2",SUBTITLES="vtt"',
+      'v.m3u8',
+    ].join('\n');
+    const tracks = parse(master, BASE).presentation?.periods[0]?.tracks ?? [];
+    const imsc = tracks.find((t) => t.id === 'imsc:English');
+    expect([imsc?.mimeType, imsc?.renditions[0]?.codecs]).toEqual([
+      'application/mp4',
+      'stpp.ttml.im1t',
+    ]);
+    expect(tracks.find((t) => t.id === 'vtt:English')?.mimeType).toBe('text/vtt');
+    // The text codec never reaches the SourceBuffer type, whatever its place.
+    const video = tracks.find((t) => t.contentType === 'video');
+    expect(video?.renditions.map((r) => r.codecs)).toEqual([
+      'avc1.4d401f, mp4a.40.2',
+      'avc1.4d401f, mp4a.40.2',
+    ]);
+  });
+});
+
 describe('date ranges', () => {
   const playlist = () => {
     const result = parseMediaPlaylist(fixture('edge-daterange-media.m3u8'), BASE);

@@ -191,3 +191,42 @@ it.skipIf(!decodesH264)('45. CEA-708 services are tracks beside the 608 channels
   expect(nativeCaption(player.video, 'SERVICE1')?.language).toBe('en');
   expect(player.engine.error?.code ?? null).toBeNull();
 });
+
+// TTML beside the DASH corpus (gen-ttml.mjs): "sidecar n" from 4n + 1 s to
+// 4n + 3 s, and "stpp n" from 0.5 s to 3.5 s into segment n, timed on the
+// stpp track's media clock.
+function nativeText(video: HTMLVideoElement, id: string): TextTrack | undefined {
+  return [...video.textTracks].find((t) => t.label === `mattebox:${id}`);
+}
+
+it('46. TTML plays as a sidecar and as stpp in fMP4, each through its parser', async () => {
+  const player = await boot({ src: 'ttml' });
+  await play(player, 1, 15_000);
+  const text = player.engine.tracks.available.filter((t) => t.contentType === 'text');
+  expect(text.map((t) => [t.id, t.lang, player.engine.tracks.selectable(t.id)])).toEqual([
+    ['as-10', 'en', true],
+    ['as-11', 'de', true],
+  ]);
+  player.engine.tracks.select('as-10');
+  await until(
+    () => (nativeText(player.video, 'as-10')?.cues?.length ?? 0) > 2,
+    'sidecar cues',
+    15_000,
+  );
+  const sidecar = nativeText(player.video, 'as-10')?.cues?.[1] as VTTCue;
+  expect([sidecar.startTime, sidecar.endTime, sidecar.text]).toEqual([5, 7, 'sidecar 1']);
+  expect(sidecar.line).toBe(95);
+  player.engine.tracks.select('as-11');
+  await until(
+    () => (nativeText(player.video, 'as-11')?.cues?.length ?? 0) > 1,
+    'stpp cues',
+    15_000,
+  );
+  const second = [...(nativeText(player.video, 'as-11')?.cues ?? [])].find(
+    (cue) => (cue as VTTCue).text === 'stpp 2',
+  ) as VTTCue;
+  expect([second.startTime, second.endTime]).toEqual([4.5, 7.5]);
+  expect(nativeText(player.video, 'as-11')?.mode).toBe('showing');
+  expect(nativeText(player.video, 'as-10')?.mode).toBe('disabled');
+  expect(player.engine.error?.code ?? null).toBeNull();
+});

@@ -49,6 +49,7 @@ const ACCESSORIES = [
   'trick-play',
   'timed-metadata',
   'text-cea708',
+  'text-ttml',
 ];
 
 const MATRIX: ReadonlyArray<[typeof kernel, readonly string[]]> = [
@@ -79,7 +80,7 @@ describe('the preset matrix', () => {
   it('full carries every stage of the catalogue, each name once', () => {
     const names = full.stages().map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(33);
+    expect(names.length).toBe(34);
   });
 
   it('every call returns fresh stage instances', () => {

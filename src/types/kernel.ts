@@ -201,6 +201,12 @@ export interface KernelState {
    * spans, because the reducer cannot query sink instances.
    */
   readonly cues: ReadonlyMap<TrackId, TimeRangesSnapshot>;
+  /**
+   * Per cue track, the rendition whose init segment it delivered, for cues
+   * in fMP4 (stpp, wvtt). A failed init counts too: the pipeline degrades
+   * rather than refetching it.
+   */
+  readonly cueInits: ReadonlyMap<TrackId, RenditionId>;
   /** The sliding availability window and the seek edge, from a live stage. Null until one reports. */
   readonly live: { readonly span: TimeRange; readonly edge: number } | null;
   readonly scheduling: {

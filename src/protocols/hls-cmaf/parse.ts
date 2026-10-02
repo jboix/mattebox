@@ -155,6 +155,8 @@ function protectionFrom(key: TagLine, baseUrl: string): ProtectionInfo | null {
 }
 
 const AUDIO_CODECS = /^(mp4a|ac-3|ec-3|opus|flac)/i;
+/** Subtitles in fMP4: IMSC (Apple HLS authoring spec 5.10) and WebVTT. */
+const TEXT_CODECS = /^(stpp|wvtt)/i;
 
 /**
  * A tile grid from LAYOUT="CxR" and a tile RESOLUTION, both from the Roku
@@ -190,19 +192,26 @@ export function normalizeAvcCodec(codec: string): string {
   return `${match[1]}.${hex(Number(match[2]))}00${hex(Number(match[3]))}`;
 }
 
-function splitCodecs(value: string | undefined): { video: string | null; audio: string | null } {
-  if (value === undefined) return { video: null, audio: null };
+function splitCodecs(value: string | undefined): {
+  video: string | null;
+  audio: string | null;
+  text: string | null;
+} {
+  if (value === undefined) return { video: null, audio: null, text: null };
   let video: string | null = null;
   let audio: string | null = null;
+  let text: string | null = null;
   for (const codec of value.split(',').map((c) => c.trim())) {
     if (codec === '') continue;
     if (AUDIO_CODECS.test(codec)) {
       audio = audio ?? codec;
+    } else if (TEXT_CODECS.test(codec)) {
+      text = text ?? codec;
     } else {
       video = video ?? normalizeAvcCodec(codec);
     }
   }
-  return { video, audio };
+  return { video, audio, text };
 }
 
 /** parse a media playlist body into segments. */
@@ -738,7 +747,13 @@ export function parse(text: string, baseUrl: string): ParseResult {
     const { audio } = splitCodecs(
       variants.find((v) => v.attributes.AUDIO === entry.groupId)?.attributes.CODECS,
     );
-    const mimeType = contentType === 'audio' ? 'audio/mp4' : 'text/vtt';
+    // Subtitles are WebVTT files unless the variants name a subtitle codec
+    // in fMP4 (stpp for IMSC, wvtt), which a stage parses by codec family.
+    const { text } = splitCodecs(
+      variants.find((v) => v.attributes.SUBTITLES === entry.groupId)?.attributes.CODECS,
+    );
+    const mimeType =
+      contentType === 'audio' ? 'audio/mp4' : text !== null ? 'application/mp4' : 'text/vtt';
     const characteristics = characteristicsOf(entry);
     tracks.push({
       id: `${entry.groupId}:${entry.name}`,
@@ -754,7 +769,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
         {
           id: `${entry.groupId}:${entry.name}`,
           bitrate: 0,
-          codecs: contentType === 'audio' ? audio : null,
+          codecs: contentType === 'audio' ? audio : text,
           mimeType,
           segments: [],
           playlistUrl: entry.uri,

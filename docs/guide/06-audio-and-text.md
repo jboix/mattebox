@@ -111,6 +111,38 @@ picking in the browser's caption menu selects in the engine. Turning
 captions off there deselects. Listen for `tracks:selected` to update your
 own menu.
 
+## TTML subtitles
+
+`text-ttml` reads TTML in the IMSC1 Text Profile, which covers EBU-TT-D. It
+is in `full`; add it to another preset with `stages`.
+
+| Format                        | Where it comes from                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| `application/ttml+xml`        | A DASH file at a `BaseURL` for the period, or one document per segment                |
+| `application/mp4` with `stpp` | TTML in fMP4 segments: DASH `codecs="stpp.ttml.im1t"`, or HLS with `stpp` in `CODECS` |
+
+```ts
+import dash from 'mattebox/presets/dash';
+import textTtml from 'mattebox/stages/text-ttml';
+
+const engine = dash({ stages: [textTtml()] });
+```
+
+A TTML track is a text track like a WebVTT one: select it with
+`engine.tracks`, and the browser's caption menu lists it.
+
+- Timing follows TTML: `begin`, `end`, and `dur` nest through `div`, `p`,
+  and `span`, in clock, frame, and tick time.
+- Italics, bold, and underline show. The region sets the cue's position,
+  width, and line.
+- Colors and fonts do not show: a `VTTCue` carries them only through page
+  CSS. Each cue's `payload` property holds its resolved styles, for a
+  player that draws captions itself.
+- The IMSC1 Image Profile is not supported.
+
+Each subtitle format has a parser of its own, chosen by the track's format.
+A track whose format no stage reads is listed but not selectable.
+
 ## Forced subtitles
 
 A forced subtitle track carries text the audio does not, such as translated

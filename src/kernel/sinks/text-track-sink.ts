@@ -49,20 +49,28 @@ interface TrackEntry {
   readonly ids: Set<string>;
 }
 
-/** Applies the WebVTT settings string's known keys onto a native cue. */
+/**
+ * Applies the WebVTT settings string's known keys onto a native cue
+ * (WebVTT §4.3). `line` and `position` may carry an alignment after a comma;
+ * a browser without `lineAlign` or `positionAlign` ignores it.
+ */
 function applySettings(cue: VTTCue, settings: string | undefined): void {
   if (settings === undefined) return;
+  const loose = cue as unknown as Record<string, unknown>;
   for (const part of settings.split(/\s+/)) {
-    const [key, value] = part.split(':');
-    if (value === undefined) continue;
+    const [key, setting] = part.split(':');
+    if (setting === undefined) continue;
+    const [value, alignment] = setting.split(',') as [string, string | undefined];
     const percent = value.endsWith('%') ? Number(value.slice(0, -1)) : null;
     switch (key) {
       case 'line':
         cue.line = percent ?? Number(value);
         if (percent !== null) cue.snapToLines = false;
+        if (alignment !== undefined) loose.lineAlign = alignment;
         break;
       case 'position':
         if (percent !== null) cue.position = percent;
+        if (alignment !== undefined) loose.positionAlign = alignment;
         break;
       case 'size':
         if (percent !== null) cue.size = percent;
@@ -210,7 +218,14 @@ export function createCueSink<C extends CueContentType>(
           vtt.id = cue.id;
           entry.ids.add(cue.id);
         }
-        applySettings(vtt, cue.settings);
+        try {
+          applySettings(vtt, cue.settings);
+        } catch {
+          // A value this browser rejects keeps its default.
+        }
+        // A parser's raw form (TTML styles, ID3 frames), for a page that reads more than the text.
+        if (cue.payload !== undefined)
+          (vtt as unknown as { payload: unknown }).payload = cue.payload;
         entry.textTrack.addCue(vtt);
       }
     },

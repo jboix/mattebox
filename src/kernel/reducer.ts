@@ -24,7 +24,7 @@ import { APPENDED_MEMORY } from '../types/kernel.js';
 import type { Command, Effect, Fact, Message, Serializable } from '../types/messages.js';
 import type { MediaTimeProbe } from '../types/stage.js';
 import { tickAfter } from './effects.js';
-import { normalizeMimeType, typeString } from './mime.js';
+import { cueFormat, normalizeMimeType, typeString } from './mime.js';
 import { findRendition, findTrackSite, isTrick } from './presentation.js';
 import { applyRefresh } from './refresh.js';
 import type { AbrChooser, SwitchPolicy } from './rendition-select.js';
@@ -83,6 +83,7 @@ export function initialState(config?: Partial<KernelConfig>): KernelState {
     buffers: new Map(),
     bufferErrors: new Map(),
     cues: new Map(),
+    cueInits: new Map(),
     live: null,
     scheduling: { inflight: new Map(), bufferGoal: cfg.bufferGoalSeconds, tokenSeq: 0 },
     tracks: { active: new Map(), available: [] },
@@ -588,12 +589,15 @@ function reduceCommand(
       active.delete(msg.contentType);
       const cues = new Map(state.cues);
       cues.delete(trackId);
+      const cueInits = new Map(state.cueInits);
+      cueInits.delete(trackId);
       const [aborted, abortEffects] = abortInflight(state, trackId);
       return [
         {
           ...aborted,
           tracks: { ...state.tracks, active },
           cues,
+          cueInits,
           quality: bumped(state.quality),
         },
         [
@@ -967,6 +971,7 @@ function reduceFact(
       let timeline = state.timeline;
       let quality = state.quality;
       let cues = state.cues;
+      let cueInits = state.cueInits;
       const effects: Effect[] = [];
       // No SourceBuffer destination: a cue track's segment routes to its
       // sink through the deliver effect. Coverage merges here, from the
@@ -974,6 +979,35 @@ function reduceFact(
       // and the scheduler never refetch-loops a bad segment.
       const cueTrack =
         matched.sbId === undefined ? findTrack(state.presentation, matched.trackId) : null;
+      if (
+        cueTrack !== null &&
+        (cueTrack.contentType === 'text' || cueTrack.contentType === 'metadata') &&
+        matched.seq < 0 &&
+        matched.renditionId !== undefined
+      ) {
+        // A cue track's init (stpp, wvtt) goes to its parser like a segment,
+        // so the parser learns the track's timescale.
+        cueInits = new Map(cueInits).set(matched.trackId, matched.renditionId);
+        effects.push({
+          kind: 'deliver',
+          trackId: matched.trackId,
+          contentType: cueTrack.contentType,
+          data: msg.bytes,
+          meta: {
+            trackId: matched.trackId,
+            renditionId: matched.renditionId,
+            contentType: cueTrack.contentType,
+            seq: matched.seq,
+            start: 0,
+            duration: 0,
+            isInit: true,
+            format: cueFormat(
+              cueTrack.mimeType,
+              cueTrack.renditions.find((r) => r.id === matched.renditionId)?.codecs,
+            ),
+          },
+        });
+      }
       if (
         cueTrack !== null &&
         (cueTrack.contentType === 'text' || cueTrack.contentType === 'metadata') &&
@@ -999,6 +1033,11 @@ function reduceFact(
             start: matched.segmentStart,
             duration: matched.segmentDuration ?? 0,
             isInit: matched.seq < 0,
+            // The sink routes the bytes to the parser of this format.
+            format: cueFormat(
+              cueTrack.mimeType,
+              cueTrack.renditions.find((r) => r.id === matched.renditionId)?.codecs,
+            ),
           },
         });
       }
@@ -1179,6 +1218,7 @@ function reduceFact(
           timeline,
           quality,
           cues,
+          cueInits,
           scheduling: withPendingInit({ ...state.scheduling, inflight }, pendingInit),
           stats,
         },
@@ -1214,10 +1254,14 @@ function reduceFact(
         failedTrack !== null &&
         (failedTrack.contentType === 'text' || failedTrack.contentType === 'metadata');
       let cues = state.cues;
+      let cueInits = state.cueInits;
       if (isCueTrack) {
         const request = [...state.scheduling.inflight.values()].find(
           (r) => r.trackId === msg.trackId && r.seq === msg.seq,
         );
+        if (msg.seq < 0 && request?.renditionId !== undefined) {
+          cueInits = new Map(cueInits).set(msg.trackId, request.renditionId);
+        }
         if (request?.segmentStart !== undefined) {
           const next = new Map(cues);
           next.set(
@@ -1254,7 +1298,10 @@ function reduceFact(
       if (!isCueTrack) {
         failEffects.push(tickAfter('kernel:retry', cfg.baseRetryDelayMs));
       }
-      return [{ ...state, cues, scheduling: { ...state.scheduling, inflight } }, failEffects];
+      return [
+        { ...state, cues, cueInits, scheduling: { ...state.scheduling, inflight } },
+        failEffects,
+      ];
     }
 
     case 'SOURCEBUFFER_CREATED': {
@@ -1576,7 +1623,8 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
   const tracks: ScheduleTrackInput[] = [];
   const initFetches: Array<{
     trackId: string;
-    sbId: string;
+    /** Absent for a cue track, whose init goes to its sink. */
+    sbId?: string;
     rendition: string;
     init: NonNullable<Rendition['init']>;
   }> = [];
@@ -1679,8 +1727,8 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
   }
 
   // Cue pipelines schedule like media, minus everything SourceBuffer:
-  // ranges come from delivered coverage, there is no init and no
-  // destination id, and delivery routes through the sink instead.
+  // ranges come from delivered coverage, there is no destination id, and
+  // delivery, the init included, routes through the sink instead.
   for (const contentType of ['text', 'metadata'] as const) {
     const trackId = state.tracks.active.get(contentType);
     if (trackId === undefined) continue;
@@ -1690,6 +1738,13 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
     const inflight: InflightRequest[] = [];
     for (const request of state.scheduling.inflight.values()) {
       if (request.trackId === trackId) inflight.push(request);
+    }
+    // Cues in fMP4 have an init segment: it goes first, as for media.
+    if (rendition.init !== undefined && state.cueInits.get(trackId) !== rendition.id) {
+      if (inflight.length === 0) {
+        initFetches.push({ trackId, rendition: rendition.id, init: rendition.init });
+      }
+      continue;
     }
     tracks.push({
       trackId,
@@ -1775,7 +1830,7 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
       trackId: pending.trackId,
       seq: -1,
       url: pending.init.url,
-      sbId: pending.sbId,
+      ...(pending.sbId !== undefined ? { sbId: pending.sbId } : {}),
       renditionId: pending.rendition,
     });
   }
