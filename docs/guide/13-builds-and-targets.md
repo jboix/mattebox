@@ -40,9 +40,11 @@ The bundles are the same ES2015 build as the default ESM, minified.
 </script>
 ```
 
-Every bundle that carries the transmuxer (`-ts` and `full`) has the Worker's
-code inside and starts it from a blob URL, for `mattebox.tsTransmux()` and
-the preset's own instance alike, so one file is all a page loads.
+Every bundle that carries the transmuxer (`-ts` and `full`) has one copy of
+it. It starts the Worker from that copy through a blob URL, and runs the
+same copy on the main thread when a `worker-src` policy blocks the blob, for
+`mattebox.tsTransmux()` and the preset's own instance alike. One file is
+all a page loads.
 [Chapter 14](14-cdn.md) covers the script tag in detail: versions, integrity
 hashes, the ESM form, and hosting the Worker elsewhere.
 

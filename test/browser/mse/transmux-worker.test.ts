@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createTransmuxRunner } from '../../../src/containers/ts-transmux/runner.js';
+import { transmuxSource } from '../../../src/containers/ts-transmux/source.js';
 
 /**
  * The Worker holds no state between segments: the parameter sets a segment
@@ -24,7 +25,7 @@ function withoutParameterSets(ts: Uint8Array): Uint8Array {
 
 describe('the transmux Worker carries parameter sets both ways', () => {
   it('a segment cut mid-GOP transmuxes with the sets of the one before', async () => {
-    const runner = createTransmuxRunner();
+    const runner = createTransmuxRunner({}, transmuxSource);
     const whole = await golden('muxed.m2ts');
     const previous = await runner.run(whole, 0, false, 'video');
     expect(runner.path()).toBe('worker');

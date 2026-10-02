@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { walkBoxes } from '../../../src/containers/mp4-box/index.js';
 import { demux, unrollTimestamps } from '../../../src/containers/ts-transmux/demux.js';
 import { createTransmuxRunner } from '../../../src/containers/ts-transmux/runner.js';
+import { transmuxSource } from '../../../src/containers/ts-transmux/source.js';
 import { transmux } from '../../../src/containers/ts-transmux/transmux.js';
 
 function fixture(name: string): Uint8Array {
@@ -121,7 +122,7 @@ describe('ts-transmux fMP4 output', () => {
   it('produces identical bytes through the runner, worker disabled', async () => {
     // The main-thread fallback the runner takes when no Worker is available
     // must match the golden the direct call produced.
-    const runner = createTransmuxRunner({ disableWorker: true });
+    const runner = createTransmuxRunner({ disableWorker: true }, transmuxSource);
     const result = await runner.run(fixture('muxed.m2ts'), 0);
     expect(runner.path()).toBe('main');
     expect(Array.from(result.bytes as Uint8Array)).toEqual(Array.from(fixture('muxed.fmp4')));
@@ -197,7 +198,7 @@ describe('a segment cut mid-GOP', () => {
   });
 
   it('the runner carries the sets the caller hands it', async () => {
-    const runner = createTransmuxRunner({ disableWorker: true });
+    const runner = createTransmuxRunner({ disableWorker: true }, transmuxSource);
     const previous = await runner.run(fixture('muxed.m2ts'), 0, false, 'video');
     const cut = withoutParameterSets(fixture('muxed.m2ts'));
     const borrowed = await runner.run(cut, 6, false, 'video', previous.parameterSets);

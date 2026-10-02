@@ -54,6 +54,10 @@ Worker URL is `new URL('./transmux.worker.js', import.meta.url)`, which
 Vite, Rollup, Rolldown, esbuild, and webpack 5 all handle without
 configuration.
 
+When the Worker cannot start, the same transmux runs on the main thread.
+It is loaded with a dynamic `import()`, so your bundler splits it into a
+chunk the page downloads only then.
+
 Two options cover the other cases.
 
 | Option          | Use                                                         |
@@ -65,8 +69,9 @@ Two options cover the other cases.
 tsTransmux({ workerUrl: new URL('/static/mattebox-transmux.js', location.href) });
 ```
 
-The CDN bundles carry the Worker inside the file and start it from a blob
-URL, so a script tag needs neither option. See
+The CDN bundles carry one copy of the transmux. They start the Worker from
+it through a blob URL and call it on the main thread when a `worker-src`
+policy blocks the blob, so a script tag needs neither option. See
 [chapter 13](13-builds-and-targets.md).
 
 ## Stages that need a container stage

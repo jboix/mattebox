@@ -7,13 +7,11 @@ import {
   tsFactories,
 } from './catalogue.js';
 import { cdnGlobal } from './global.js';
-import { tsTransmux, withWorker } from './worker.js';
 
-export default cdnGlobal(withWorker(preset), {
+export default cdnGlobal(preset, {
   ...hlsFactories,
   ...dashFactories,
   ...baseFactories,
   ...tsFactories,
-  tsTransmux,
   ...drmFactories,
 });

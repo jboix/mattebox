@@ -20,8 +20,9 @@
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage, StageContext } from '../../types/stage.js';
 import { captionsWanted, deliverCaptions } from '../captions.js';
-import { looksLikeTransportStream } from './demux.js';
 import { createTransmuxRunner, type TransmuxRunnerOptions } from './runner.js';
+import { looksLikeTransportStream } from './sniff.js';
+import { transmuxSource } from './source.js';
 import type { ParameterSets, TransmuxTracks } from './transmux.js';
 
 /** Runs after decrypt-class steps (lower order) and before caption extraction. */
@@ -46,7 +47,7 @@ export default function tsTransmux(options: TransmuxRunnerOptions = {}): Stage {
     provides: ['ts-transmux', 'media-transform'],
     requires: ['media-time-probe'],
     install(ctx) {
-      const runner = createTransmuxRunner(options);
+      const runner = createTransmuxRunner(options, transmuxSource);
       let announcedDrop = false;
       // By source and rendition: a new source may reuse a rendition id.
       const parameterSets = new Map<string, ParameterSets>();

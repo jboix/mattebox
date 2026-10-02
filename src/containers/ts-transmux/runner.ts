@@ -1,23 +1,31 @@
 /**
  * The boundary between the transform step and where the demux actually runs.
- * A Worker keeps the hot path off the main thread; when the build cannot emit
- * a Worker chunk, or the environment has no Worker, or a custom-URL Worker
- * fails to start, the same pure transmux runs synchronously on the main
- * thread. Both paths call the identical function, so the bytes match whatever
- * route a given browser takes; only the timing differs.
+ * A Worker keeps the hot path off the main thread; when the Worker cannot
+ * start (no Worker, a strict CSP that blocks it, a chunk that fails to load),
+ * the same pure transmux runs on the main thread, loaded on first need. Both
+ * paths call the identical function, so the bytes match whatever route a
+ * given browser takes; only the timing differs.
  */
-import {
-  type ParameterSets,
-  type TransmuxResult,
-  type TransmuxTracks,
-  transmux,
-} from './transmux.js';
+import type { ParameterSets, TransmuxResult, TransmuxTracks, transmux } from './transmux.js';
 
 export interface TransmuxRunnerOptions {
   /** A custom Worker URL for strict-CSP hosts that serve the chunk themselves. */
   readonly workerUrl?: string | URL;
   /** Forces synchronous main-thread execution; used by tests and headless runs. */
   readonly disableWorker?: boolean;
+}
+
+/**
+ * Where the transmux comes from in the build that runs it. The npm build
+ * loads the module lazily and starts the Worker chunk by URL; the script-tag
+ * bundle has one compiled copy, which it calls on the main thread and starts
+ * the Worker from. Either way the bytes are the same function's.
+ */
+export interface TransmuxSource {
+  /** The transmux for the main thread, loaded the first time the Worker is not used. */
+  load(): Promise<typeof transmux>;
+  /** Starts the Worker this build ships; throws when it cannot. */
+  worker(): Worker;
 }
 
 export interface TransmuxRunner {
@@ -33,13 +41,16 @@ export interface TransmuxRunner {
   dispose(): void;
 }
 
-interface Pending {
-  resolve(result: TransmuxResult): void;
+interface Request {
   readonly bytes: Uint8Array;
   readonly presentationStart: number;
   readonly wantCaptions: boolean;
   readonly tracks: TransmuxTracks;
   readonly parameterSets: ParameterSets | null;
+}
+
+interface Pending extends Request {
+  resolve(result: TransmuxResult): void;
 }
 
 interface WorkerResponse {
@@ -51,22 +62,29 @@ interface WorkerResponse {
   readonly parameterSets: ParameterSets | null;
 }
 
-function runOnMainThread(entry: Omit<Pending, 'resolve'>): TransmuxResult {
-  return transmux(
-    entry.bytes,
-    entry.presentationStart,
-    entry.wantCaptions,
-    entry.tracks,
-    entry.parameterSets,
-  );
-}
-
-export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): TransmuxRunner {
+export function createTransmuxRunner(
+  options: TransmuxRunnerOptions,
+  source: TransmuxSource,
+): TransmuxRunner {
   let worker: Worker | null = null;
   let workerBroken = options.disableWorker === true;
   let lastPath: 'worker' | 'main' = 'main';
   let nextId = 1;
   const pending = new Map<number, Pending>();
+  let loaded: Promise<typeof transmux> | null = null;
+
+  /** The same pure function, on the main thread, loaded on first need. */
+  async function runOnMainThread(request: Request): Promise<TransmuxResult> {
+    loaded ??= source.load();
+    const run = await loaded;
+    return run(
+      request.bytes,
+      request.presentationStart,
+      request.wantCaptions,
+      request.tracks,
+      request.parameterSets,
+    );
+  }
 
   function ensureWorker(): Worker | null {
     if (workerBroken) return null;
@@ -75,7 +93,7 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
       worker =
         options.workerUrl !== undefined
           ? new Worker(options.workerUrl, { type: 'module' })
-          : new Worker(new URL('./transmux.worker.js', import.meta.url), { type: 'module' });
+          : source.worker();
       worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
         const entry = pending.get(event.data.id);
         if (entry === undefined) return;
@@ -98,7 +116,7 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
         worker = null;
         for (const [id, entry] of pending) {
           pending.delete(id);
-          entry.resolve(runOnMainThread(entry));
+          void runOnMainThread(entry).then(entry.resolve);
         }
       };
     } catch {
@@ -114,7 +132,7 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
       const active = ensureWorker();
       if (active === null) {
         lastPath = 'main';
-        return Promise.resolve(runOnMainThread(request));
+        return runOnMainThread(request);
       }
       lastPath = 'worker';
       const id = nextId;
@@ -135,7 +153,7 @@ export function createTransmuxRunner(options: TransmuxRunnerOptions = {}): Trans
           workerBroken = true;
           worker = null;
           lastPath = 'main';
-          resolve(runOnMainThread(request));
+          void runOnMainThread(request).then(resolve);
         }
       });
     },

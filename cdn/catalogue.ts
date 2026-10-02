@@ -3,7 +3,9 @@
  * are. An entry spreads the groups its preset composes; the rest
  * tree-shakes out of that bundle.
  */
+
 import packedAudio from '../src/containers/packed-audio/index.js';
+import tsTransmux from '../src/containers/ts-transmux/index.js';
 import dashCmaf from '../src/protocols/dash-cmaf/index.js';
 import dashLive from '../src/protocols/dash-live/index.js';
 import hlsCmaf from '../src/protocols/hls-cmaf/index.js';
@@ -54,7 +56,7 @@ export const baseFactories = {
   nalScan,
   textCea608,
 };
-/** The TS tier minus ts-transmux, which cdn/worker.ts adds with the embedded Worker. */
-export const tsFactories = { packedAudio, metaId3 };
+/** The TS tier. ts-transmux runs its one compiled copy, from cdn/transmux-source.ts. */
+export const tsFactories = { tsTransmux, packedAudio, metaId3 };
 export const drmFactories = { emeCore, emeCenc, emeFairplay };
 export const accessoryFactories = { cmcd, thumbnails, chapters, trickPlay };

@@ -7,8 +7,9 @@
  * could parse rather than throwing or spinning.
  */
 
-const PACKET_SIZE = 188;
-const SYNC_BYTE = 0x47;
+import { looksLikeTransportStream, PACKET_SIZE, SYNC_BYTE } from './sniff.js';
+
+export { looksLikeTransportStream };
 
 /** MPEG-TS stream_type values this transmuxer routes. */
 import { concat } from '../fmp4/writer.js';
@@ -64,20 +65,6 @@ function kindOf(streamType: number): ElementaryKind | null {
   }
   if (streamType === STREAM_TYPE.metadata) return 'id3';
   return null;
-}
-
-/** True when the buffer carries the TS sync byte at the packet cadence. */
-export function looksLikeTransportStream(data: Uint8Array): boolean {
-  if (data.byteLength < PACKET_SIZE) return false;
-  // Two consecutive sync bytes one packet apart is the accepted sniff.
-  let offset = 0;
-  while (offset + PACKET_SIZE < data.byteLength) {
-    if (data[offset] === SYNC_BYTE && data[offset + PACKET_SIZE] === SYNC_BYTE) return true;
-    offset += 1;
-    // A real stream syncs within the first packet; bound the search.
-    if (offset > PACKET_SIZE) return false;
-  }
-  return false;
 }
 
 /** Reads a 33-bit PTS/DTS field from a 5-byte PES timestamp region. */

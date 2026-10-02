@@ -90,7 +90,7 @@
     "test": "vitest run",
     "test:node": "vitest run --project=node",
     "test:browser": "vitest run --project=browser",
-    "test:e2e": "bash test/e2e/gen-streams.sh && pnpm run build:es2015 && vitest run -c vitest.e2e.config.ts",
+    "test:e2e": "bash test/e2e/gen-streams.sh && pnpm run build:es2015 && pnpm run build:cdn && vitest run -c vitest.e2e.config.ts",
     "check:emit": "node scripts/check-emit.mjs",
     "check:purity": "node scripts/check-kernel-purity.mjs",
     "check:side-effects": "node scripts/side-effect-audit.mjs",
