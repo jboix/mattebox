@@ -138,9 +138,10 @@ describe('the CEA-708 service decoder', () => {
     // SWA: justify right, in the low bits of its third byte.
     service.decode(Uint8Array.from([0x97, 0, 0, 0x01, 0]), 1);
     const cues = service.flush(2);
+    // The column is layout, not text: the cue carries no leading blanks.
     expect(cues.map((c) => [c.text, c.layout.justify])).toEqual([
-      ['  x', 2],
-      ['  x', 1],
+      ['x', 2],
+      ['x', 1],
     ]);
   });
 

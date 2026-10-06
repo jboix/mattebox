@@ -94,9 +94,14 @@ function rowText(row: ReadonlyArray<Cell | undefined>): string {
   let out = '';
   let italic = false;
   let underline = false;
+  // Blank cells at either end are layout, not text: the cue is shown
+  // centered, and leading blanks would push it off center.
+  const blank = (cell: Cell | undefined): boolean => cell === undefined || cell.char === ' ';
   let end = row.length;
-  while (end > 0 && (row[end - 1] === undefined || row[end - 1]?.char === ' ')) end -= 1;
-  for (let i = 0; i < end; i += 1) {
+  while (end > 0 && blank(row[end - 1])) end -= 1;
+  let start = 0;
+  while (start < end && blank(row[start])) start += 1;
+  for (let i = start; i < end; i += 1) {
     const cell = row[i] ?? { char: ' ', italic: false, underline: false };
     if (underline && !cell.underline) out += '</u>';
     if (italic && !cell.italic) out += '</i>';

@@ -19,6 +19,16 @@ function chars(text: string): Array<[number, number]> {
 }
 
 describe('CEA-608 decode', () => {
+  it('an indent PAC places the text without leading blanks', () => {
+    const d = new Cea608Decoder();
+    d.push(...RCL, 0);
+    d.push(0x14, 0x54, 0); // row 15, indent 8
+    for (const [a, b] of chars('BIP BOP')) d.push(a, b, 0);
+    d.push(...EOC, 1);
+    d.push(...EDM, 2);
+    expect(d.flush(2)[0]?.text).toBe('BIP BOP');
+  });
+
   it('pop-on: a caption shows from its EOC to the erase', () => {
     const d = new Cea608Decoder();
     d.push(...RCL, 0);

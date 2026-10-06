@@ -241,9 +241,12 @@ function blankScreen(): string[] {
   return Array.from({ length: ROWS }, () => '');
 }
 
+// A PAC indent places text on the 32-column grid with leading blanks. The
+// cue is shown centered, so those blanks would push it off center: trim
+// both ends of each row.
 function screenText(screen: readonly string[]): string {
   return screen
-    .map((line) => line.replace(/\s+$/, ''))
+    .map((line) => line.trim())
     .filter((line) => line !== '')
     .join('\n');
 }
