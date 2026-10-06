@@ -297,11 +297,8 @@ describe('hls-cmaf fetches the media playlists the selection needs', () => {
     const audio = fetches(booted.effects, 'hls:pl:').find((f) => f.url.endsWith('audio.m3u8'));
     if (audio === undefined) throw new Error('audio was not fetched');
     let settled = settle(reduce, ...reduce(booted.state, failed(audio.token)));
-    // alt-audio would follow the remaining variant onto the ac-3 group.
-    settled = settle(
-      reduce,
-      ...reduce(settled.state, { type: 'SELECT_TRACK', trackId: 'ac3:English' }),
-    );
+    // English is one track in both groups: the kernel moves it to its ac-3
+    // encoding with the variant left, and that playlist loads.
     const ac3 = fetches(settled.effects, 'hls:pl:').find((f) => f.url.endsWith('audio-ac3.m3u8'));
     if (ac3 === undefined) throw new Error('the ac-3 audio was not fetched');
     settled = settle(reduce, ...reduce(settled.state, failed(ac3.token)));

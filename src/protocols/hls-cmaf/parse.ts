@@ -377,6 +377,38 @@ function mediaContentType(type: string): 'audio' | 'text' | null {
   return null;
 }
 
+/** The attributes as one string, in name order, leaving out the names `skip` matches. */
+function attributeKey(attributes: Readonly<Record<string, string>>, skip?: RegExp): string {
+  return Object.keys(attributes)
+    .filter((name) => skip?.test(name) !== true)
+    .sort()
+    .map((name) => `${name}=${attributes[name]}`)
+    .join(',');
+}
+
+/**
+ * RFC 8216bis §4.4.6.1.1: groups of one TYPE carry the same members, and
+ * corresponding members differ only in these attributes. A member that
+ * matches on everything else is the same rendition in another encoding.
+ */
+const PER_GROUP = /^(URI|GROUP-ID|CHANNELS|BIT-DEPTH|SAMPLE-RATE|STABLE-RENDITION-ID)$/;
+
+/**
+ * RFC 8216bis §4.4.6.1: CHANNELS="6", or "16/JOC" for object-based audio.
+ * The first parameter counts the channels; the second names the object
+ * coding, where "-" means none.
+ */
+function channelsOf(entry: MediaEntry): Pick<Rendition, 'channels' | 'audioObjects'> {
+  const [count, objects] = (entry.attributes.CHANNELS ?? '').split('/');
+  const channels = Number(count);
+  return {
+    ...(channels > 0 ? { channels } : {}),
+    ...(objects !== undefined && objects !== '' && objects !== '-'
+      ? { audioObjects: objects }
+      : {}),
+  };
+}
+
 /** The CHARACTERISTICS tags of a rendition, as written, in order. */
 function characteristicsOf(entry: MediaEntry): string[] {
   return (entry.attributes.CHARACTERISTICS ?? '')
@@ -656,6 +688,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
   const renditions: Rendition[] = [];
   const audioOnlyVariants: typeof variants = [];
   const couplings: Coupling[] = [];
+  const declared = new Map<string, Readonly<Record<string, string>>>();
   for (const variant of variants) {
     const bandwidth = Number(variant.attributes.BANDWIDTH) || 0;
     const [width, height] = dimensions(variant.attributes.RESOLUTION) ?? [];
@@ -689,8 +722,17 @@ export function parse(text: string, baseUrl: string): ParseResult {
           ? 'PQ'
           : undefined;
     const pathway = variant.attributes['PATHWAY-ID'];
-    const id = pathway !== undefined ? `v-${bandwidth}-${pathway}` : `v-${bandwidth}`;
-    if (renditions.some((r) => r.id === id)) continue;
+    let id = pathway !== undefined ? `v-${bandwidth}-${pathway}` : `v-${bandwidth}`;
+    const taken = declared.get(id);
+    if (taken !== undefined) {
+      // RFC 8216 §6.2.3: a repeated variant with another URI is a backup
+      // copy of the same stream, which the engine does not fail over to.
+      // A variant that differs in anything else is another stream with the
+      // same BANDWIDTH, and gets its own id.
+      if (attributeKey(taken) === attributeKey(variant.attributes)) continue;
+      id = `${id}-${renditions.length}`;
+    }
+    declared.set(id, variant.attributes);
     renditions.push({
       id,
       bitrate: bandwidth,
@@ -748,6 +790,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
     });
   }
 
+  const soundtracks = new Map<string, { groups: Set<string>; renditions: Rendition[] }>();
   for (const entry of mediaEntries) {
     const caption = captionTrack(entry);
     if (caption !== null) {
@@ -766,6 +809,30 @@ export function parse(text: string, baseUrl: string): ParseResult {
     );
     const mimeType =
       contentType === 'audio' ? 'audio/mp4' : text !== null ? 'application/mp4' : 'text/vtt';
+    const rendition: Rendition = {
+      id: `${entry.groupId}:${entry.name}`,
+      bitrate: 0,
+      codecs: contentType === 'audio' ? audio : text,
+      mimeType,
+      segments: [],
+      playlistUrl: entry.uri,
+      ...channelsOf(entry),
+    };
+    // The same soundtrack in another audio group (AAC stereo in one, AC-3
+    // 5.1 in the next) joins the track already made for it, as one more
+    // rendition: a viewer picks the soundtrack, the kernel the encoding.
+    // A track takes one rendition per group, so two members of one group
+    // stay two tracks.
+    const key = attributeKey(entry.attributes, PER_GROUP);
+    const twin = contentType === 'audio' ? soundtracks.get(key) : undefined;
+    if (twin !== undefined && !twin.groups.has(entry.groupId)) {
+      twin.groups.add(entry.groupId);
+      twin.renditions.push(rendition);
+      continue;
+    }
+    const renditions = [rendition];
+    if (contentType === 'audio')
+      soundtracks.set(key, { groups: new Set([entry.groupId]), renditions });
     const characteristics = characteristicsOf(entry);
     tracks.push({
       id: `${entry.groupId}:${entry.name}`,
@@ -779,16 +846,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
       ...(characteristics.length > 0 ? { characteristics } : {}),
       // RFC 8216bis §4.4.6.1: FORCED is valid on SUBTITLES only.
       ...(contentType === 'text' && entry.attributes.FORCED === 'YES' ? { forced: true } : {}),
-      renditions: [
-        {
-          id: `${entry.groupId}:${entry.name}`,
-          bitrate: 0,
-          codecs: contentType === 'audio' ? audio : text,
-          mimeType,
-          segments: [],
-          playlistUrl: entry.uri,
-        },
-      ],
+      renditions,
     });
   }
 

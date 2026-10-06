@@ -559,6 +559,48 @@ describe('video range', () => {
   });
 });
 
+describe('audio channels', () => {
+  it('reads AudioChannelConfiguration in the MPEG, CICP, and Dolby schemes', () => {
+    const config = (scheme: string, value: string) =>
+      `<AudioChannelConfiguration schemeIdUri="${scheme}" value="${value}"/>`;
+    const mpeg = 'urn:mpeg:dash:23003:3:audio_channel_configuration:2011';
+    const cicp = 'urn:mpeg:mpegB:cicp:ChannelConfiguration';
+    const dolby = 'tag:dolby.com,2014:dash:audio_channel_configuration:2011';
+    const mpd = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1M">
+  <Period>
+    <AdaptationSet id="a" mimeType="audio/mp4" lang="en">
+      ${config(mpeg, '2')}
+      <SegmentTemplate media="a-$RepresentationID$-$Number$.m4s" initialization="a-$RepresentationID$.mp4" duration="6" timescale="1"/>
+      <Representation id="stereo" bandwidth="128000" codecs="mp4a.40.2"/>
+      <Representation id="cicp-51" bandwidth="384000" codecs="mp4a.40.2">${config(cicp, '6')}</Representation>
+      <Representation id="cicp-714" bandwidth="768000" codecs="mp4a.40.2">${config(cicp, '19')}</Representation>
+      <Representation id="dolby-51" bandwidth="384000" codecs="ec-3">${config(dolby, 'F801')}</Representation>
+      <Representation id="dolby-71" bandwidth="448000" codecs="ec-3">${config(dolby, 'FA01')}</Representation>
+      <Representation id="dolby-20" bandwidth="192000" codecs="ac-3">${config('urn:dolby:dash:audio_channel_configuration:2011', 'A000')}</Representation>
+    </AdaptationSet>
+    <AdaptationSet id="b" mimeType="audio/mp4" lang="en">
+      ${config('urn:example:unknown', '6')}
+      <SegmentTemplate media="b-$Number$.m4s" initialization="b.mp4" duration="6" timescale="1"/>
+      <Representation id="unknown" bandwidth="128000" codecs="mp4a.40.2"/>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+    const tracks = parse(mpd, BASE).presentation?.periods[0]?.tracks ?? [];
+    expect(tracks.flatMap((t) => t.renditions.map((r) => [r.id, r.channels]))).toEqual([
+      ['stereo', 2],
+      ['cicp-51', 6],
+      ['cicp-714', 12],
+      ['dolby-51', 6],
+      ['dolby-71', 8],
+      ['dolby-20', 2],
+      ['unknown', undefined],
+    ]);
+    // Two AdaptationSets in one language stay two tracks: DASH offers them as two choices.
+    expect(tracks.map((t) => t.id)).toEqual(['as-a', 'as-b']);
+  });
+});
+
 describe('subtitles in fMP4', () => {
   it('takes an application/mp4 set with stpp codecs as text, contentType or not', () => {
     const mpd = `<?xml version="1.0"?>

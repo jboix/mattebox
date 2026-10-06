@@ -9,7 +9,9 @@
  * slice watches the active video rendition; when its coupling names an
  * audio group the current audio track is not in, it selects a track in
  * that group — preferring the current language so a group switch does not
- * silently change languages.
+ * silently change languages. A track offered in several groups needs no
+ * switch when it is in the required one: the kernel plays its rendition
+ * there.
  *
  * A user choice is remembered as its language and its characteristics, and
  * re-applied on top of every group switch, so `alt-audio` never fights
@@ -35,13 +37,14 @@ const INITIAL: AltAudioSlice = { preferredLang: null, preferredCharacteristics: 
 
 interface AudioTrackInfo {
   readonly id: string;
-  readonly group: string;
+  /** Every audio group the track is offered in, one per rendition. */
+  readonly groups: readonly string[];
   readonly lang: string | null;
   readonly characteristics: readonly string[];
   readonly isDefault: boolean;
 }
 
-/** Audio tracks with their group parsed from the `group:name` id convention. */
+/** Audio tracks with their groups parsed from the `group:name` rendition id convention. */
 function audioTracks(kernel: Readonly<KernelState>): readonly AudioTrackInfo[] {
   const out: AudioTrackInfo[] = [];
   for (const period of kernel.presentation?.periods ?? []) {
@@ -49,7 +52,7 @@ function audioTracks(kernel: Readonly<KernelState>): readonly AudioTrackInfo[] {
       if (track.contentType !== 'audio') continue;
       out.push({
         id: track.id,
-        group: groupOf(track.id),
+        groups: track.renditions.map((r) => groupOf(r.id)),
         lang: track.lang ?? null,
         characteristics: track.characteristics ?? [],
         isDefault: track.role === 'main',
@@ -81,7 +84,7 @@ function pickInGroup(
   group: string,
   preference: AltAudioSlice,
 ): AudioTrackInfo | null {
-  const inGroup = tracks.filter((t) => t.group === group);
+  const inGroup = tracks.filter((t) => t.groups.includes(group));
   if (inGroup.length === 0) return null;
   const { preferredLang, preferredCharacteristics } = preference;
   const sameLang = preferredLang !== null ? inGroup.filter((t) => t.lang === preferredLang) : [];
@@ -132,7 +135,8 @@ const reduceAltAudio: SliceReducer<AltAudioSlice> = (slice, msg, kernel) => {
     const active = kernel.tracks.active.get('audio');
     const tracks = audioTracks(kernel);
     const activeInfo = tracks.find((t) => t.id === active);
-    if (activeInfo !== undefined && activeInfo.group === group) return [state, []];
+    // A track offered in the group already: the kernel plays its rendition there.
+    if (activeInfo?.groups.includes(group) === true) return [state, []];
     const target = pickInGroup(tracks, group, state);
     if (target === undefined || target === null || target.id === active) return [state, []];
     return [state, [select(target.id)]];

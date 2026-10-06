@@ -170,6 +170,120 @@ describe('the coupling table', () => {
   });
 });
 
+describe('one soundtrack in several audio groups', () => {
+  function audioTracks(text: string) {
+    const presentation = parse(text, BASE).presentation;
+    return presentation?.periods[0]?.tracks.filter((t) => t.contentType === 'audio') ?? [];
+  }
+
+  it('Apple advanced example: one English track with an AAC, an AC-3, and an E-AC-3 encoding', () => {
+    const tracks = audioTracks(fixture('apple-advanced-fmp4-master.m3u8'));
+    expect(tracks).toHaveLength(1);
+    const [english] = tracks;
+    expect(english).toMatchObject({
+      id: 'aud1:English',
+      lang: 'en',
+      name: 'English',
+      role: 'main',
+    });
+    expect(english?.renditions.map((r) => [r.id, r.codecs, r.channels])).toEqual([
+      ['aud1:English', 'mp4a.40.2', 2],
+      ['aud2:English', 'ac-3', 6],
+      ['aud3:English', 'ec-3', 6],
+    ]);
+  });
+
+  const master = (...media: string[]) =>
+    [
+      '#EXTM3U',
+      ...media,
+      '#EXT-X-STREAM-INF:BANDWIDTH=1000000,CODECS="avc1.64001f,mp4a.40.2",AUDIO="aac"',
+      'v.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1200000,CODECS="avc1.64001f,ec-3",AUDIO="ec3"',
+      'v.m3u8',
+    ].join('\n');
+
+  it('renditions that differ in more than URI and CHANNELS stay distinct tracks', () => {
+    const tracks = audioTracks(
+      master(
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English",LANGUAGE="en",DEFAULT=YES,URI="en.m3u8"',
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English AD",LANGUAGE="en",CHARACTERISTICS="public.accessibility.describes-video",URI="ad.m3u8"',
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="ec3",NAME="English",LANGUAGE="en",DEFAULT=YES,CHANNELS="6",URI="en-ec3.m3u8"',
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="ec3",NAME="English AD",LANGUAGE="en",URI="ad-ec3.m3u8"',
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="ec3",NAME="Deutsch",LANGUAGE="de",URI="de-ec3.m3u8"',
+      ),
+    );
+    expect(tracks.map((t) => [t.id, t.renditions.map((r) => r.id)])).toEqual([
+      ['aac:English', ['aac:English', 'ec3:English']],
+      ['aac:English AD', ['aac:English AD']],
+      // The AD twin lost its CHARACTERISTICS: not the same rendition.
+      ['ec3:English AD', ['ec3:English AD']],
+      ['ec3:Deutsch', ['ec3:Deutsch']],
+    ]);
+  });
+
+  it('two members of one group stay two tracks', () => {
+    const tracks = audioTracks(
+      master(
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English",LANGUAGE="en",CHANNELS="2",URI="en.m3u8"',
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English",LANGUAGE="en",CHANNELS="6",URI="en-51.m3u8"',
+      ),
+    );
+    expect(tracks.map((t) => t.renditions.map((r) => r.channels))).toEqual([[2], [6]]);
+  });
+
+  it('CHANNELS carries the count and the object coding', () => {
+    const tracks = audioTracks(
+      master(
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="Stereo",CHANNELS="2/-",URI="a.m3u8"',
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="ec3",NAME="Atmos",CHANNELS="16/JOC",URI="b.m3u8"',
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="ec3",NAME="Unknown",URI="c.m3u8"',
+      ),
+    );
+    expect(tracks.map((t) => [t.renditions[0]?.channels, t.renditions[0]?.audioObjects])).toEqual([
+      [2, undefined],
+      [16, 'JOC'],
+      [undefined, undefined],
+    ]);
+  });
+});
+
+describe('variants with the same BANDWIDTH', () => {
+  it('all stay renditions, with distinct ids', () => {
+    const presentation = parse(
+      [
+        '#EXTM3U',
+        '#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,CODECS="avc1.64001f"',
+        'avc.m3u8',
+        '#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,CODECS="hvc1.1.6.L93.B0"',
+        'hevc.m3u8',
+      ].join('\n'),
+      BASE,
+    ).presentation;
+    const renditions = presentation?.periods[0]?.tracks[0]?.renditions ?? [];
+    expect(renditions.map((r) => [r.id, r.codecs])).toEqual([
+      ['v-2000000', 'avc1.64001f'],
+      ['v-2000000-1', 'hvc1.1.6.L93.B0'],
+    ]);
+  });
+
+  it('a backup copy of a variant, the same but for its URI, is left out', () => {
+    // RFC 8216 §6.2.3 redundant streams.
+    const presentation = parse(
+      [
+        '#EXTM3U',
+        '#EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS="avc1.64001f"',
+        'https://a.example/v.m3u8',
+        '#EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS="avc1.64001f"',
+        'https://b.example/v.m3u8',
+      ].join('\n'),
+      BASE,
+    ).presentation;
+    const renditions = presentation?.periods[0]?.tracks[0]?.renditions ?? [];
+    expect(renditions.map((r) => r.playlistUrl)).toEqual(['https://a.example/v.m3u8']);
+  });
+});
+
 describe('protection descriptors, before any DRM stage exists', () => {
   it('EXT-X-KEY METHOD=AES-128 keys the segments that follow, and is not DRM', () => {
     const result = parseMediaPlaylist(fixture('srgssr-rsi-style-media.m3u8'), BASE);

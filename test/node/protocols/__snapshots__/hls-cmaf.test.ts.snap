@@ -592,46 +592,25 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
           "renditions": [
             {
               "bitrate": 0,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "aud1:English",
               "mimeType": "audio/mp4",
               "playlistUrl": "https://cdn.example/path/a1/prog_index.m3u8",
               "segments": [],
             },
-          ],
-          "role": "main",
-        },
-        {
-          "autoselect": true,
-          "contentType": "audio",
-          "id": "aud2:English",
-          "lang": "en",
-          "mimeType": "audio/mp4",
-          "name": "English",
-          "protection": null,
-          "renditions": [
             {
               "bitrate": 0,
+              "channels": 6,
               "codecs": "ac-3",
               "id": "aud2:English",
               "mimeType": "audio/mp4",
               "playlistUrl": "https://cdn.example/path/a2/prog_index.m3u8",
               "segments": [],
             },
-          ],
-          "role": "main",
-        },
-        {
-          "autoselect": true,
-          "contentType": "audio",
-          "id": "aud3:English",
-          "lang": "en",
-          "mimeType": "audio/mp4",
-          "name": "English",
-          "protection": null,
-          "renditions": [
             {
               "bitrate": 0,
+              "channels": 6,
               "codecs": "ec-3",
               "id": "aud3:English",
               "mimeType": "audio/mp4",
@@ -3242,6 +3221,7 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-rts-vod-mas
           "renditions": [
             {
               "bitrate": 0,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "audio0:Français",
               "mimeType": "audio/mp4",
@@ -5382,6 +5362,7 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-srf-style-m
           "renditions": [
             {
               "bitrate": 0,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "audio0:Deutsch",
               "mimeType": "audio/mp4",
@@ -5402,6 +5383,7 @@ exports[`golden corpus: every fixture parses to a stable IR > srgssr-srf-style-m
           "renditions": [
             {
               "bitrate": 0,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "audio0:Original",
               "mimeType": "audio/mp4",

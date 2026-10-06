@@ -73,7 +73,8 @@ const engine = mattebox({ stages: [hlsCmaf(), codecSwitch(), altAudio()] });
 ```
 
 A language chosen through `engine.tracks.select` is remembered and re-applied
-after every group switch.
+after every group switch. A track offered in the new group too stays
+selected: the kernel plays its rendition in that group.
 
 ## Track names
 
@@ -82,6 +83,17 @@ Each track carries what the manifest says about it:
 - `lang`: the language as written (HLS `LANGUAGE`, DASH `lang`).
 - `name`: the display name (HLS `NAME`, DASH `Label`).
 - `autoselect`: HLS `AUTOSELECT=YES`, a primary rendition.
+
+Each audio rendition carries its channels, for a label such as "English (5.1)":
+
+- `channels`: the channel count (HLS `CHANNELS`, DASH
+  `AudioChannelConfiguration`). 2 is stereo, 6 is 5.1.
+- `audioObjects`: the object coding from HLS `CHANNELS`, such as `JOC` for
+  Dolby Atmos.
+
+A track with several renditions plays the first one the browser decodes. You
+find it by leaving out the ids in
+`engine.quality.constraints.get('codecs')?.excludeIds`.
 
 An HLS stream can also give localized names in a dictionary
 (`_hls.localized-rendition-names`, HLS 2nd Edition Appendix E). The

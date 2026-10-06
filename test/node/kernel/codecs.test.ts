@@ -19,7 +19,7 @@ const MASTER = [
   '#EXTM3U',
   '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English",DEFAULT=YES,URI="aac.m3u8"',
   '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="ac3",NAME="English",DEFAULT=YES,URI="ac3.m3u8"',
-  '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="atmos",NAME="English",DEFAULT=YES,URI="atmos.m3u8"',
+  '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="atmos",NAME="Atmos",DEFAULT=YES,URI="atmos.m3u8"',
   '#EXT-X-STREAM-INF:BANDWIDTH=400000,CODECS="avc1.64001f,mp4a.40.29",AUDIO="aac"',
   'avc-low.m3u8',
   '#EXT-X-STREAM-INF:BANDWIDTH=700000,CODECS="ac-3,avc1.64001f",AUDIO="ac3"',
@@ -58,7 +58,7 @@ describe('renditions the browser cannot decode', () => {
     expect(excluded).toEqual(
       [
         'ac3:English',
-        'atmos:English',
+        'atmos:Atmos',
         'v-700000', // H.264, but its audio group is AC-3
         'v-800000', // H.264, but its audio group is E-AC-3
         'v-5000000', // HEVC
@@ -107,13 +107,13 @@ describe('renditions the browser cannot decode', () => {
   it('selecting a track the browser cannot decode is rejected', () => {
     const reduce = createReducer([], undefined, { decodable: chrome });
     const [state] = load(reduce, presentationOf(MASTER));
-    const [next, fx] = reduce(state, { type: 'SELECT_TRACK', trackId: 'atmos:English' });
+    const [next, fx] = reduce(state, { type: 'SELECT_TRACK', trackId: 'atmos:Atmos' });
     expect(next.tracks.active.get('audio')).toBe('aac:English');
     expect(fx).toEqual([
       {
         kind: 'emit',
         event: 'command:rejected',
-        payload: { command: 'SELECT_TRACK', reason: 'undecodable track: atmos:English' },
+        payload: { command: 'SELECT_TRACK', reason: 'undecodable track: atmos:Atmos' },
       },
     ]);
   });

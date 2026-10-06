@@ -146,6 +146,16 @@ group. The adapter splits that up and records which audio and text tracks
 each video rendition needs, and the engine keeps them consistent on quality
 changes. DASH already separates them.
 
+- An audio rendition repeated in several groups (same `NAME`, `LANGUAGE`, and
+  other attributes; another `URI` or `CHANNELS`) is one track with one
+  rendition per group. You see one English track, not one per group.
+- The engine plays that track from the first group the browser decodes, in
+  manifest order, or from the group the playing video variant needs.
+- Variants that read one video playlist and differ only by audio group are
+  one quality choice. `engine.quality.allowed` keeps the one in the playing
+  audio group, so ABR never changes the audio codec on its own.
+- A pin on another of those variants plays the kept one, with no warning.
+
 Two kinds of track never play in the video element.
 
 | Track            | `contentType` | `role`  | HLS source                 | DASH source                                | Used by             |

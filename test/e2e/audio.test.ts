@@ -6,9 +6,10 @@ import { boot, disposeAll, play, sleep, until } from './harness.js';
 
 // Alternate audio and codec switching, end to end. The generated HLS
 // master carries two audio groups (aud-lo coupled to the lowest video
-// rung, aud-hi to the upper two), each with English and French, so a
-// video rung switch drags the audio group and a language switch stays
-// inside a group.
+// rung, aud-hi to the upper two), each with English and French. English
+// and French are one track each, offered in both groups: a video rung
+// switch moves the audio to the other group's rendition, and a language
+// switch changes the track.
 
 afterEach(disposeAll);
 
@@ -45,13 +46,25 @@ it('25. selecting French stays in the current group', async () => {
   expect(video.currentTime).toBeGreaterThan(t1 + 1);
 });
 
+/** The audio rendition whose init the audio buffer holds. */
+function audioRendition(player: Player): string | null {
+  return player.engine.stats.snapshot().buffers.get('sb:audio')?.initFor ?? null;
+}
+
 it('26. a video rung switch drags the audio group, sync held', async () => {
   const player = await bootPlaying();
   const { engine, video } = player;
-  expect(activeAudio(player)).toContain('aud-lo');
+  const english = activeAudio(player);
+  expect(audioRendition(player)).toContain('aud-lo');
   // Pin the top rung: its coupling requires the aud-hi group.
   engine.quality.pin('v-600000', { apply: 'soon' });
-  await until(() => (activeAudio(player) ?? '').startsWith('aud-hi'), 'the aud-hi group', 20_000);
+  await until(
+    () => (audioRendition(player) ?? '').startsWith('aud-hi'),
+    'the aud-hi group',
+    20_000,
+  );
+  // The track stays: the viewer chose English, the group is the engine's.
+  expect(activeAudio(player)).toBe(english);
   // Both pipelines keep filling: audio and video buffered ends stay close.
   await until(() => video.currentTime > 6, 'currentTime > 6', 25_000);
   const buffers = engine.stats.snapshot().buffers;

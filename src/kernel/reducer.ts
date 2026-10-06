@@ -29,6 +29,9 @@ import { findRendition, findTrackSite, isTrick } from './presentation.js';
 import { applyRefresh } from './refresh.js';
 import type { AbrChooser, SwitchPolicy } from './rendition-select.js';
 import {
+  activeAudio,
+  audioGroup,
+  audioInGroup,
   availableGroups,
   canSwitchTo,
   codecFamily,
@@ -1678,15 +1681,31 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
         : `${state.quality.version}:${Math.round(state.stats.throughputEwma / 25_000)}:${Math.round(
             state.stats.throughputFastEwma / 25_000,
           )}:${Math.round((state.stats.serverThroughput ?? 0) / 25_000)}:${Math.round(bufferAhead)}:${state.quality.active}`;
+    // An audio track offered in several audio groups plays the group the
+    // video rendition just chosen requires, so the memo key carries it.
+    const couplings = state.presentation.couplings;
+    const audio = activeAudio(state);
     const outcome = arbiterFor(hooks, contentType).run(
       {
-        renditions: found.track.renditions,
+        renditions:
+          contentType === 'audio'
+            ? audioInGroup(
+                found.track.renditions,
+                audioGroup(
+                  found.track.renditions,
+                  couplings,
+                  state.quality.constraints,
+                  quality.active,
+                ),
+              )
+            : found.track.renditions,
         constraints: state.quality.constraints,
         pinned: state.quality.pinned,
         current: state.quality.active,
-        couplings: state.presentation.couplings,
+        couplings,
         activeTracks: state.tracks.active,
         availableGroups: availableGroups(state),
+        ...(audio !== undefined ? { audio } : {}),
         abr: hooks.abr ?? null,
         telemetry: {
           throughputEwma: state.stats.throughputEwma,
@@ -1700,7 +1719,7 @@ function driveScheduling(state: KernelState, hooks: ReducerHooks, cfg: KernelCon
           canSwitchTo: hooks.switchPolicy ?? canSwitchTo,
         },
       },
-      memoKey,
+      contentType === 'audio' ? `${memoKey}:${quality.active}` : memoKey,
     );
     for (const event of outcome.events) effects.push(event);
     const rendition = found.track.renditions.find((r) => r.id === outcome.result.selected);

@@ -309,6 +309,46 @@ function videoRangeOf(
 }
 
 /**
+ * Channel counts by ISO/IEC 23091-3 ChannelConfiguration index, from 1 to
+ * 20 (index 8 is reserved, so 0, as an unknown count).
+ */
+const CICP_CHANNELS = [1, 2, 3, 4, 5, 6, 8, 0, 3, 4, 7, 8, 24, 8, 12, 10, 12, 14, 12, 14];
+
+/**
+ * The channel count an AudioChannelConfiguration declares, on the
+ * Representation or its AdaptationSet. The MPEG scheme
+ * (ISO/IEC 23009-1 §5.8.5.4) writes the count; the CICP scheme an index;
+ * the Dolby scheme (ETSI TS 102 366 Annex I) a 16-bit hex mask with one bit
+ * per speaker or speaker pair. Another scheme says nothing here.
+ */
+function channelsOf(representation: Element, adaptationSet: Element): { channels?: number } {
+  for (const element of [representation, adaptationSet]) {
+    for (const config of children(element, 'AudioChannelConfiguration')) {
+      const scheme = attr(config, 'schemeIdUri') ?? '';
+      const value = attr(config, 'value') ?? '';
+      let channels = 0;
+      if (scheme === 'urn:mpeg:dash:23003:3:audio_channel_configuration:2011') {
+        channels = Number(value);
+      } else if (scheme === 'urn:mpeg:mpegB:cicp:ChannelConfiguration') {
+        channels = CICP_CHANNELS[Number(value) - 1] ?? 0;
+      } else if (/dolby.*audio_channel_configuration/.test(scheme)) {
+        // Bits 10, 9, 6, 5, 4, and 2 (mask 0x674) each name a speaker pair.
+        const mask = Number.parseInt(value, 16);
+        channels = bitCount(mask) + bitCount(mask & 0x674);
+      }
+      if (channels > 0) return { channels };
+    }
+  }
+  return {};
+}
+
+function bitCount(value: number): number {
+  let count = 0;
+  for (let bits = value; bits > 0; bits >>= 1) count += bits & 1;
+  return count;
+}
+
+/**
  * A trick-mode AdaptationSet: the DASH-IF trickmode EssentialProperty, or a
  * representation declaring a playout rate other than 1. Both mark an
  * I-frame-only set meant for fast forward and previews, never for normal
@@ -658,6 +698,7 @@ function parsePeriod(
             adaptationSet,
             attr(representation, 'codecs') ?? asCodecs,
           ),
+          ...channelsOf(representation, adaptationSet),
         });
         continue;
       }
@@ -697,6 +738,7 @@ function parsePeriod(
             adaptationSet,
             attr(representation, 'codecs') ?? asCodecs,
           ),
+          ...channelsOf(representation, adaptationSet),
         });
         continue;
       }
@@ -782,6 +824,7 @@ function parsePeriod(
         ...videoRangeOf(representation, adaptationSet, attr(representation, 'codecs') ?? asCodecs),
         ...(tiles !== null ? { tiles } : {}),
         ...(playoutRate !== null ? { maxPlayoutRate: playoutRate } : {}),
+        ...channelsOf(representation, adaptationSet),
       });
     }
 

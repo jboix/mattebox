@@ -30,7 +30,7 @@ import type {
   Constraint,
   SwitchVerdict,
 } from '../types/quality.js';
-import { findRendition } from './presentation.js';
+import { findRendition, findTrackSite } from './presentation.js';
 import { bufferedEndFrom } from './scheduler.js';
 import { segmentAtTime } from './timeline.js';
 
@@ -102,6 +102,12 @@ export interface ArbitrationContext {
    * vetoes when no switchable companion exists at all.
    */
   readonly availableGroups?: ReadonlySet<string>;
+  /**
+   * The renditions of the active audio track, one per audio group it is
+   * offered in. They decide which of several video variants that read one
+   * playlist stays allowed.
+   */
+  readonly audio?: readonly Rendition[];
   readonly abr?: AbrChooser | null;
   readonly telemetry: AbrTelemetry;
 }
@@ -130,6 +136,61 @@ function lowest(allowed: readonly Rendition[]): Rendition {
   return best;
 }
 
+/** Every rendition id a constraint excludes by id: undecodable, failed, on a lost pathway. */
+function excludedIds(constraints: ReadonlyMap<string, Constraint>): Set<string> {
+  const excluded = new Set<string>();
+  for (const constraint of constraints.values()) {
+    for (const id of constraint.excludeIds ?? []) excluded.add(id);
+  }
+  return excluded;
+}
+
+/**
+ * The video stream a rendition shows: renditions that read one playlist on
+ * one pathway carry the same video and differ only by audio group.
+ */
+function streamOf(rendition: Rendition): string {
+  return `${rendition.pathway}|${rendition.playlistUrl ?? rendition.id}`;
+}
+
+/**
+ * The audio group the engine plays from the active audio track, whose
+ * renditions are `audio`: the group the video rendition `videoId` requires
+ * when the track has a usable rendition in it, else the group of the
+ * track's first usable rendition, in manifest order. Null when no coupling
+ * names an audio group (audio muxed into the video, or audio-only, or a
+ * manifest format without groups), or when no rendition is usable.
+ */
+export function audioGroup(
+  audio: readonly Rendition[],
+  couplings: readonly Coupling[],
+  constraints: ReadonlyMap<string, Constraint>,
+  videoId: RenditionId | null,
+): string | null {
+  if (!couplings.some((c) => c.requires.audio !== undefined)) return null;
+  const excluded = excludedIds(constraints);
+  const groups = audio.filter((r) => !excluded.has(r.id)).map((r) => groupOf(r.id));
+  const required = couplings.find((c) => c.renditionId === videoId)?.requires.audio;
+  return required !== undefined && groups.includes(required) ? required : (groups[0] ?? null);
+}
+
+/** The renditions of `audio` in `group`; all of them when none is. */
+export function audioInGroup(
+  audio: readonly Rendition[],
+  group: string | null,
+): readonly Rendition[] {
+  const inGroup = audio.filter((r) => groupOf(r.id) === group);
+  return inGroup.length > 0 ? inGroup : audio;
+}
+
+/** The renditions of the active audio track, or undefined without one. */
+export function activeAudio(kernel: Readonly<KernelState>): readonly Rendition[] | undefined {
+  const trackId = kernel.tracks.active.get('audio');
+  return trackId === undefined
+    ? undefined
+    : findTrackSite(kernel.presentation, trackId)?.track.renditions;
+}
+
 /**
  * The video renditions an adapter resolves ahead of need: the active one
  * and the nearest rung below and above on its pathway. ABR moves one rung
@@ -144,10 +205,7 @@ export function ladderNeighbours(
   activeId: RenditionId | null,
   constraints: ReadonlyMap<string, Constraint>,
 ): readonly Rendition[] {
-  const excluded = new Set<string>();
-  for (const constraint of constraints.values()) {
-    for (const id of constraint.excludeIds ?? []) excluded.add(id);
-  }
+  const excluded = excludedIds(constraints);
   const usable = renditions.filter((r) => !excluded.has(r.id));
   const pool = [...(usable.length > 0 ? usable : renditions)].sort((a, b) => a.bitrate - b.bitrate);
   // An excluded active rendition (its playlist failed, its pathway lost)
@@ -177,13 +235,16 @@ export function groupOf(trackId: string): string {
   return colon === -1 ? trackId : trackId.slice(0, colon);
 }
 
-/** Companion groups present, as `contentType:groupId`, for the coupling filter. */
+/**
+ * Companion groups present, as `contentType:groupId`, for the coupling
+ * filter. A track offered in several audio groups counts in each.
+ */
 export function availableGroups(kernel: Readonly<KernelState>): ReadonlySet<string> {
   const groups = new Set<string>();
   for (const period of kernel.presentation?.periods ?? []) {
     for (const track of period.tracks) {
       if (track.contentType === 'audio' || track.contentType === 'text') {
-        groups.add(`${track.contentType}:${groupOf(track.id)}`);
+        for (const r of track.renditions) groups.add(`${track.contentType}:${groupOf(r.id)}`);
       }
     }
   }
@@ -209,10 +270,22 @@ export function activeRenditions(
     for (const period of kernel.presentation?.periods ?? []) {
       for (const track of period.tracks) {
         if (track.id !== trackId) continue;
+        // Audio: only the group the kernel plays, not every encoding of
+        // the soundtrack.
         const candidates =
           contentType === 'video'
             ? ladderNeighbours(track.renditions, videoId, kernel.quality.constraints)
-            : track.renditions;
+            : contentType === 'audio'
+              ? audioInGroup(
+                  track.renditions,
+                  audioGroup(
+                    track.renditions,
+                    kernel.presentation?.couplings ?? [],
+                    kernel.quality.constraints,
+                    videoId,
+                  ),
+                )
+              : track.renditions;
         for (const rendition of candidates) out.push({ contentType, rendition });
       }
     }
@@ -240,9 +313,10 @@ export function withDeadGroups(presentation: Presentation, dead: ReadonlySet<str
   for (const period of presentation.periods) {
     for (const track of period.tracks) {
       if (track.contentType !== 'audio') continue;
-      const group = groupOf(track.id);
-      known.add(group);
-      if (track.renditions.some((r) => !dead.has(r.id))) alive.add(group);
+      for (const r of track.renditions) {
+        known.add(groupOf(r.id));
+        if (!dead.has(r.id)) alive.add(groupOf(r.id));
+      }
     }
   }
   for (const { renditionId, requires } of presentation.couplings) {
@@ -320,10 +394,25 @@ export function arbitrate(ctx: ArbitrationContext): ArbitrationOutcome {
     });
   }
 
+  // 3b. Variants that read one video playlist differ only by audio group:
+  // one video stream. Keep the one in the audio group the active audio
+  // track plays, so ABR never steps between them and changes the audio
+  // codec. A stream with no variant in that group keeps them all, and the
+  // audio follows the variant chosen.
+  if (ctx.audio !== undefined) {
+    const group = audioGroup(ctx.audio, ctx.couplings, ctx.constraints, ctx.current);
+    const needs = (r: Rendition) =>
+      ctx.couplings.find((c) => c.renditionId === r.id)?.requires.audio;
+    const covered = new Set(allowed.filter((r) => needs(r) === group).map(streamOf));
+    allowed = allowed.filter((r) => needs(r) === group || !covered.has(streamOf(r)));
+  }
+
   const allowedIds = allowed.map((r) => r.id);
 
   // 4. A pin that survives is used; a pin excluded by constraints clamps
   // to the nearest allowed rendition, with a warning, never a black screen.
+  // A pin on a variant of an allowed video stream resolves to it with no
+  // warning: the viewer picked the video, which still plays.
   if (ctx.pinned !== null) {
     if (allowedIds.includes(ctx.pinned)) {
       return {
@@ -338,12 +427,17 @@ export function arbitrate(ctx: ArbitrationContext): ArbitrationOutcome {
     }
     const target = ctx.renditions.find((r) => r.id === ctx.pinned);
     if (target !== undefined) {
-      const clamped = closestByBitrate(allowed, target);
-      events.push({
-        kind: 'emit',
-        event: 'quality:pin-unsatisfiable',
-        payload: { pinned: ctx.pinned, resolved: clamped.id },
-      });
+      const sibling = allowed.find(
+        (r) => target.playlistUrl !== undefined && streamOf(r) === streamOf(target),
+      );
+      const clamped = sibling ?? closestByBitrate(allowed, target);
+      if (sibling === undefined) {
+        events.push({
+          kind: 'emit',
+          event: 'quality:pin-unsatisfiable',
+          payload: { pinned: ctx.pinned, resolved: clamped.id },
+        });
+      }
       return {
         result: {
           allowed: allowedIds,

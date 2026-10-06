@@ -193,6 +193,31 @@ describe('alt-audio: group following', () => {
     ).toBe(false);
   });
 
+  it('a track offered in both groups needs no switch: the kernel plays its other rendition', () => {
+    const base = coupledPresentation();
+    const period = base.periods[0] as Presentation['periods'][number];
+    const lo = audioTrack('en', 'aud-lo', 'en', true);
+    const hi = audioTrack('en', 'aud-hi', 'en', true);
+    const presentation: Presentation = {
+      ...base,
+      periods: [
+        {
+          ...period,
+          tracks: [
+            ...period.tracks.filter((t) => t.contentType === 'video'),
+            { ...lo, renditions: [...lo.renditions, ...hi.renditions] },
+            audioTrack('fr', 'aud-hi', 'fr', false),
+          ],
+        },
+      ],
+    };
+    const state = ready('v-hi', 'aud-lo:en', presentation);
+    const { effects } = settle(reduce, ...reduce(state, load));
+    expect(
+      effects.some((e) => e.kind === 'schedule' && (e.then as Message).type === 'SELECT_TRACK'),
+    ).toBe(false);
+  });
+
   it('a user language choice sticks across a group switch', () => {
     let state = ready('v-lo', 'aud-lo:en');
     // The user picks French.

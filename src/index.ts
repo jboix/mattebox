@@ -15,7 +15,7 @@ import { createMseController, decodable } from './kernel/mse.js';
 import { createSegmentPreparer } from './kernel/prepare.js';
 import { findTrackSite, isTrick } from './kernel/presentation.js';
 import { createReducer, initialState, resolveConfig } from './kernel/reducer.js';
-import { availableGroups, createArbiter } from './kernel/rendition-select.js';
+import { activeAudio, availableGroups, createArbiter } from './kernel/rendition-select.js';
 import { createMseSink } from './kernel/sinks/mse-sink.js';
 import type { CueSink } from './kernel/sinks/text-track-sink.js';
 import { createTrackRegistry } from './kernel/track-registry.js';
@@ -273,6 +273,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
 
   function arbitrated() {
     const state = bus.getState();
+    const audio = activeAudio(state);
     return arbiter.run(
       {
         renditions: activeVideoRenditions(),
@@ -282,6 +283,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
         couplings: state.presentation?.couplings ?? [],
         activeTracks: state.tracks.active,
         availableGroups: availableGroups(state),
+        ...(audio !== undefined ? { audio } : {}),
         telemetry: {
           throughputEwma: state.stats.throughputEwma,
           throughputFastEwma: state.stats.throughputFastEwma,
@@ -289,7 +291,8 @@ export function mattebox(options: MatteboxOptions): Mattebox {
           currentTime: state.playback.currentTime,
         },
       },
-      state.quality.version,
+      // The active rendition picks among variants that differ by audio group.
+      `${state.quality.version}:${state.quality.active}`,
     );
   }
 

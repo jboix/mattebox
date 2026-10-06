@@ -224,11 +224,27 @@ export interface Rendition {
   readonly maxPlayoutRate?: number;
   /** The HLS date ranges (EXT-X-DATERANGE) this rendition's playlist carries now. */
   readonly dateRanges?: readonly DateRange[];
+  /**
+   * The audio channel count: HLS CHANNELS (its first parameter), DASH
+   * AudioChannelConfiguration. 2 is stereo, 6 is 5.1. Absent when the
+   * manifest does not say.
+   */
+  readonly channels?: number;
+  /**
+   * The object-based audio coding, as HLS CHANNELS writes it in its second
+   * parameter: 'JOC' is Dolby Atmos in E-AC-3. Absent for channel-based audio.
+   */
+  readonly audioObjects?: string;
 }
 
 /**
  * A generic track descriptor. Parsers must never branch on content type to
  * construct typed objects; the kernel routes on `contentType` and `mimeType`.
+ *
+ * An HLS audio track can hold one rendition per audio group: the same
+ * soundtrack offered in several encodings (AAC stereo, AC-3 5.1). Selecting
+ * the track selects the soundtrack; the kernel plays the rendition in the
+ * group the video variant needs, and the browser can decode.
  */
 export interface Track {
   readonly id: TrackId;

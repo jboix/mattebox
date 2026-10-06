@@ -109,6 +109,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-2c-time
           "renditions": [
             {
               "bitrate": 33432,
+              "channels": 2,
               "codecs": "mp4a.40.29",
               "id": "4",
               "init": {
@@ -377,6 +378,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-akamai-
           "renditions": [
             {
               "bitrate": 67071,
+              "channels": 2,
               "codecs": "mp4a.40.5",
               "id": "bbb_a64k",
               "init": {
@@ -643,6 +645,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-bbb-4-t
           "renditions": [
             {
               "bitrate": 67071,
+              "channels": 2,
               "codecs": "mp4a.40.5",
               "id": "bbb_a64k",
               "init": {
@@ -940,6 +943,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-bbb-mul
           "renditions": [
             {
               "bitrate": 67071,
+              "channels": 2,
               "codecs": "mp4a.40.5",
               "id": "bbb_a64k",
               "init": {
@@ -1260,6 +1264,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-bbb-til
           "renditions": [
             {
               "bitrate": 67071,
+              "channels": 2,
               "codecs": "mp4a.40.5",
               "id": "bbb_a64k",
               "init": {
@@ -1347,6 +1352,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-livesim
           "renditions": [
             {
               "bitrate": 48000,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "A48",
               "init": {
@@ -1436,6 +1442,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > dashif-livesim
           "renditions": [
             {
               "bitrate": 48000,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "A48",
               "init": {
@@ -3077,6 +3084,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
           "renditions": [
             {
               "bitrate": 135088,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "5",
               "init": {
@@ -3099,6 +3107,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
             },
             {
               "bitrate": 392386,
+              "channels": 6,
               "codecs": "mp4a.40.2",
               "id": "10",
               "init": {
@@ -3208,6 +3217,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
           "renditions": [
             {
               "bitrate": 135062,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "6",
               "init": {
@@ -3313,6 +3323,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
           "renditions": [
             {
               "bitrate": 135302,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "7",
               "init": {
@@ -3418,6 +3429,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
           "renditions": [
             {
               "bitrate": 135314,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "8",
               "init": {
@@ -3523,6 +3535,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
           "renditions": [
             {
               "bitrate": 133543,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "9",
               "init": {
@@ -3835,6 +3848,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
           "renditions": [
             {
               "bitrate": 155429,
+              "channels": 2,
               "codecs": "opus",
               "id": "20",
               "init": {
@@ -3940,6 +3954,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
           "renditions": [
             {
               "bitrate": 97774,
+              "channels": 2,
               "codecs": "opus",
               "id": "21",
               "init": {
@@ -4045,6 +4060,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
           "renditions": [
             {
               "bitrate": 155048,
+              "channels": 2,
               "codecs": "opus",
               "id": "22",
               "init": {
@@ -4150,6 +4166,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
           "renditions": [
             {
               "bitrate": 152381,
+              "channels": 2,
               "codecs": "opus",
               "id": "23",
               "init": {
@@ -4172,6 +4189,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
             },
             {
               "bitrate": 438096,
+              "channels": 6,
               "codecs": "opus",
               "id": "24",
               "init": {
@@ -4281,6 +4299,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > shaka-angel-on
           "renditions": [
             {
               "bitrate": 152381,
+              "channels": 2,
               "codecs": "opus",
               "id": "25",
               "init": {
@@ -4330,6 +4349,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > unified-tears.
           "renditions": [
             {
               "bitrate": 64008,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "audio_eng=64008",
               "init": {
@@ -5269,6 +5289,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > unified-tears.
             },
             {
               "bitrate": 128002,
+              "channels": 2,
               "codecs": "mp4a.40.2",
               "id": "audio_eng=128002",
               "init": {
