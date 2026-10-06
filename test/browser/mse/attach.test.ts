@@ -161,6 +161,9 @@ describe('ManagedMediaSource', () => {
     expect(stack.controller.isManaged()).toBe(true);
     expect(stack.el.disableRemotePlayback).toBe(true);
     stack.controller.detach();
+    // The next source may have an AirPlay alternative: detach gives the
+    // flag back, whatever the element had before (some engines lack it).
+    expect(stack.el.disableRemotePlayback).not.toBe(true);
   });
 
   it.runIf(hasMms)('opens with remote playback enabled behind an AirPlay alternative', async () => {

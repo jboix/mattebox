@@ -128,6 +128,8 @@ export function createMseController(options: MseControllerOptions): MseControlle
   let pendingDuration: number | null = null;
   let pendingLiveRange: { start: number; end: number } | null = null;
   let unobserveManaged: (() => void) | null = null;
+  /** The element's remote playback flag before the managed path set it; null when it did not. */
+  let remotePlaybackBefore: boolean | null = null;
 
   // Every listener goes through these so detach can prove it removed them
   // all; "the player leaks listeners per navigation" starts with one stray
@@ -347,7 +349,10 @@ export function createMseController(options: MseControllerOptions): MseControlle
       // Safari opens a ManagedMediaSource only with remote playback
       // disabled or with an AirPlay source alternative. With an
       // alternative the flag would take the AirPlay target away again.
-      if (airplay === undefined) el.disableRemotePlayback = true;
+      if (airplay === undefined) {
+        remotePlaybackBefore = el.disableRemotePlayback;
+        el.disableRemotePlayback = true;
+      }
     }
 
     if (airplay !== undefined) {
@@ -425,6 +430,9 @@ export function createMseController(options: MseControllerOptions): MseControlle
       // still has a `<source>`, so leaving them would refuse the next attach.
       for (const node of sourceNodes) node.remove();
       sourceNodes = [];
+      // The next source may be one an AirPlay target can play; a flag left
+      // set would take the target away from it.
+      if (remotePlaybackBefore !== null) el.disableRemotePlayback = remotePlaybackBefore;
       if ('srcObject' in el) el.srcObject = null;
       el.removeAttribute('src');
       if (objectUrl !== null) {
@@ -440,6 +448,7 @@ export function createMseController(options: MseControllerOptions): MseControlle
     element = null;
     mediaSource = null;
     managed = false;
+    remotePlaybackBefore = null;
     attachOptions = undefined;
     pendingEndOfStream = null;
     pendingDuration = null;
