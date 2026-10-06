@@ -1,9 +1,13 @@
 /**
  * FairPlay Streaming: the non-standard SPC/CKC flow. Safari only, and it
- * differs from CENC enough to warrant its own stage — the CDM message is
- * an SPC to POST as form data, the response is a CKC, and the content id
- * comes from the skd:// URI the hls parser stored in licenseUrl. Registers
- * a handler; eme-core drives it, including the certificate fetch.
+ * differs from CENC enough to warrant its own stage: the CDM message is an
+ * SPC to POST, the response is a CKC, and the content id comes from the
+ * skd:// URI the hls parser stored in licenseUrl. Registers a handler;
+ * eme-core drives it, including the certificate fetch.
+ *
+ * Key servers differ in the body they take. Most, Irdeto's among them,
+ * take the SPC bytes as they are; some take an `spc=` form field with the
+ * SPC in base64. The `licenseBody` option picks one.
  */
 import { base64ToBytes, bytesToBase64 } from '../../kernel/base64.js';
 import type { Stage } from '../../types/stage.js';
@@ -41,6 +45,11 @@ export function parseCkcResponse(response: ArrayBuffer): ArrayBuffer | Uint8Arra
 export interface FairPlayOptions {
   /** The FairPlay application certificate URL; required for a real handshake. */
   readonly certificateUrl?: string;
+  /**
+   * How the SPC goes to the key server: `binary`, the bytes as they are
+   * (the default), or `form`, an `spc=` field with the SPC in base64.
+   */
+  readonly licenseBody?: 'binary' | 'form';
 }
 
 export default function emeFairplay(options: FairPlayOptions = {}): Stage {
@@ -53,8 +62,15 @@ export default function emeFairplay(options: FairPlayOptions = {}): Stage {
         keySystem: 'com.apple.fps',
         systemIds: [FAIRPLAY_SYSTEM_ID],
         initDataTypes: ['sinf', 'skd'],
-        licenseHeaders: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        buildLicenseRequest: buildSpcRequest,
+        ...(options.licenseBody === 'form'
+          ? {
+              licenseHeaders: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              buildLicenseRequest: buildSpcRequest,
+            }
+          : {
+              licenseHeaders: { 'Content-Type': 'application/octet-stream' },
+              buildLicenseRequest: (message: ArrayBuffer) => message,
+            }),
         parseLicenseResponse: parseCkcResponse,
         fairplay: {
           ...(options.certificateUrl !== undefined

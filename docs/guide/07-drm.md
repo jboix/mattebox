@@ -98,6 +98,26 @@ before encrypted media plays. Closing a temporary session stops its
 renewals; how soon the server frees the stream depends on its license
 duration.
 
+## FairPlay
+
+FairPlay needs the application certificate from your key server. Pass its
+URL as `certificateUrl`. `eme-core` fetches it before the first session.
+
+```ts
+emeFairplay({ certificateUrl: 'https://license.example.com/fairplay.cer' });
+```
+
+Key servers differ in the license request body they accept.
+
+| `licenseBody`      | Sends                                                         |
+| ------------------ | ------------------------------------------------------------- |
+| `binary` (default) | The SPC bytes, as `application/octet-stream`                  |
+| `form`             | An `spc=` field with the SPC in base64, as a URL-encoded form |
+
+FairPlay HLS in MPEG-TS uses SAMPLE-AES. Only Safari's own player decrypts
+it, so it plays through native HLS (see "DRM without the engine" below),
+not through the engine. FairPlay in fMP4 (`cbcs`) plays through both.
+
 ## ClearKey
 
 ClearKey needs no server. Give the stage the keys and it answers license

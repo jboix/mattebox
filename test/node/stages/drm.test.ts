@@ -101,6 +101,32 @@ describe('eme-fairplay shaping', () => {
   });
 });
 
+describe('eme-fairplay license body', () => {
+  async function handler(options?: { licenseBody?: 'binary' | 'form' }) {
+    const { default: emeFairplay } = await import('../../../src/stages/eme-fairplay/index.js');
+    emeFairplay(options).install({} as never);
+    return keySystemHandlers().find((h) => h.keySystem === 'com.apple.fps');
+  }
+
+  it('sends the SPC bytes as they are by default', async () => {
+    const fps = await handler();
+    const spc = bytes('SPC-BYTES');
+    expect(fps?.licenseHeaders).toEqual({ 'Content-Type': 'application/octet-stream' });
+    expect(new Uint8Array(fps?.buildLicenseRequest(spc) as ArrayBuffer)).toEqual(
+      new Uint8Array(spc),
+    );
+  });
+
+  it('sends an spc= form field when asked', async () => {
+    const fps = await handler({ licenseBody: 'form' });
+    expect(fps?.licenseHeaders).toEqual({
+      'Content-Type': 'application/x-www-form-urlencoded',
+    });
+    const body = new TextDecoder().decode(fps?.buildLicenseRequest(bytes('SPC-BYTES')));
+    expect(body).toBe(`spc=${encodeURIComponent(btoa('SPC-BYTES'))}`);
+  });
+});
+
 describe('the manifest DRM route', () => {
   const reduce = createReducer();
 
