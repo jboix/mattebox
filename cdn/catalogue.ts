@@ -6,6 +6,7 @@
 
 import packedAudio from '../src/containers/packed-audio/index.js';
 import tsTransmux from '../src/containers/ts-transmux/index.js';
+import { attachEme } from '../src/eme/index.js';
 import dashCmaf from '../src/protocols/dash-cmaf/index.js';
 import dashLive from '../src/protocols/dash-live/index.js';
 import hlsCmaf from '../src/protocols/hls-cmaf/index.js';
@@ -65,7 +66,9 @@ export const baseFactories = {
 };
 /** The TS tier. ts-transmux runs its one compiled copy, from cdn/transmux-source.ts. */
 export const tsFactories = { tsTransmux, packedAudio, metaId3 };
-export const drmFactories = { emeCore, emeCenc, emeFairplay };
+// attachEme: the same DRM on an element the engine does not drive, such as
+// Safari playing HLS natively. A player's own CDN bundle reads it here.
+export const drmFactories = { emeCore, emeCenc, emeFairplay, attachEme };
 export const accessoryFactories = {
   cmcd,
   thumbnails,

@@ -53,14 +53,15 @@ returns the engine attached to an element.
 
 ## The mattebox global
 
-| Member                       | Is                                                                |
-| ---------------------------- | ----------------------------------------------------------------- |
-| `mattebox(options)`          | The engine factory, for building a stack from the stage factories |
-| `mattebox.preset(options)`   | The bundle's preset: defaults, `config`, `stages`, `without`      |
-| `mattebox.preset.stages()`   | The preset's stage list, with the same merge applied              |
-| `mattebox.hlsCmaf()`, ...    | The stage factories the bundle carries                            |
-| `mattebox.from(video)`       | The engine attached to an element                                 |
-| `mattebox.isSdh(track)`, ... | The track label functions from [chapter 06](06-audio-and-text.md) |
+| Member                       | Is                                                                     |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| `mattebox(options)`          | The engine factory, for building a stack from the stage factories      |
+| `mattebox.preset(options)`   | The bundle's preset: defaults, `config`, `stages`, `without`           |
+| `mattebox.preset.stages()`   | The preset's stage list, with the same merge applied                   |
+| `mattebox.hlsCmaf()`, ...    | The stage factories the bundle carries                                 |
+| `mattebox.from(video)`       | The engine attached to an element                                      |
+| `mattebox.isSdh(track)`, ... | The track label functions from [chapter 06](06-audio-and-text.md)      |
+| `mattebox.attachEme(video)`  | DRM without an engine, in the DRM bundles; see [chapter 07](07-drm.md) |
 
 The preset options are the ones [chapter 02](02-presets-and-stages.md)
 describes. Replacing a stage by name is how you pass it options.

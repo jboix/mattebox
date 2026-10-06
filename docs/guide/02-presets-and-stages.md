@@ -20,6 +20,7 @@ Every stage has its own import path.
 | `mattebox/protocols/<name>`  | Protocols  | `hls-cmaf`, `hls-live`, `dash-cmaf`, `dash-live` |
 | `mattebox/containers/<name>` | Containers | `ts-transmux`, `packed-audio`                    |
 | `mattebox/stages/<name>`     | Stages     | `abr`, `text-webvtt`, `eme-core`, `recovery`     |
+| `mattebox/eme`               | DRM alone  | `attachEme`, without an engine                   |
 
 ```ts
 import hlsCmaf from 'mattebox/protocols/hls-cmaf';
@@ -163,7 +164,7 @@ the transmux Worker inside.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../preset-chart-dark.svg">
-  <img alt="Bundle size of every Mattebox preset, min+gzip, one file each. kernel 22.2 KB, hls 44.1 KB, dash 45.4 KB, dual 52.3 KB, dual-ts-drm 62.7 KB, full 79.8 KB." src="../preset-chart-light.svg">
+  <img alt="Bundle size of every Mattebox preset, min+gzip, one file each. kernel 22.2 KB, hls 44.1 KB, dash 45.4 KB, dual 52.3 KB, dual-ts-drm 63.1 KB, full 80.1 KB." src="../preset-chart-light.svg">
 </picture>
 
 ## Kernel config

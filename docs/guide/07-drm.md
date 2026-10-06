@@ -127,6 +127,46 @@ engine.drm.sessions;  // [{ keyId, status }]
 A license failure is fatal. Output restrictions and expired keys carry their
 own codes. [Chapter 09](09-events-and-errors.md) lists them.
 
+## DRM without the engine
+
+On Safari you can play HLS natively by setting `video.src`. The engine does
+not run then, but encrypted content still needs a license. `attachEme`
+from `mattebox/eme` runs the same `eme-core` and key-system code on the
+element, without an engine.
+
+```ts
+import { attachEme } from 'mattebox/eme';
+import emeFairplay from 'mattebox/stages/eme-fairplay';
+
+const drm = attachEme(video, {
+  keySystems: [emeFairplay({ certificateUrl: 'https://license.example.com/fairplay.cer' })],
+  licenseUrl: 'https://license.example.com/fairplay',
+  requestHook: (request) => {
+    request.headers.Authorization = `Bearer ${token}`;
+  },
+});
+video.src = 'https://cdn.example.com/stream.m3u8';
+
+drm.on('drm:keysystem', () => console.log(drm.drm.keySystem));
+drm.on('error', (error) => console.error(error.code));
+
+// When the session ends:
+drm.detach();
+```
+
+- Call `attachEme` before you set `src`, so no `encrypted` event is missed.
+- It takes the `eme-core` options from the table above, except
+  `releaseOnSuspend`. Call `detach()` and attach again instead.
+- `keySystems` lists the key-system stages to offer. ClearKey needs none.
+- `requestHook` rewrites the URL and headers of license and certificate
+  requests. The engine's request hooks do not apply, since no engine runs.
+- Init data comes only from the element's `encrypted` event.
+- `drm.drm` is the same API as `engine.drm`. `drm.on` takes the events in
+  the table above.
+- `detach()` closes every key session and clears the element's MediaKeys.
+
+The CDN bundles that carry DRM have it as `mattebox.attachEme`.
+
 ## Example
 
 A protected DASH and HLS player with a status pill.

@@ -33,6 +33,11 @@
       "modern": "./dist/index.js",
       "default": "./dist/es2015/index.js"
     },
+    "./eme": {
+      "types": "./dist/eme/index.d.ts",
+      "modern": "./dist/eme/index.js",
+      "default": "./dist/es2015/eme/index.js"
+    },
     "./stages/*": {
       "types": "./dist/stages/*/index.d.ts",
       "modern": "./dist/stages/*/index.js",
@@ -57,6 +62,9 @@
   },
   "typesVersions": {
     "*": {
+      "eme": [
+        "./dist/eme/index.d.ts"
+      ],
       "stages/*": [
         "./dist/stages/*/index.d.ts"
       ],

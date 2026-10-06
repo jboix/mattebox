@@ -1,4 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
+import { attachEme } from '../../src/eme/index.js';
 import type { Player } from './harness.js';
 import { boot, disposeAll, encryptedEvent, hasEme, play, sleep } from './harness.js';
 
@@ -81,3 +82,24 @@ it.skipIf(!hasEme)(
     expect(player.engine.error?.code ?? null).toBeNull();
   },
 );
+
+it.skipIf(!hasEme)('53. attachEme licenses a key on an element without an engine', async () => {
+  // The native HLS case: no engine, only the element and its `encrypted` event.
+  const video = document.createElement('video');
+  const attachment = attachEme(video, {
+    clearKeys: { [KID]: 'ABEiM0RVZneImaq7zN3u_w' },
+  });
+  try {
+    video.dispatchEvent(
+      encryptedEvent('keyids', new TextEncoder().encode(JSON.stringify({ kids: [KID] })).buffer),
+    );
+    for (let i = 0; i < 60 && attachment.drm.sessions.length === 0; i += 1) await sleep(250);
+    expect(attachment.drm.keySystem).toBe('org.w3.clearkey');
+    expect(attachment.drm.sessions).toEqual([{ keyId: KID, status: 'usable' }]);
+    expect(video.mediaKeys).not.toBeNull();
+  } finally {
+    attachment.detach();
+  }
+  for (let i = 0; i < 20 && video.mediaKeys !== null; i += 1) await sleep(50);
+  expect(video.mediaKeys).toBeNull();
+});
