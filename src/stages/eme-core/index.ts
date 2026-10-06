@@ -30,6 +30,11 @@ import { keySystemHandlers, normalizeSystemId } from '../drm-shared.js';
 export interface EmeOptions {
   /** License server URL, when the manifest does not carry one. */
   readonly licenseUrl?: string;
+  /**
+   * The FairPlay application certificate URL, for a FairPlay stage built
+   * without one: a player then passes it with the license URL.
+   */
+  readonly certificateUrl?: string;
   /** Per-key-system license URLs, overriding `licenseUrl`. */
   readonly licenseUrls?: Readonly<Record<string, string>>;
   /** Rewrites the license request before it is sent (auth tokens, wrapping). */
@@ -52,6 +57,8 @@ export interface DrmApi {
   readonly sessions: ReadonlyArray<{ readonly keyId: string; readonly status: string }>;
   /** Sets or replaces the license server URL at runtime. */
   setLicenseUrl(url: string): void;
+  /** Sets the FairPlay certificate URL at runtime, before the key system is chosen. */
+  setCertificateUrl(url: string): void;
 }
 
 declare module '../../index.js' {
@@ -125,6 +132,7 @@ export default function emeCore(options: EmeOptions = {}): Stage {
       let keySystem: string | null = null;
       let handler: KeySystemHandler | null = null;
       let licenseUrl = options.licenseUrl ?? null;
+      let certificateUrl = options.certificateUrl;
       const statuses = new Map<string, string>();
       // Dedup by init data: one session per blob, whichever route delivered it.
       const initDataSeen = new Set<string>();
@@ -144,6 +152,9 @@ export default function emeCore(options: EmeOptions = {}): Stage {
         },
         setLicenseUrl(url) {
           licenseUrl = url;
+        },
+        setCertificateUrl(url) {
+          certificateUrl = url;
         },
       };
       ctx.registerNamespace('drm', api);
@@ -192,11 +203,16 @@ export default function emeCore(options: EmeOptions = {}): Stage {
             );
             const keys = await access.createMediaKeys();
             if (disposed) return false;
-            if (candidate.fairplay?.certificateUrl !== undefined) {
-              const url = candidate.fairplay.certificateUrl;
-              const response = await ctx.request(url, {});
+            const certificate =
+              candidate.fairplay === undefined
+                ? undefined
+                : (candidate.fairplay.certificateUrl ?? certificateUrl);
+            if (certificate !== undefined) {
+              const response = await ctx.request(certificate, {});
               // An error page is not a certificate; the CDM would reject it with no reason.
-              if (!response.ok) throw new Error(`certificate ${url}: HTTP ${response.status}`);
+              if (!response.ok) {
+                throw new Error(`certificate ${certificate}: HTTP ${response.status}`);
+              }
               await keys.setServerCertificate(await response.arrayBuffer());
             }
             await element.setMediaKeys(keys);

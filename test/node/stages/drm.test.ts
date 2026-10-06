@@ -270,6 +270,81 @@ describe('eme-core certificate fetch', () => {
   });
 });
 
+describe('eme-core certificate URL', () => {
+  it('fetches the certificate eme-core was given when the FairPlay stage has none', async () => {
+    const SYSTEM_ID = '0f0e0d0c-0b0a-4908-8706-050403020100';
+    registerKeySystem({
+      keySystem: 'com.example.certificate-option',
+      systemIds: [SYSTEM_ID],
+      initDataTypes: ['skd'],
+      buildLicenseRequest: (m) => m,
+      parseLicenseResponse: (r) => r,
+      fairplay: { contentId: () => '' },
+    });
+    const certificates: unknown[] = [];
+    const original = navigator.requestMediaKeySystemAccess;
+    Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+      configurable: true,
+      value: async (keySystem: string) => {
+        if (keySystem !== 'com.example.certificate-option') throw new Error('unsupported');
+        return {
+          createMediaKeys: async () => ({
+            setServerCertificate: async (cert: ArrayBuffer) => {
+              certificates.push(new TextDecoder().decode(cert));
+              return true;
+            },
+          }),
+        };
+      },
+    });
+    try {
+      const requested: string[] = [];
+      let drm: { setCertificateUrl(url: string): void } | null = null;
+      let onProtection: ((payload: unknown) => void) | null = null;
+      emeCore({ certificateUrl: 'https://cdn.example/old.der' }).install({
+        element: {
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+          setMediaKeys: async () => undefined,
+        },
+        registerNamespace: (_name: string, api: unknown) => {
+          drm = api as typeof drm;
+        },
+        request: async (url: string) => {
+          requested.push(url);
+          return new Response('CERT');
+        },
+        emit: () => undefined,
+        on: (event: string, fn: (payload: unknown) => void) => {
+          if (event === 'presentation:protection') onProtection = fn;
+          return () => undefined;
+        },
+      } as unknown as StageContext);
+      // The page sets the URL after the engine exists, as the player's attribute does.
+      (drm as unknown as { setCertificateUrl(url: string): void }).setCertificateUrl(
+        'https://cdn.example/cert.der',
+      );
+      (onProtection as unknown as (payload: unknown) => void)([
+        {
+          systemId: SYSTEM_ID,
+          scheme: null,
+          keyId: null,
+          licenseUrl: null,
+          initData: null,
+          initDataType: null,
+        },
+      ]);
+      await vi.waitFor(() => expect(certificates).toEqual(['CERT']));
+      expect(requested).toEqual(['https://cdn.example/cert.der']);
+    } finally {
+      Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+        configurable: true,
+        value: original,
+      });
+    }
+  });
+});
+
 describe('eme-core license renewal', () => {
   const SYSTEM_ID = '5e629af5-38da-4063-8977-97ffbd9902d4';
   const KEY_ID = new Uint8Array(16).fill(7).buffer;

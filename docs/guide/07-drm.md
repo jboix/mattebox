@@ -43,6 +43,7 @@ changes nothing there.
 | Option                | Meaning                                                              |
 | --------------------- | -------------------------------------------------------------------- |
 | `licenseUrl`          | One server for every key system                                      |
+| `certificateUrl`      | The FairPlay certificate, when the `eme-fairplay` stage has none     |
 | `licenseUrls`         | A server per key system, keyed by name such as `com.widevine.alpha`  |
 | `requestFilter`       | Rewrites the license request body, for auth tokens or wrapping       |
 | `preferredKeySystems` | The order to try when the content offers several                     |
@@ -105,6 +106,13 @@ URL as `certificateUrl`. `eme-core` fetches it before the first session.
 
 ```ts
 emeFairplay({ certificateUrl: 'https://license.example.com/fairplay.cer' });
+```
+
+A player that builds its stages from a preset can pass the certificate to
+`eme-core` instead, as `certificateUrl` or at runtime:
+
+```ts
+engine.drm.setCertificateUrl('https://license.example.com/fairplay.cer');
 ```
 
 Key servers differ in the license request body they accept.
