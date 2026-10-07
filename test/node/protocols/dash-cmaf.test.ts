@@ -559,6 +559,26 @@ describe('video range', () => {
   });
 });
 
+describe('supplemental codecs', () => {
+  it('reads @scte214:supplementalCodecs from the Representation or its AdaptationSet', () => {
+    const mpd = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" xmlns:scte214="urn:scte:dash:scte214-extensions" type="static" mediaPresentationDuration="PT1M">
+  <Period>
+    <AdaptationSet id="v" mimeType="video/mp4" scte214:supplementalCodecs="dvh1.08.07">
+      <SegmentTemplate media="v-$RepresentationID$-$Number$.m4s" initialization="v-$RepresentationID$.mp4" duration="6" timescale="1"/>
+      <Representation id="set" bandwidth="4000000" codecs="hvc1.2.4.L123.B0" width="1920" height="1080"/>
+      <Representation id="own" bandwidth="6000000" codecs="hvc1.2.4.L123.B0" width="1920" height="1080" scte214:supplementalCodecs="dvh1.08.09"/>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+    const tracks = parse(mpd, BASE).presentation?.periods[0]?.tracks ?? [];
+    expect(tracks[0]?.renditions.map((r) => [r.id, r.supplementalCodecs])).toEqual([
+      ['set', 'dvh1.08.07'],
+      ['own', 'dvh1.08.09'],
+    ]);
+  });
+});
+
 describe('audio channels', () => {
   it('reads AudioChannelConfiguration in the MPEG, CICP, and Dolby schemes', () => {
     const config = (scheme: string, value: string) =>

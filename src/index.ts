@@ -15,7 +15,12 @@ import { createMseController, decodable } from './kernel/mse.js';
 import { createSegmentPreparer } from './kernel/prepare.js';
 import { findTrackSite, isTrick } from './kernel/presentation.js';
 import { createReducer, initialState, resolveConfig } from './kernel/reducer.js';
-import { activeAudio, availableGroups, createArbiter } from './kernel/rendition-select.js';
+import {
+  activeAudio,
+  availableGroups,
+  createArbiter,
+  exclusionsOf,
+} from './kernel/rendition-select.js';
 import { createMseSink } from './kernel/sinks/mse-sink.js';
 import type { CueSink } from './kernel/sinks/text-track-sink.js';
 import { createTrackRegistry } from './kernel/track-registry.js';
@@ -249,6 +254,8 @@ export function mattebox(options: MatteboxOptions): Mattebox {
   });
 
   const arbiter = createArbiter();
+  // Its own memo, so reading the offer never evicts the arbitration.
+  const offerArbiter = createArbiter();
   // Shared with the stage contexts: the abr stage sets `abr` at install and
   // the reducer reads it live through this object.
   const hooks: HookRegistry = { manifestTypes: composition.manifestTypes, decodable };
@@ -271,14 +278,20 @@ export function mattebox(options: MatteboxOptions): Mattebox {
     return [];
   }
 
-  function arbitrated() {
+  /**
+   * The arbitration, or with `offer`, the same without the numeric caps and
+   * the pin: what a viewer may pick from. A cap is a preference a pin may
+   * go past; an exclusion (codecs, ids, HDR) is what cannot play.
+   */
+  function arbitrated(offer?: boolean) {
     const state = bus.getState();
     const audio = activeAudio(state);
-    return arbiter.run(
+    const constraints = offer ? exclusionsOf(state.quality.constraints) : state.quality.constraints;
+    return (offer ? offerArbiter : arbiter).run(
       {
         renditions: activeVideoRenditions(),
-        constraints: state.quality.constraints,
-        pinned: state.quality.pinned,
+        constraints,
+        pinned: offer ? null : state.quality.pinned,
         current: state.quality.active,
         couplings: state.presentation?.couplings ?? [],
         activeTracks: state.tracks.active,
@@ -340,6 +353,10 @@ export function mattebox(options: MatteboxOptions): Mattebox {
       },
       get allowed() {
         const ids = arbitrated().result.allowed;
+        return activeVideoRenditions().filter((r) => ids.includes(r.id));
+      },
+      get selectable() {
+        const ids = arbitrated(true).result.allowed;
         return activeVideoRenditions().filter((r) => ids.includes(r.id));
       },
       get active() {

@@ -9,6 +9,7 @@ import {
   arbitrate,
   audioGroup,
   audioInGroup,
+  exclusionsOf,
 } from '../../../src/kernel/rendition-select.js';
 import { parse } from '../../../src/protocols/hls-cmaf/parse.js';
 import type { AbrChooser } from '../../../src/types/quality.js';
@@ -214,5 +215,53 @@ describe('through the reducer', () => {
     const kernel: KernelState = state;
     const audio = activeRenditions(kernel, ['audio'], kernel.quality.active);
     expect(audio.map((entry) => entry.rendition.id)).toEqual(['aud1:English']);
+  });
+});
+
+describe('what a viewer may pick (quality.selectable)', () => {
+  it('one entry per video stream, numeric caps ignored, exclusions kept', () => {
+    const presentation = apple();
+    const video = trackOf(presentation, 'video').renditions;
+    const lowest = [...video].sort((a, b) => a.bitrate - b.bitrate)[0] as Rendition;
+    // The lowest video stream fails in every audio group.
+    const failed = video.filter((r) => r.playlistUrl === lowest.playlistUrl).map((r) => r.id);
+    const constraints = new Map([
+      ['user', { maxHeight: 360 }],
+      ['recovery', { excludeIds: failed }],
+    ]);
+    const capped = arbitrate(context(presentation, { constraints }));
+    const offer = arbitrate(
+      context(presentation, { constraints: exclusionsOf(constraints), pinned: null }),
+    );
+    // The cap narrows what ABR plays, not what the menu offers.
+    expect(capped.result.allowed.length).toBeLessThan(offer.result.allowed.length);
+    expect(offer.result.allowed).toHaveLength(7);
+    expect(offer.result.allowed).not.toContain(lowest.id);
+    expect(new Set(offer.result.allowed.map((id) => groupFor(presentation, id)))).toEqual(
+      new Set(['aud1']),
+    );
+  });
+
+  it('keeps the codecs allowlist, HDR, and a filter, and drops only the caps', () => {
+    const filter = () => true;
+    const kept = exclusionsOf(
+      new Map([
+        [
+          'all',
+          {
+            maxHeight: 720,
+            maxWidth: 1280,
+            maxBitrate: 1,
+            minBitrate: 1,
+            maxFrameRate: 30,
+            codecs: ['avc1'],
+            excludeIds: ['x'],
+            hdr: false,
+            filter,
+          },
+        ],
+      ]),
+    );
+    expect(kept.get('all')).toEqual({ codecs: ['avc1'], excludeIds: ['x'], hdr: false, filter });
   });
 });

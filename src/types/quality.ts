@@ -100,6 +100,13 @@ export interface QualityApi {
   readonly renditions: readonly Rendition[];
   /** After constraint intersection. */
   readonly allowed: readonly Rendition[];
+  /**
+   * What a quality menu offers: the renditions the browser can play and no
+   * constraint excludes, one per video stream. Numeric caps (height,
+   * bitrate, frame rate) do not hide an entry, since a pin may go past
+   * them.
+   */
+  readonly selectable: readonly Rendition[];
   /** The rendition currently being appended. */
   readonly active: Rendition | null;
   /** The rendition decoding at currentTime right now. */

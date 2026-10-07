@@ -733,6 +733,8 @@ export function parse(text: string, baseUrl: string): ParseResult {
       id = `${id}-${renditions.length}`;
     }
     declared.set(id, variant.attributes);
+    const average = Number(variant.attributes['AVERAGE-BANDWIDTH']);
+    const supplemental = variant.attributes['SUPPLEMENTAL-CODECS'];
     renditions.push({
       id,
       bitrate: bandwidth,
@@ -740,6 +742,8 @@ export function parse(text: string, baseUrl: string): ParseResult {
       mimeType: 'video/mp4',
       segments: [],
       playlistUrl: variant.uri,
+      ...(average > 0 ? { averageBitrate: average } : {}),
+      ...(supplemental !== undefined ? { supplementalCodecs: supplemental } : {}),
       ...(pathway !== undefined ? { pathway } : {}),
       ...(width !== undefined ? { width } : {}),
       ...(height !== undefined ? { height } : {}),

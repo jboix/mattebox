@@ -27,6 +27,7 @@ const q = engine.quality;
 
 q.renditions; // everything the manifest declared
 q.allowed;    // after constraint intersection
+q.selectable; // what a quality menu offers
 q.active;     // the rendition being appended now
 q.playing;    // the rendition decoding at currentTime
 q.pinned;     // a rendition id, or null
@@ -36,6 +37,19 @@ q.constraints; // Map of source name to constraint
 `active` and `playing` differ after a switch: the engine appends the new
 rendition while the old one is still playing from the buffer. A quality
 menu should show `playing`.
+
+Build a quality menu from `selectable`:
+
+- It leaves out what cannot play: codecs the browser lacks, HDR the screen
+  cannot show, renditions recovery excluded.
+- It lists one variant per video stream. HLS repeats a video playlist once
+  per audio group; `selectable` keeps the one in the playing audio group.
+- Caps such as `maxHeight` do not hide an entry, because a pin can go past
+  them.
+
+Each rendition also carries `averageBitrate` (HLS `AVERAGE-BANDWIDTH`) and
+`supplementalCodecs` (a Dolby Vision layer, such as `dvh1.08.07/db4h`) when
+the manifest gives them.
 
 ## Constraints
 
@@ -80,7 +94,9 @@ The `apply` option says when the change takes effect.
 
 `abr` picks the rendition after constraints are applied. It uses two
 throughput averages and the buffer level, and sets an emergency floor when
-throughput collapses.
+throughput collapses. It stays in the playing codec family and HDR range
+while they offer a rendition, so H.264 does not switch to HEVC, or SDR to
+HDR, in the middle of playback.
 
 ```ts
 import abr from 'mattebox/stages/abr';

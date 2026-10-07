@@ -316,6 +316,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
           "protection": null,
           "renditions": [
             {
+              "averageBitrate": 2168183,
               "bitrate": 2177116,
               "codecs": "avc1.640020",
               "frameRate": 60,
@@ -327,6 +328,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 960,
             },
             {
+              "averageBitrate": 7968416,
               "bitrate": 8001098,
               "codecs": "avc1.64002a",
               "frameRate": 60,
@@ -338,6 +340,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1920,
             },
             {
+              "averageBitrate": 6170000,
               "bitrate": 6312875,
               "codecs": "avc1.64002a",
               "frameRate": 60,
@@ -349,6 +352,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1920,
             },
             {
+              "averageBitrate": 4670769,
               "bitrate": 4943747,
               "codecs": "avc1.64002a",
               "frameRate": 60,
@@ -360,6 +364,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1920,
             },
             {
+              "averageBitrate": 3168702,
               "bitrate": 3216424,
               "codecs": "avc1.640020",
               "frameRate": 60,
@@ -371,6 +376,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1280,
             },
             {
+              "averageBitrate": 1265132,
               "bitrate": 1268994,
               "codecs": "avc1.64001e",
               "frameRate": 30,
@@ -382,6 +388,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 768,
             },
             {
+              "averageBitrate": 895755,
               "bitrate": 902298,
               "codecs": "avc1.64001e",
               "frameRate": 30,
@@ -393,6 +400,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 640,
             },
             {
+              "averageBitrate": 530721,
               "bitrate": 541052,
               "codecs": "avc1.640015",
               "frameRate": 30,
@@ -404,6 +412,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 480,
             },
             {
+              "averageBitrate": 2390686,
               "bitrate": 2399619,
               "codecs": "avc1.640020",
               "frameRate": 60,
@@ -415,6 +424,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 960,
             },
             {
+              "averageBitrate": 8190919,
               "bitrate": 8223601,
               "codecs": "avc1.64002a",
               "frameRate": 60,
@@ -426,6 +436,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1920,
             },
             {
+              "averageBitrate": 6392503,
               "bitrate": 6535378,
               "codecs": "avc1.64002a",
               "frameRate": 60,
@@ -437,6 +448,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1920,
             },
             {
+              "averageBitrate": 4893272,
               "bitrate": 5166250,
               "codecs": "avc1.64002a",
               "frameRate": 60,
@@ -448,6 +460,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1920,
             },
             {
+              "averageBitrate": 3391205,
               "bitrate": 3438927,
               "codecs": "avc1.640020",
               "frameRate": 60,
@@ -459,6 +472,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1280,
             },
             {
+              "averageBitrate": 1487635,
               "bitrate": 1491497,
               "codecs": "avc1.64001e",
               "frameRate": 30,
@@ -470,6 +484,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 768,
             },
             {
+              "averageBitrate": 1118258,
               "bitrate": 1124801,
               "codecs": "avc1.64001e",
               "frameRate": 30,
@@ -481,6 +496,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 640,
             },
             {
+              "averageBitrate": 753224,
               "bitrate": 763555,
               "codecs": "avc1.640015",
               "frameRate": 30,
@@ -492,6 +508,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 480,
             },
             {
+              "averageBitrate": 2198686,
               "bitrate": 2207619,
               "codecs": "avc1.640020",
               "frameRate": 60,
@@ -503,6 +520,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 960,
             },
             {
+              "averageBitrate": 7998919,
               "bitrate": 8031601,
               "codecs": "avc1.64002a",
               "frameRate": 60,
@@ -514,6 +532,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1920,
             },
             {
+              "averageBitrate": 6200503,
               "bitrate": 6343378,
               "codecs": "avc1.64002a",
               "frameRate": 60,
@@ -525,6 +544,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1920,
             },
             {
+              "averageBitrate": 4701272,
               "bitrate": 4974250,
               "codecs": "avc1.64002a",
               "frameRate": 60,
@@ -536,6 +556,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1920,
             },
             {
+              "averageBitrate": 3199205,
               "bitrate": 3246927,
               "codecs": "avc1.640020",
               "frameRate": 60,
@@ -547,6 +568,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 1280,
             },
             {
+              "averageBitrate": 1295635,
               "bitrate": 1299497,
               "codecs": "avc1.64001e",
               "frameRate": 30,
@@ -558,6 +580,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 768,
             },
             {
+              "averageBitrate": 926258,
               "bitrate": 932801,
               "codecs": "avc1.64001e",
               "frameRate": 30,
@@ -569,6 +592,7 @@ exports[`golden corpus: every fixture parses to a stable IR > apple-advanced-fmp
               "width": 640,
             },
             {
+              "averageBitrate": 561224,
               "bitrate": 571555,
               "codecs": "avc1.640015",
               "frameRate": 30,

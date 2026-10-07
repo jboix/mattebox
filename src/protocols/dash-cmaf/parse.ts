@@ -290,6 +290,25 @@ const TRANSFER_CHARACTERISTICS = 'urn:mpeg:mpegB:cicp:TransferCharacteristics';
  * for HLG, on the Representation or its AdaptationSet; else PQ for a Dolby
  * Vision codec; else nothing.
  */
+/**
+ * `@scte214:supplementalCodecs` (ETSI TS 103 285 §5.2.3): a Dolby Vision
+ * layer over the base codec. Read by local name, since the prefix is the
+ * manifest's choice.
+ */
+function supplementalOf(
+  representation: Element,
+  adaptationSet: Element,
+): { supplementalCodecs?: string } {
+  for (const element of [representation, adaptationSet]) {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.localName === 'supplementalCodecs') {
+        return { supplementalCodecs: attribute.value };
+      }
+    }
+  }
+  return {};
+}
+
 function videoRangeOf(
   representation: Element,
   adaptationSet: Element,
@@ -699,6 +718,7 @@ function parsePeriod(
             attr(representation, 'codecs') ?? asCodecs,
           ),
           ...channelsOf(representation, adaptationSet),
+          ...supplementalOf(representation, adaptationSet),
         });
         continue;
       }
@@ -739,6 +759,7 @@ function parsePeriod(
             attr(representation, 'codecs') ?? asCodecs,
           ),
           ...channelsOf(representation, adaptationSet),
+          ...supplementalOf(representation, adaptationSet),
         });
         continue;
       }
@@ -825,6 +846,7 @@ function parsePeriod(
         ...(tiles !== null ? { tiles } : {}),
         ...(playoutRate !== null ? { maxPlayoutRate: playoutRate } : {}),
         ...channelsOf(representation, adaptationSet),
+        ...supplementalOf(representation, adaptationSet),
       });
     }
 

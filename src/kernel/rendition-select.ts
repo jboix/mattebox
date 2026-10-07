@@ -494,6 +494,24 @@ export function arbitrate(ctx: ArbitrationContext): ArbitrationOutcome {
   };
 }
 
+/**
+ * The constraints without their numeric caps: what cannot play (codecs,
+ * excluded ids, HDR, a filter), not what is preferred. Arbitrated, they
+ * give the renditions a viewer may pick, since a pin may go past a cap.
+ */
+export function exclusionsOf(
+  constraints: ReadonlyMap<string, Constraint>,
+): ReadonlyMap<string, Constraint> {
+  return new Map(
+    [...constraints].map(
+      ([source, { maxHeight, maxWidth, maxBitrate, minBitrate, maxFrameRate, ...rest }]) => [
+        source,
+        rest,
+      ],
+    ),
+  );
+}
+
 export interface Arbiter {
   /**
    * Arbitrates, memoized on the version key. TIME_UPDATE at 60 Hz must not

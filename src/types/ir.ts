@@ -196,7 +196,10 @@ export interface TileGrid {
 /** One quality level of a track. */
 export interface Rendition {
   readonly id: RenditionId;
+  /** The peak bitrate: HLS BANDWIDTH, DASH @bandwidth. */
   readonly bitrate: number;
+  /** HLS AVERAGE-BANDWIDTH, the bitrate over the whole stream. */
+  readonly averageBitrate?: number;
   readonly width?: number;
   readonly height?: number;
   readonly frameRate?: number;
@@ -208,6 +211,12 @@ export interface Rendition {
   readonly videoRange?: 'SDR' | 'PQ' | 'HLG';
   /** RFC 6381 codec string. Null when the manifest does not declare one, common for text. */
   readonly codecs: string | null;
+  /**
+   * A layer over the base codec a capable decoder can use, such as Dolby
+   * Vision over HEVC (`dvh1.08.07/db4h`): HLS SUPPLEMENTAL-CODECS (RFC
+   * 8216bis §4.4.6.2), DASH `@scte214:supplementalCodecs`. As written.
+   */
+  readonly supplementalCodecs?: string;
   readonly mimeType: string;
   readonly init?: SegmentRef;
   readonly segments: SegmentAddressing;

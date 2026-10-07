@@ -655,3 +655,29 @@ describe('date ranges', () => {
     expect(parseMediaPlaylist(text, BASE).playlist?.dateRanges).toEqual([]);
   });
 });
+
+describe('variant bitrates and supplemental codecs', () => {
+  it('reads AVERAGE-BANDWIDTH and SUPPLEMENTAL-CODECS onto the video rendition', () => {
+    const text = [
+      '#EXTM3U',
+      '#EXT-X-STREAM-INF:BANDWIDTH=9000000,AVERAGE-BANDWIDTH=7000000,CODECS="hvc1.2.4.L123.B0",SUPPLEMENTAL-CODECS="dvh1.08.07/db4h",VIDEO-RANGE=HLG,RESOLUTION=1920x1080',
+      'dv.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=4000000,CODECS="avc1.640028",RESOLUTION=1920x1080',
+      'avc.m3u8',
+    ].join('\n');
+    const video = parse(text, BASE).presentation?.periods[0]?.tracks.find(
+      (t) => t.contentType === 'video',
+    );
+    expect(
+      video?.renditions.map((r) => [
+        r.bitrate,
+        r.averageBitrate,
+        r.supplementalCodecs,
+        r.videoRange,
+      ]),
+    ).toEqual([
+      [9_000_000, 7_000_000, 'dvh1.08.07/db4h', 'HLG'],
+      [4_000_000, undefined, undefined, undefined],
+    ]);
+  });
+});
