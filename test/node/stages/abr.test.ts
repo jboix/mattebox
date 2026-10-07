@@ -314,6 +314,38 @@ describe('6. a reloading switch is declined', () => {
   });
 });
 
+describe('6b. the codec family and range hold while they offer a choice', () => {
+  const telemetry = (current: string) => ({
+    throughputEwma: 50_000_000,
+    throughputFastEwma: 50_000_000,
+    bufferAhead: 30,
+    current,
+    currentTime: 10,
+  });
+  const allowed = [
+    rendition('avc-low', 1_000_000, 360, 'avc1.64001f'),
+    rendition('avc-high', 6_000_000, 1080, 'avc1.640028'),
+    rendition('hevc-high', 8_000_000, 1080, 'hvc1.2.4.L120.B0'),
+    { ...rendition('pq-high', 9_000_000, 1080, 'hvc1.2.4.L120.B0'), videoRange: 'PQ' as const },
+  ];
+
+  it('climbs within H.264 instead of moving to HEVC or HDR', () => {
+    const chooser = composeWithAbr().hooks.abr as AbrChooser;
+    expect(chooser.choose(allowed, telemetry('avc-low'))).toBe('avc-high');
+  });
+
+  it('keeps SDR HEVC apart from PQ HEVC', () => {
+    const chooser = composeWithAbr().hooks.abr as AbrChooser;
+    const sdr = { ...rendition('hevc-low', 2_000_000, 540, 'hvc1.2.4.L93.B0') };
+    expect(chooser.choose([...allowed, sdr], telemetry('hevc-low'))).toBe('hevc-high');
+  });
+
+  it('leaves the family when nothing of it is allowed', () => {
+    const chooser = composeWithAbr().hooks.abr as AbrChooser;
+    expect(chooser.choose(allowed.slice(2), telemetry('avc-low'))).toBe('pq-high');
+  });
+});
+
 describe('7. abr is genuinely optional', () => {
   it('no chooser, no slices: the lowest permitted rendition plays', () => {
     const reduce = createReducer();

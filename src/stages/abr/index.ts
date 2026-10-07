@@ -53,14 +53,27 @@ function estimateBps(telemetry: AbrTelemetry): number {
   return measured === 0 ? server : Math.min(measured, server);
 }
 
+/** The codec family and the range, as one key: avc1 and avc3 are one family, hvc1 and hev1 too. */
+function kind(rendition: Rendition): string {
+  const family = (rendition.codecs ?? '')
+    .slice(0, 4)
+    .replace('avc3', 'avc1')
+    .replace('hev1', 'hvc1');
+  return `${family}:${rendition.videoRange ?? 'SDR'}`;
+}
+
 function choose(
   allowed: readonly Rendition[],
   telemetry: AbrTelemetry,
   options: Required<AbrOptions>,
 ): string {
-  const sorted = [...allowed].sort((a, b) => a.bitrate - b.bitrate);
-  const lowestRendition = sorted[0] as Rendition;
   const current = allowed.find((r) => r.id === telemetry.current) ?? null;
+  // Stay in the playing codec family and range while they offer a choice,
+  // as hls.js does: a switch from H.264 to HEVC, or from SDR to PQ, can
+  // glitch the decoder and the picture. Another family is a last resort.
+  const same = current === null ? [] : allowed.filter((r) => kind(r) === kind(current));
+  const sorted = [...(same.length > 0 ? same : allowed)].sort((a, b) => a.bitrate - b.bitrate);
+  const lowestRendition = sorted[0] as Rendition;
   const estimate = estimateBps(telemetry);
   if (estimate === 0) return (current ?? lowestRendition).id;
 
