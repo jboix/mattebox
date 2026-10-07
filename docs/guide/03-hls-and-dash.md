@@ -126,6 +126,10 @@ FairPlay over AirPlay needs a key session the engine does not open.
 The adapters expect CMAF (fragmented MP4), which is what MSE accepts
 directly.
 
+`dash-cmaf` leaves out WebM Representations (`video/webm`, `audio/webm`),
+which the engine cannot read. A manifest that offers WebM beside MP4 plays
+its MP4, and no menu lists the WebM tracks.
+
 Legacy HLS with MPEG-TS segments or raw AAC segments needs the container
 stages from [chapter 08](08-legacy-transport-streams.md). CMAF whose
 `tfdt` does not start at zero, a live broadcast clock or a VOD encoder

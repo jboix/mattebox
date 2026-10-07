@@ -673,6 +673,10 @@ function parsePeriod(
       if (id === null || bandwidth === null) continue;
       const repBase = applyBaseUrl(representation, asBase);
       const mimeType = attr(representation, 'mimeType') ?? asMime ?? 'video/mp4';
+      // The engine reads ISO BMFF only. A WebM Representation (VP9, Opus),
+      // which a manifest may offer beside the MP4 one, could never play:
+      // left out, so no menu offers it. An AdaptationSet of only WebM goes.
+      if (/\/(webm|x-matroska)$/.test(mimeType)) continue;
       trackMime = trackMime ?? mimeType;
 
       // On-demand profile: a single file whose segments are described by a

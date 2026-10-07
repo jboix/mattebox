@@ -559,6 +559,36 @@ describe('video range', () => {
   });
 });
 
+describe('containers', () => {
+  it('leaves out WebM, which the engine cannot read, and keeps the MP4 beside it', () => {
+    const mpd = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1M">
+  <Period>
+    <AdaptationSet id="mp4" contentType="audio" lang="en" mimeType="audio/mp4">
+      <SegmentTemplate media="a-$Number$.m4s" initialization="a.mp4" duration="6" timescale="1"/>
+      <Representation id="aac" bandwidth="128000" codecs="mp4a.40.2"/>
+    </AdaptationSet>
+    <AdaptationSet id="webm" contentType="audio" lang="en">
+      <Representation id="opus" bandwidth="128000" codecs="opus" mimeType="audio/webm">
+        <BaseURL>a.webm</BaseURL>
+        <SegmentBase indexRange="100-200"><Initialization range="0-99"/></SegmentBase>
+      </Representation>
+    </AdaptationSet>
+    <AdaptationSet id="v" contentType="video" mimeType="video/mp4">
+      <SegmentTemplate media="v-$Number$.m4s" initialization="v.mp4" duration="6" timescale="1"/>
+      <Representation id="avc" bandwidth="1000000" codecs="avc1.4d401f" width="640" height="360"/>
+      <Representation id="vp9" bandwidth="900000" codecs="vp9" mimeType="video/webm" width="640" height="360"/>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+    const tracks = parse(mpd, BASE).presentation?.periods[0]?.tracks ?? [];
+    expect(tracks.map((t) => [t.contentType, t.renditions.map((r) => r.id)])).toEqual([
+      ['audio', ['aac']],
+      ['video', ['avc']],
+    ]);
+  });
+});
+
 describe('supplemental codecs', () => {
   it('reads @scte214:supplementalCodecs from the Representation or its AdaptationSet', () => {
     const mpd = `<?xml version="1.0"?>
