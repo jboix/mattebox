@@ -208,6 +208,16 @@ describe('a failed engine starts nothing', () => {
     expect(againFx).toEqual([]);
   });
 
+  it("an UNLOAD keeps the network's throughput estimate and drops the server's", () => {
+    let state = ready(reduce, vodFixture);
+    [state] = reduce(state, { type: 'THROUGHPUT_SAMPLE', bps: 4_000_000, trackId: 'video' });
+    [state] = reduce(state, { type: 'THROUGHPUT_HINT', bps: 3_000_000 });
+    const { throughputEwma, throughputFastEwma } = state.stats;
+    expect(throughputEwma).toBeGreaterThan(0);
+    [state] = reduce(state, { type: 'UNLOAD' });
+    expect(state.stats).toEqual({ throughputEwma, throughputFastEwma });
+  });
+
   it('an UNLOAD leaves the error phase and effects flow again', () => {
     let state = ready(reduce, vodFixture);
     [state] = reduce(state, {

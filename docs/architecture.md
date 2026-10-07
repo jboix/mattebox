@@ -129,7 +129,6 @@ Stages group by feature. Each row is one directory under `src/stages/`.
 | -------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- | ------------ |
 | `abr`          | Picks renditions from throughput and buffer level. Registers the chooser and an emergency floor | `scheduler`, `track-registry` |              |
 | `abr-cap-size` | Caps rendition height to the element size                                                       | `rendition-select`            |              |
-| `abr-persist`  | Remembers throughput across sessions through injected storage                                   | `abr`                         |              |
 | `codec-switch` | Answers whether a rendition switch is seamless, needs `changeType`, or a reload                 | `mse`                         |              |
 | `codec-probe`  | Publishes the codec string derived from init segments                                           | `mp4-box`                     | `codecProbe` |
 | `mp4-box`      | Exposes the box walker as `engine.mp4box`                                                       |                               | `mp4box`     |

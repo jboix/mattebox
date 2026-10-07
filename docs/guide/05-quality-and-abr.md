@@ -105,26 +105,20 @@ abr({
   safetyFactor: 0.7,     // fraction of the estimate a rendition may use
   upBufferSeconds: 8,    // buffer needed before switching up
   downBufferSeconds: 4,  // buffer below which a down-switch is immediate
+  startEstimate: 1_000_000, // bits per second assumed before any measurement
 });
 ```
 
-Two more stages go with it.
+The first rendition of a page comes from `startEstimate`: 1 Mbps, a clear
+first picture on most links. `abr` steps down on the first segment that
+arrives late. Set it to 0 to start at the lowest rendition.
 
-| Stage          | Adds                                                                                  |
-| -------------- | ------------------------------------------------------------------------------------- |
-| `abr-cap-size` | Caps height to the element's rendered size times the device pixel ratio               |
-| `abr-persist`  | Remembers throughput across sessions so the first segment is not the lowest rendition |
+The throughput estimate survives a new source on the same engine: the next
+video starts at the quality the network just carried. Nothing is stored
+across page loads.
 
-`abr-persist` uses the storage you give it.
-
-```ts
-import abrPersist from 'mattebox/stages/abr-persist';
-
-abrPersist({
-  get: () => Number(localStorage.getItem('bps')) || null,
-  set: (bps) => localStorage.setItem('bps', String(bps)),
-});
-```
+`abr-cap-size` goes with it: it caps height to the element's rendered size
+times the device pixel ratio.
 
 ## The codec-switch stage
 

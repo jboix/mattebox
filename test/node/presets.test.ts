@@ -12,7 +12,6 @@ import hlsDrm from '../../src/presets/hls-drm/index.js';
 import hlsTs from '../../src/presets/hls-ts/index.js';
 import hlsTsDrm from '../../src/presets/hls-ts-drm/index.js';
 import kernel from '../../src/presets/kernel/index.js';
-import { localThroughputStorage } from '../../src/presets/storage.js';
 import abr from '../../src/stages/abr/index.js';
 import type { Stage } from '../../src/types/stage.js';
 
@@ -25,7 +24,6 @@ const DASH = ['dash-cmaf', 'dash-live'];
 const BASE = [
   'abr',
   'abr-cap-size',
-  'abr-persist',
   'recovery',
   'content-steering',
   'codec-switch',
@@ -84,7 +82,7 @@ describe('the preset matrix', () => {
   it('full carries every stage of the catalogue, each name once', () => {
     const names = full.stages().map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(38);
+    expect(names.length).toBe(37);
   });
 
   it('every call returns fresh stage instances', () => {
@@ -147,7 +145,9 @@ describe('a preset factory', () => {
   });
 
   it('removing a stage another one requires fails at construction, by name', () => {
-    expect(() => hls({ without: ['abr'] })).toThrowError(/'abr-persist' requires 'abr'/);
+    expect(() => hls({ without: ['codec-switch'] })).toThrowError(
+      /'alt-audio' requires 'codec-switch'/,
+    );
   });
 
   it('carries its name and lists its stages', () => {
@@ -155,50 +155,5 @@ describe('a preset factory', () => {
     expect(preset.presetName).toBe('mine');
     expect(preset.stages({ stages: [stub('y')] }).map((s) => s.name)).toEqual(['x', 'y']);
     expect([...preset().capabilities()]).toEqual([]);
-  });
-});
-
-describe('the default throughput storage', () => {
-  it('remembers nothing where localStorage is absent or throwing, and never throws', () => {
-    const storage = localThroughputStorage();
-    expect(storage.get()).toBeNull();
-    expect(() => storage.set(1_000_000)).not.toThrow();
-
-    const broken = {
-      getItem: () => {
-        throw new Error('denied');
-      },
-      setItem: () => {
-        throw new Error('denied');
-      },
-    };
-    Object.defineProperty(globalThis, 'localStorage', { value: broken, configurable: true });
-    try {
-      expect(storage.get()).toBeNull();
-      expect(() => storage.set(1)).not.toThrow();
-    } finally {
-      delete (globalThis as { localStorage?: unknown }).localStorage;
-    }
-  });
-
-  it('round-trips a positive figure through a working storage', () => {
-    const store = new Map<string, string>();
-    Object.defineProperty(globalThis, 'localStorage', {
-      value: {
-        getItem: (k: string) => store.get(k) ?? null,
-        setItem: (k: string, v: string) => store.set(k, v),
-      },
-      configurable: true,
-    });
-    try {
-      const storage = localThroughputStorage('k');
-      storage.set(2_500_000.7);
-      expect(store.get('k')).toBe('2500001');
-      expect(storage.get()).toBe(2_500_001);
-      store.set('k', 'garbage');
-      expect(storage.get()).toBeNull();
-    } finally {
-      delete (globalThis as { localStorage?: unknown }).localStorage;
-    }
   });
 });

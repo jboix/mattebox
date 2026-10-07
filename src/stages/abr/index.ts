@@ -29,6 +29,12 @@ export interface AbrOptions {
   readonly emergencyFactor?: number;
   /** Fast-estimate multiple of the emergency cap that releases it. */
   readonly recoveryFactor?: number;
+  /**
+   * The throughput assumed before anything is measured, in bits per
+   * second, for the first rendition of a page's first source. 0 starts at
+   * the lowest rendition.
+   */
+  readonly startEstimate?: number;
 }
 
 const DEFAULTS: Required<AbrOptions> = {
@@ -37,6 +43,10 @@ const DEFAULTS: Required<AbrOptions> = {
   downBufferSeconds: 4,
   emergencyFactor: 0.5,
   recoveryFactor: 2,
+  // A modest start: a clear first picture on most links, and little to
+  // lose where the link is slower, since ABR steps down on the first
+  // segment that arrives late.
+  startEstimate: 1_000_000,
 };
 
 /**
@@ -74,8 +84,12 @@ function choose(
   const same = current === null ? [] : allowed.filter((r) => kind(r) === kind(current));
   const sorted = [...(same.length > 0 ? same : allowed)].sort((a, b) => a.bitrate - b.bitrate);
   const lowestRendition = sorted[0] as Rendition;
-  const estimate = estimateBps(telemetry);
-  if (estimate === 0) return (current ?? lowestRendition).id;
+  const measured = estimateBps(telemetry);
+  // Nothing measured yet: the first choice starts from the assumed
+  // estimate; a rendition already playing waits for a measurement.
+  if (measured === 0 && current !== null) return current.id;
+  const estimate = measured === 0 ? options.startEstimate : measured;
+  if (estimate === 0) return lowestRendition.id;
 
   // The highest rendition the estimate sustains with headroom.
   let best = lowestRendition;

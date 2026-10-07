@@ -15,7 +15,6 @@ import hlsCmaf from '../protocols/hls-cmaf/index.js';
 import hlsLive from '../protocols/hls-live/index.js';
 import abr from '../stages/abr/index.js';
 import abrCapSize from '../stages/abr-cap-size/index.js';
-import abrPersist from '../stages/abr-persist/index.js';
 import aes128 from '../stages/aes-128/index.js';
 import altAudio from '../stages/alt-audio/index.js';
 import cmafTiming from '../stages/cmaf-timing/index.js';
@@ -35,7 +34,6 @@ import textCea608 from '../stages/text-cea608/index.js';
 import textWebvtt from '../stages/text-webvtt/index.js';
 import textWebvttSegmented from '../stages/text-webvtt-segmented/index.js';
 import type { Stage } from '../types/stage.js';
-import { localThroughputStorage } from './storage.js';
 
 /** HLS on demand and live, with AES-128 segment decryption. */
 export function hlsLine(): Stage[] {
@@ -64,7 +62,6 @@ export function base(): Stage[] {
   return [
     abr(),
     abrCapSize(),
-    abrPersist(localThroughputStorage()),
     recovery(),
     contentSteering(),
     codecSwitch(),

@@ -150,9 +150,7 @@ const stack = hls.stages({ without: ['pdt'] });
 const engine = mattebox({ stages: [thumbnails(), ...stack] });
 ```
 
-Every preset stores the measured bandwidth in `localStorage` for the next
-session. If storage is missing or throws, nothing is stored. Pass
-`abrPersist(yourStorage)` in `stages` to store it elsewhere. The `-drm`
+No preset writes to `localStorage` or keeps anything across page loads. The `-drm`
 presets load `eme-core` with no license server. Set one with
 `engine.drm.setLicenseUrl` before loading, or pass `emeCore({ ... })` in
 `stages`.
@@ -164,7 +162,7 @@ the transmux Worker inside.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../preset-chart-dark.svg">
-  <img alt="Bundle size of every Mattebox preset, min+gzip, one file each. kernel 22.7 KB, hls 44.9 KB, dash 46.3 KB, dual 53.5 KB, dual-ts-drm 64.3 KB, full 81.4 KB." src="../preset-chart-light.svg">
+  <img alt="Bundle size of every Mattebox preset, min+gzip, one file each. kernel 22.8 KB, hls 44.7 KB, dash 46.0 KB, dual 53.3 KB, dual-ts-drm 64.0 KB, full 81.1 KB." src="../preset-chart-light.svg">
 </picture>
 
 ## Kernel config

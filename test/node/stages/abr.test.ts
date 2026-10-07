@@ -346,6 +346,31 @@ describe('6b. the codec family and range hold while they offer a choice', () => 
   });
 });
 
+describe('6c. the first choice', () => {
+  const ladder = [
+    rendition('v-270', 400_000, 270),
+    rendition('v-540', 650_000, 540),
+    rendition('v-1080', 4_000_000, 1080),
+  ];
+  const fresh = { throughputEwma: 0, throughputFastEwma: 0, bufferAhead: 0, currentTime: 0 };
+
+  it('starts from the assumed estimate before anything is measured', () => {
+    const chooser = composeWithAbr().hooks.abr as AbrChooser;
+    // 1 Mbps at the safety factor of 0.7 carries the 650 kbps rendition.
+    expect(chooser.choose(ladder, { ...fresh, current: null })).toBe('v-540');
+  });
+
+  it('starts at the lowest with a start estimate of 0', () => {
+    const chooser = composeWithAbr({ startEstimate: 0 }).hooks.abr as AbrChooser;
+    expect(chooser.choose(ladder, { ...fresh, current: null })).toBe('v-270');
+  });
+
+  it('keeps what plays until a measurement arrives', () => {
+    const chooser = composeWithAbr().hooks.abr as AbrChooser;
+    expect(chooser.choose(ladder, { ...fresh, current: 'v-270' })).toBe('v-270');
+  });
+});
+
 describe('7. abr is genuinely optional', () => {
   it('no chooser, no slices: the lowest permitted rendition plays', () => {
     const reduce = createReducer();

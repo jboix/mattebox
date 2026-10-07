@@ -18,14 +18,12 @@ import hlsDrmPreset from '../../src/presets/hls-drm/index.js';
 import hlsTsPreset from '../../src/presets/hls-ts/index.js';
 import hlsTsDrmPreset from '../../src/presets/hls-ts-drm/index.js';
 import kernelPreset from '../../src/presets/kernel/index.js';
-import { localThroughputStorage } from '../../src/presets/storage.js';
 import dashCmaf from '../../src/protocols/dash-cmaf/index.js';
 import dashLive from '../../src/protocols/dash-live/index.js';
 import hlsCmaf from '../../src/protocols/hls-cmaf/index.js';
 import hlsLive from '../../src/protocols/hls-live/index.js';
 import abr from '../../src/stages/abr/index.js';
 import abrCapSize from '../../src/stages/abr-cap-size/index.js';
-import abrPersist from '../../src/stages/abr-persist/index.js';
 import aes128 from '../../src/stages/aes-128/index.js';
 import altAudio from '../../src/stages/alt-audio/index.js';
 import chapters from '../../src/stages/chapters/index.js';
@@ -96,7 +94,6 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('stages', altAudio),
   built('stages', abr),
   built('stages', abrCapSize),
-  built('stages', () => abrPersist(localThroughputStorage())),
   built('stages', textWebvtt),
   built('stages', textWebvttSegmented),
   built('stages', forcedSubtitles),

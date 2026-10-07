@@ -403,11 +403,17 @@ function reduceCommand(
       // create requests as duplicates, so the reducer never learns of them
       // and refetches the init segment without end.
       const reset: Effect[] = phase === 'attaching' ? [{ kind: 'resetSource' }] : [];
+      // The throughput estimate stays: it measures this page's network,
+      // minutes old at most, so the next source starts at the quality the
+      // network just carried instead of at the lowest. The server's own
+      // estimate (CMSD) belongs to the server, and goes.
+      const { throughputEwma, throughputFastEwma } = state.stats;
       return [
         {
           ...fresh,
           lifecycle: { phase },
           scheduling: { ...fresh.scheduling, tokenSeq: state.scheduling.tokenSeq },
+          stats: { ...fresh.stats, throughputEwma, throughputFastEwma },
         },
         [...aborts, ...clears, ...reset],
       ];
