@@ -57,6 +57,11 @@ export interface DrmApi {
   readonly sessions: ReadonlyArray<{ readonly keyId: string; readonly status: string }>;
   /** Sets or replaces the license server URL at runtime. */
   setLicenseUrl(url: string): void;
+  /**
+   * Replaces the per-key-system license URLs at runtime. An entry for the
+   * active key system wins over the single URL, and an empty map clears them.
+   */
+  setLicenseUrls(urls: Readonly<Record<string, string>>): void;
   /** Sets the FairPlay certificate URL at runtime, before the key system is chosen. */
   setCertificateUrl(url: string): void;
 }
@@ -132,6 +137,7 @@ export default function emeCore(options: EmeOptions = {}): Stage {
       let keySystem: string | null = null;
       let handler: KeySystemHandler | null = null;
       let licenseUrl = options.licenseUrl ?? null;
+      let licenseUrls = options.licenseUrls;
       let certificateUrl = options.certificateUrl;
       const statuses = new Map<string, string>();
       // Dedup by init data: one session per blob, whichever route delivered it.
@@ -152,6 +158,9 @@ export default function emeCore(options: EmeOptions = {}): Stage {
         },
         setLicenseUrl(url) {
           licenseUrl = url;
+        },
+        setLicenseUrls(urls) {
+          licenseUrls = urls;
         },
         setCertificateUrl(url) {
           certificateUrl = url;
@@ -301,7 +310,7 @@ export default function emeCore(options: EmeOptions = {}): Stage {
           if (options.requestFilter !== undefined) {
             body = options.requestFilter(new Uint8Array(body), keySystem ?? '');
           }
-          const url = options.licenseUrls?.[keySystem ?? ''] ?? licenseUrl;
+          const url = licenseUrls?.[keySystem ?? ''] ?? licenseUrl;
           if (url === null || url === undefined) {
             fail('DRM_LICENSE_FAILED', false, 'no license url');
             return;

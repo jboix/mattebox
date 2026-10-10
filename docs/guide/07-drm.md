@@ -67,6 +67,19 @@ The URL can change at runtime.
 engine.drm.setLicenseUrl('https://license.example.com/widevine?token=abc');
 ```
 
+`setLicenseUrls` replaces the map of servers per key system. An entry for
+the active key system wins over the single URL. An empty map clears it.
+
+```ts
+engine.drm.setLicenseUrls({
+  'com.widevine.alpha': 'https://license.example.com/widevine?token=abc',
+  'com.microsoft.playready': 'https://license.example.com/playready?token=abc',
+});
+```
+
+A new URL applies to the next license request. The keys the video holds
+stay valid, so playback continues.
+
 License requests go through the transport, so the request hooks from
 [chapter 11](11-network-and-cdn.md) apply to them.
 

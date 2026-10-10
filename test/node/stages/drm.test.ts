@@ -6,6 +6,7 @@ import {
   registerKeySystem,
 } from '../../../src/stages/drm-shared.js';
 import { unwrapPlayReadyResponse } from '../../../src/stages/eme-cenc/index.js';
+import type { DrmApi } from '../../../src/stages/eme-core/index.js';
 import emeCore from '../../../src/stages/eme-core/index.js';
 import {
   buildSpcRequest,
@@ -390,8 +391,10 @@ describe('eme-core license renewal', () => {
     });
     const sessions: FakeSession[] = [];
     const posts: string[] = [];
+    const urls: string[] = [];
     const errors: Array<{ code?: string }> = [];
     const renewals: unknown[] = [];
+    let drm: DrmApi | null = null;
     const element = Object.assign(new EventTarget(), {
       paused: false,
       setMediaKeys: async () => undefined,
@@ -415,8 +418,11 @@ describe('eme-core license renewal', () => {
     let onProtection: ((payload: unknown) => void) | null = null;
     const dispose = emeCore({ licenseUrl: 'https://license.example/' }).install({
       element,
-      registerNamespace: () => undefined,
-      request: async (_url: string, init: { body?: ArrayBuffer | Uint8Array | string }) => {
+      registerNamespace: (_name: string, api: unknown) => {
+        drm = api as DrmApi;
+      },
+      request: async (url: string, init: { body?: ArrayBuffer | Uint8Array | string }) => {
+        urls.push(url);
         posts.push(new TextDecoder().decode(init.body as ArrayBuffer));
         return new Response(new Uint8Array([1]));
       },
@@ -447,8 +453,37 @@ describe('eme-core license renewal', () => {
         value: original,
       });
     };
-    return { sessions, posts, errors, renewals, element, restore };
+    return {
+      sessions,
+      posts,
+      urls,
+      errors,
+      renewals,
+      element,
+      restore,
+      drm: drm as unknown as DrmApi,
+    };
   }
+
+  it('a renewal goes to the URL set for the key system, and an empty map returns to the single URL', async () => {
+    const t = await setup(['usable', 'usable', 'usable']);
+    try {
+      t.drm.setLicenseUrls({ 'com.example.renewal-test': 'https://license.example/renewal' });
+      (t.sessions[0] as FakeSession).setStatus('expired');
+      await vi.waitFor(() => expect(t.sessions[1]?.updates).toHaveLength(1));
+      t.drm.setLicenseUrls({});
+      (t.sessions[1] as FakeSession).setStatus('expired');
+      await vi.waitFor(() => expect(t.sessions[2]?.updates).toHaveLength(1));
+      expect(t.urls).toEqual([
+        'https://license.example/',
+        'https://license.example/renewal',
+        'https://license.example/',
+      ]);
+      expect(t.errors).toEqual([]);
+    } finally {
+      t.restore();
+    }
+  });
 
   it('an expired key during playback opens a new session and closes the old one', async () => {
     const t = await setup(['usable', 'usable']);

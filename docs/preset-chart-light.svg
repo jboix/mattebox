@@ -45,7 +45,7 @@
   <text x="44" y="848" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">dual-drm</text>
   <text x="44" y="872" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">main · + EME</text>
   <rect x="290" y="822" width="610" height="54" fill="#f0f0f3"/>
-  <rect x="290" y="822" width="381.6" height="54" fill="#a1a1aa"/>
+  <rect x="290" y="822" width="381.7" height="54" fill="#a1a1aa"/>
   <text x="1056" y="858" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">56.3 KB</text>
   <text x="44" y="932" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">dual-ts</text>
   <text x="44" y="956" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">main · + MPEG-TS</text>
@@ -55,7 +55,7 @@
   <text x="44" y="1016" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#111114">dual-ts-drm</text>
   <text x="44" y="1040" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">main · + MPEG-TS + EME</text>
   <rect x="290" y="990" width="610" height="54" fill="#f0f0f3"/>
-  <rect x="290" y="990" width="433.7" height="54" fill="#a1a1aa"/>
+  <rect x="290" y="990" width="433.8" height="54" fill="#a1a1aa"/>
   <text x="1056" y="1026" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#6b6b74">64.0 KB</text>
   <text x="44" y="1100" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#111114">full</text>
   <text x="44" y="1124" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">main · + accessories</text>
