@@ -1,40 +1,42 @@
 /* ---- theme tokens ----------------------------------------------------- */
-/* Dark is the base palette. Light redefines the same tokens under the
+/* The colours of the Mattebox mark: warm paper, charcoal, vermilion. The
+   website and the player's demos use the same ones.
+   Dark is the base palette. Light redefines the same tokens under the
    data-theme flag that index.html sets before first paint. Every color in
    this file, and every canvas color in the scripts, goes through a token so
    a theme switch is complete. */
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #12151a;
-  --surface: #1a1e25;
-  --surface-2: #222731;
-  --line: #2e3540;
-  --line-soft: #262c36;
-  --ink: #e9ecf1;
-  --muted: #98a3b1;
-  --faint: #6f7a88;
-  --accent: #e0596d;
-  --accent-deep: #b8203a;
-  --accent-ink: #ffffff;
-  --link: #6ab4ff;
-  --ok: #5fc98a;
+  --bg: #1c1c20;
+  --surface: #24242a;
+  --surface-2: #2b2b30;
+  --line: #3a3a41;
+  --line-soft: #303036;
+  --ink: #f3ede4;
+  --muted: #aaa49a;
+  --faint: #7d786f;
+  --accent: #e0543c;
+  --accent-deep: #ec6a53;
+  --accent-ink: #1c1c20;
+  --link: #f08068;
+  --ok: #9fd3ad;
   --warn: #e3b64f;
-  --input-bg: #0f1216;
-  --code-bg: #141920;
-  --hover: #1f252e;
-  --sel: #1d2c3d;
-  --ok-bg: #143022;
-  --ok-line: #215337;
+  --input-bg: #17171a;
+  --code-bg: #18181c;
+  --hover: #2b2b30;
+  --sel: #3a2420;
+  --ok-bg: #1f2e24;
+  --ok-line: #2f4a38;
   --warn-bg: #33290f;
   --warn-line: #54431b;
-  --bad-bg: #3b1f26;
-  --bad-line: #5d2632;
-  --bad-ink: #ffd5dc;
-  --info-bg: #17263a;
-  --info-line: #274a6e;
-  --canvas-track: #222731;
-  --canvas-grid: #2e3540;
+  --bad-bg: #3a2420;
+  --bad-line: #5c342b;
+  --bad-ink: #f7c9bf;
+  --info-bg: #2b2b30;
+  --info-line: #4a4a52;
+  --canvas-track: #2b2b30;
+  --canvas-grid: #3a3a41;
   --shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
   --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3);
   --series-1: #5aa9e0;
@@ -42,54 +44,54 @@
   --series-3: #d9a83f;
   --series-4: #e05a6e;
   --series-5: #a98fe0;
-  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5l5 5 5-5' fill='none' stroke='%2398a3b1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5l5 5 5-5' fill='none' stroke='%23aaa49a' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f5f6f8;
-  --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --line: #d9dee5;
-  --line-soft: #e7eaef;
-  --ink: #1c2229;
-  --muted: #5f6b78;
-  --faint: #8b95a2;
-  --accent: #c93650;
-  --accent-deep: #9c1c35;
-  --accent-ink: #ffffff;
-  --link: #1d6fc0;
-  --ok: #2b9459;
-  --warn: #a2730b;
+  --bg: #f3ede4;
+  --surface: #fbf8f3;
+  --surface-2: #ebe4d8;
+  --line: #dcd3c4;
+  --line-soft: #e6dfd2;
+  --ink: #2b2b30;
+  --muted: #5f5c5a;
+  --faint: #8a857d;
+  --accent: #e0543c;
+  --accent-deep: #ec6a53;
+  --accent-ink: #1c1c20;
+  --link: #b23a23;
+  --ok: #1f5e38;
+  --warn: #8a6100;
   --input-bg: #ffffff;
-  --code-bg: #f6f7f9;
-  --hover: #f0f2f5;
-  --sel: #e9f1fb;
-  --ok-bg: #e7f6ed;
-  --ok-line: #b9e3c8;
+  --code-bg: #f7f2ea;
+  --hover: #ebe4d8;
+  --sel: #f7e3dc;
+  --ok-bg: #e3efe1;
+  --ok-line: #c4dcc3;
   --warn-bg: #fff5d9;
   --warn-line: #edd49c;
-  --bad-bg: #fde9ec;
-  --bad-line: #f1bcc5;
-  --bad-ink: #861224;
-  --info-bg: #e9f1fb;
-  --info-line: #bdd5ef;
-  --canvas-track: #e8ebf0;
-  --canvas-grid: #d9dee5;
-  --shadow: 0 14px 40px rgba(28, 34, 41, 0.16);
-  --shadow-soft: 0 1px 2px rgba(28, 34, 41, 0.06);
+  --bad-bg: #f7e3dc;
+  --bad-line: #ecc3b8;
+  --bad-ink: #8f2c19;
+  --info-bg: #ebe4d8;
+  --info-line: #c9bfae;
+  --canvas-track: #e6dfd2;
+  --canvas-grid: #dcd3c4;
+  --shadow: 0 14px 40px rgba(43, 43, 48, 0.16);
+  --shadow-soft: 0 1px 2px rgba(43, 43, 48, 0.06);
   --series-1: #2f80c9;
   --series-2: #2e9e5b;
   --series-3: #c2861a;
   --series-4: #c8354c;
   --series-5: #7b5fc9;
-  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5l5 5 5-5' fill='none' stroke='%235f6b78' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1.5l5 5 5-5' fill='none' stroke='%235f5c5a' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
 :root {
-  --radius: 12px;
-  --radius-sm: 8px;
-  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius: 4px;
+  --radius-sm: 3px;
+  --sans: "Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-family: var(--sans);
   font-size: 14px;
   line-height: 1.5;
@@ -124,7 +126,7 @@ body {
   gap: 12px 20px;
   align-items: center;
   justify-content: space-between;
-  padding: 14px clamp(16px, 3vw, 32px);
+  padding: 8px clamp(16px, 3vw, 32px);
   border-bottom: 1px solid var(--line-soft);
   background: var(--surface);
 }
@@ -143,9 +145,11 @@ body {
 }
 .brand-text h1 {
   margin: 0;
-  font-size: 17px;
+  font-family: "Barlow Condensed", var(--sans);
+  font-size: 22px;
+  line-height: 1.1;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.01em;
 }
 .brand-text .tag {
   font-size: 13px;
@@ -153,17 +157,32 @@ body {
   color: var(--muted);
   margin-left: 6px;
 }
-.tagline {
-  margin: 1px 0 0;
-  font-size: 13px;
-  color: var(--muted);
-  max-width: 60ch;
-}
 .topbar-meta {
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+/* The colour scheme, as an icon alone, sized like the buttons beside it. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.theme-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* The mark leads to the website. */
+.home {
+  display: flex;
+  flex: none;
 }
 
 /* The repository, as the mark alone, sized like the buttons beside it. */
@@ -956,7 +975,7 @@ input[type="checkbox"] {
   color: var(--ok);
 }
 .cap-value.bad {
-  color: var(--accent);
+  color: var(--link);
 }
 @media (max-width: 640px) {
   .cap-grid {
@@ -1054,7 +1073,7 @@ input[type="checkbox"] {
 .pill.bad {
   background: var(--bad-bg);
   border-color: var(--bad-line);
-  color: var(--accent);
+  color: var(--link);
 }
 .scroll {
   max-height: 260px;
@@ -1123,7 +1142,7 @@ input[type="checkbox"] {
   font-weight: 700;
 }
 .cell-bad {
-  color: var(--accent);
+  color: var(--link);
   font-weight: 700;
 }
 .cell-na {
@@ -1266,7 +1285,7 @@ input[type="checkbox"] {
 }
 .lvl-error .log-type,
 .lvl-error .log-msg {
-  color: var(--accent);
+  color: var(--link);
 }
 .lvl-debug .log-msg {
   color: var(--muted);
@@ -1418,9 +1437,6 @@ canvas.chart {
 @media (max-width: 620px) {
   :root {
     font-size: 13.5px;
-  }
-  .tagline {
-    display: none;
   }
   .grow {
     min-width: 120px;
@@ -1758,5 +1774,5 @@ canvas.chart {
   border-color: var(--bad-line);
 }
 .qoe-tile.bad .qoe-value {
-  color: var(--accent);
+  color: var(--link);
 }

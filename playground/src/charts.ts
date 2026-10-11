@@ -300,7 +300,7 @@ export function createCharts(
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
-    ctx.font = '11px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.font = '11px "JetBrains Mono", ui-monospace, monospace';
     return { ctx, w: cssW, h: cssH, left: 48, right: cssW - 12, top: 10, bottom: cssH - 22, dpr };
   }
 
