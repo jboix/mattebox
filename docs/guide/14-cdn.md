@@ -66,6 +66,9 @@ returns the engine attached to an element.
 The preset options are the ones [chapter 02](02-presets-and-stages.md)
 describes. Replacing a stage by name is how you pass it options.
 
+The main bundle also carries `mattebox.cmcd()`, which no preset includes.
+Add it with `stages: [mattebox.cmcd()]`.
+
 ```html
 <script>
   const engine = mattebox.preset({

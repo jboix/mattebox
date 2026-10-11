@@ -4,6 +4,8 @@ This chapter covers stages, presets, and how to build your own stack.
 
 ## Stages
 
+[Chapter 17](17-stage-reference.md) lists every stage.
+
 A stage is a plugin. It has a name, can provide capabilities, can require
 other stages, and installs when you call `attach`. Importing a stage does
 nothing on its own, and stages never import each other.
@@ -96,22 +98,20 @@ protected.
 | `kernel`      | none       |         |     |
 
 Every preset except `kernel` includes the same base: on
-demand and live playback, adaptive quality with a size cap and bandwidth
-memory, recovery, content steering, alternate audio with codec switching,
+demand and live playback, adaptive quality with a size cap, recovery, content steering, alternate audio with codec switching,
 WebVTT subtitles, forced subtitles, CEA-608 captions, CMAF live timing, program date time,
 and the codec probe. The HLS lines add AES-128 segment decryption.
 `-ts` adds the transmuxer, packed audio, and ID3 metadata. `-drm` adds the
-three EME stages. `full` is `dual-ts-drm` plus the eleven stages below, and
+three EME stages. `full` is `dual-ts-drm` plus the ten stages below, and
 `kernel` is nothing, for a stack you build by hand.
 
-Eleven stages are only in `full`. Add them with `stages` when you need them.
+Ten stages are only in `full`. Add them with `stages` when you need them.
 
 | Stage             | Why                                                            |
 | ----------------- | -------------------------------------------------------------- |
 | `thumbnails`      | Fetches image playlists, so it is opt-in                       |
 | `chapters`        | Only your app knows the chapters file                          |
 | `trick-play`      | Only your UI knows when to scan                                |
-| `cmcd`            | Changes every request to the CDN, so it is opt-in              |
 | `timed-metadata`  | Only your page reads it                                        |
 | `text-cea708`     | Streams that carry it also carry CEA-608, which the base reads |
 | `text-ttml`       | Most streams carry WebVTT, which the base reads                |
@@ -119,6 +119,9 @@ Eleven stages are only in `full`. Add them with `stages` when you need them.
 | `qoe`             | Only your analytics read it                                    |
 | `cmsd`            | Acts only on headers your CDN sends and exposes                |
 | `rendition-names` | Only your menu reads it                                        |
+
+`cmcd` is in no preset, because it changes every request to the CDN. Add it
+with `stages`. See [chapter 11](11-network-and-cdn.md#the-cmcd-stage).
 
 The caption stages read the NAL unit headers of every H.264 and HEVC video
 segment, a fraction of a millisecond per segment. If your content has no

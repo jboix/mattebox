@@ -48,8 +48,7 @@ export function dashLine(): Stage[] {
 }
 
 /**
- * What every preset carries: adaptive quality with a size cap and bandwidth
- * memory, recovery, content steering (inert until a manifest asks for it),
+ * What every preset carries: adaptive quality with a size cap, recovery, content steering (inert until a manifest asks for it),
  * alternate audio with codec switching, WebVTT subtitles, CMAF timing (reads
  * each segment's decode time so the kernel lands it at its playlist time,
  * whatever clock the packager wrote), program date time from either

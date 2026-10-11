@@ -1,7 +1,5 @@
 /**
- * The `full` preset: every stage the catalogue ships. `dual-ts-drm` plus
- * the accessories: CMCD (changes every request, so opt-in elsewhere),
- * thumbnails (fetches image playlists, so opt-in elsewhere), chapters
+ * The `full` preset: `dual-ts-drm` plus the accessories: thumbnails (fetches image playlists, so opt-in elsewhere), chapters
  * (loads a file the app names), trick play (a UI control drives it),
  * timed metadata (a page reads it), CEA-708 captions (US broadcast
  * streams carry 608 beside them, which the base reads), TTML subtitles
@@ -9,12 +7,13 @@
  * where nothing is known, which a page may not want by default), local
  * QoE metrics, CMSD (it acts on response headers a CDN must expose), and
  * localized rendition names (a menu reads them).
+ * CMCD is in no preset: it changes every request, which costs a page that
+ * never asked for it. A page adds the stage.
  * Feature parity with
  * videojs-http-streaming; the modularity claim is measured against it, and
  * the main CDN bundle exposes it.
  */
 import chapters from '../../stages/chapters/index.js';
-import cmcd from '../../stages/cmcd/index.js';
 import cmsd from '../../stages/cmsd/index.js';
 import hdr from '../../stages/hdr/index.js';
 import qoe from '../../stages/qoe/index.js';
@@ -33,7 +32,6 @@ const preset = definePreset('full', () => [
   ...base(),
   ...tsTier(),
   ...drmTier(),
-  cmcd(),
   thumbnails(),
   chapters(),
   trickPlay(),

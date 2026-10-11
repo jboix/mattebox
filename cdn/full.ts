@@ -1,4 +1,4 @@
-/** The full CDN bundle, `dist/cdn/mattebox.min.js`: every stage of the full preset behind the one global. */
+/** The full CDN bundle, `dist/cdn/mattebox.min.js`: the full preset behind the one global, with every stage factory. */
 import preset from '../src/presets/full/index.js';
 import {
   accessoryFactories,

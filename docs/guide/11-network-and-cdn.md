@@ -78,7 +78,26 @@ cmcd({ contentId: 'episode-42', mode: 'query', sessionId: crypto.randomUUID() })
 
 The stage sends CMCD version 1 (CTA-5004), which defines all of these keys.
 
-Headers need a CORS preflight. Use `query` unless your CDN prefers headers.
+No preset includes the stage. Add it to one with `stages`:
+
+```ts
+import full from 'mattebox/presets/full';
+import cmcd from 'mattebox/stages/cmcd';
+
+const engine = full({ stages: [cmcd({ contentId: 'episode-42' })] });
+```
+
+The two modes cost different things.
+
+| Mode     | Cost                                                                                        |
+| -------- | ------------------------------------------------------------------------------------------- |
+| `query`  | Every request has a new URL, so the browser's cache never answers one                       |
+| `header` | The URL stays the same. On another origin the browser sends a preflight first, once per URL |
+
+With `header`, the CDN must list `CMCD-Request` in
+`Access-Control-Allow-Headers`. A CDN that does not makes the browser block
+every request, and nothing plays. `query` is the default because a CDN that
+does not know CMCD ignores it.
 
 ## The cmsd stage
 

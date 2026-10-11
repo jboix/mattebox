@@ -41,7 +41,6 @@ const BASE = [
 const TS = ['ts-transmux', 'packed-audio', 'meta-id3'];
 const DRM = ['eme-core', 'eme-cenc', 'eme-fairplay'];
 const ACCESSORIES = [
-  'cmcd',
   'thumbnails',
   'chapters',
   'trick-play',
@@ -79,10 +78,12 @@ describe('the preset matrix', () => {
     });
   }
 
-  it('full carries every stage of the catalogue, each name once', () => {
+  it('full carries each of its stages once', () => {
     const names = full.stages().map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(37);
+    expect(names.length).toBe(36);
+    // It changes every request, so a page adds it.
+    expect(names).not.toContain('cmcd');
   });
 
   it('every call returns fresh stage instances', () => {

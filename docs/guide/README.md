@@ -21,6 +21,7 @@ order the first time, then use the table.
 | [14 CDN](14-cdn.md)                                           | Script tags from jsDelivr, pinning, integrity, ESM             |
 | [15 Chapters](15-chapters.md)                                 | Chapters from the manifest or a file, `engine.chapters`        |
 | [16 Trick play](16-trick-play.md)                             | Fast forward and rewind, `engine.trick`                        |
+| [17 Stage reference](17-stage-reference.md)                   | Every stage, the presets that include it, and its chapter      |
 
 The [architecture document](../architecture.md) covers the internals, for
 writing your own stage.
