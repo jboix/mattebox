@@ -92,6 +92,17 @@ export interface LoadOptions {
   readonly mimeType?: string;
 }
 
+export interface PreloadOptions extends LoadOptions {
+  /**
+   * Media segments to fetch per track, from the start of the source, with
+   * the playlists and init segments they need. 0, the default, fetches the
+   * manifest alone. Only an attached engine fetches more than the manifest.
+   */
+  readonly segments?: number;
+  /** Seconds the responses are kept for the load. 30 by default. */
+  readonly keepSeconds?: number;
+}
+
 export interface MatteboxOptions {
   /** Stage factories to install, in order. Omitted means kernel only, which is a complete working player. */
   readonly stages?: readonly Stage[];
@@ -122,10 +133,12 @@ export interface MatteboxBase {
   /**
    * Fetches a source's manifest now, so a later `load` of the same URL
    * starts without that round trip, while the current source plays on.
-   * Resolves when the bytes are kept for 30 s; rejects when the fetch fails
-   * or no composed protocol reads `mimeType`.
+   * With `segments`, it also fetches the playlists, the init segments and
+   * the first media segments that load would ask for. Resolves when the
+   * bytes are kept; rejects when the manifest fails or no composed
+   * protocol reads `mimeType`.
    */
-  preload(url: string, options?: LoadOptions): Promise<void>;
+  preload(url: string, options?: PreloadOptions): Promise<void>;
   unload(): void;
   /**
    * Stops every request while the element stays attached and its buffers

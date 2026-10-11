@@ -84,12 +84,31 @@ await engine.preload(next.url);
 engine.load(next.url);
 ```
 
-- The manifest is kept for 30 seconds, at most three at a time.
-- The request goes through your request hooks, as a load's would.
-- The promise rejects when the fetch fails, or when you pass a `mimeType`
+With `segments`, the engine also fetches the media playlists, the init
+segments, and that many media segments per track. The load then starts with
+no request, which suits a feed of short clips.
+
+```ts
+await engine.preload(next.url, { segments: 3, keepSeconds: 60 });
+```
+
+| Option        | Meaning                                                      | Default |
+| ------------- | ------------------------------------------------------------ | ------- |
+| `segments`    | Media segments to fetch per track, from the start. 0 is none | 0       |
+| `keepSeconds` | Seconds each response is kept                                | 30      |
+
+- The responses are kept in memory, at most 32 of them and 48 MB.
+- A response answers one request. The load that uses it removes it.
+- The requests go through your request hooks, as a load's would.
+- The promise rejects when the manifest fails, or when you pass a `mimeType`
   no composed protocol reads. The load then fetches as usual.
-- Only the manifest is preloaded. One engine plays one source; your
-  playlist decides what comes next and when to preload it.
+- `segments` needs an attached engine. Before `attach`, the manifest alone
+  is preloaded.
+- `segments` is for on-demand fragmented MP4. A live stream stops at the
+  playlists, because its edge moves before the load.
+- With DRM, the start still waits for the license.
+- One engine plays one source. Your playlist decides what comes next and
+  when to preload it.
 
 ## Unload and detach
 

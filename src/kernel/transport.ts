@@ -15,8 +15,9 @@
  *     req.headers['CMCD-Request'] = `sid=${sessionId}`;
  *   });
  */
+import type { ByteRange } from '../types/ir.js';
 import type { InflightRequest } from '../types/kernel.js';
-import type { Fact } from '../types/messages.js';
+import type { Effect, Fact } from '../types/messages.js';
 import type { EffectRunner } from './effects.js';
 
 /** Retry policy as data, not code. */
@@ -108,15 +109,67 @@ export interface Transport {
   /** Tokens with live network activity or a pending retry. For tests and diagnostics. */
   pending(): readonly string[];
   /**
-   * Keeps a response for the next fetch of `url`, which then answers from
-   * it once instead of the network: a preloaded manifest. At most three,
-   * the oldest dropped first; each expires after 30 s.
+   * Keeps a response for the next fetch of `url` and `range`, which then
+   * answers from it once instead of the network: a preloaded manifest or
+   * segment. The oldest are dropped first past 32 entries or 48 MB. An
+   * entry expires after `keepMs`, 30 s by default. `rtt` is the time its
+   * request took: the answer reports it, so a preloaded segment measures
+   * the network and not the lookup.
    */
-  prime(url: string, bytes: ArrayBuffer, headers: Headers): void;
+  prime(
+    url: string,
+    bytes: ArrayBuffer,
+    headers: Headers,
+    kept?: { readonly range?: ByteRange; readonly keepMs?: number; readonly rtt?: number },
+  ): void;
+  /**
+   * Runs fetch effects for another message loop: the same request hooks,
+   * retry policy and fetchImpl, with each outcome sent to that loop. Every
+   * response is also kept, as `prime` keeps one, for `keepMs`.
+   */
+  channel(deps: ChannelDeps): TransportChannel;
 }
 
-const PRIMED_LIMIT = 3;
+export interface ChannelDeps {
+  readonly absorb: (fact: Fact) => void;
+  readonly inflight: (token: string) => InflightRequest | undefined;
+  readonly keepMs: number;
+  /** Names the request behind a failure, just before its fact: a SEGMENT_FAILED carries no token. */
+  readonly failed?: (token: string) => void;
+}
+
+export interface TransportChannel {
+  /** Starts the request of a fetch effect. Returns its cancel. */
+  fetch(effect: Extract<Effect, { kind: 'fetch' }>): () => void;
+  /** Cancels every request of the channel. */
+  close(): void;
+}
+
+const PRIMED_LIMIT = 32;
+const PRIMED_BYTES = 48_000_000;
 const PRIMED_TTL_MS = 30_000;
+
+/** Where a request's outcome goes. The engine's own loop, or a channel's. */
+interface Sink {
+  /** Sets the channel's requests apart in the live map. Empty for the engine's own. */
+  readonly id: string;
+  readonly absorb: (fact: Fact) => void;
+  /** Milliseconds each response is kept for a later fetch, for a channel. */
+  readonly keepMs?: number;
+  readonly failed?: (token: string) => void;
+}
+
+interface Primed {
+  readonly bytes: ArrayBuffer;
+  readonly headers: Headers;
+  readonly expires: number;
+  readonly rtt: number;
+}
+
+/** A primed response answers one URL and one byte range. */
+function primedKey(url: string, range?: ByteRange): string {
+  return range === undefined ? url : `${url} ${range.start}-${range.end}`;
+}
 
 interface LiveRequest {
   controller: AbortController;
@@ -135,25 +188,53 @@ export function createTransport(options: TransportOptions): Transport {
   const requestHooks = new Set<RequestHook>();
   const responseHooks = new Set<ResponseHook>();
   const live = new Map<string, LiveRequest>();
-  const primed = new Map<string, { bytes: ArrayBuffer; headers: Headers; at: number }>();
+  let channels = 0;
+  const primed = new Map<string, Primed>();
+  const main: Sink = { id: '', absorb: options.absorb };
 
-  /** The primed response for a URL, once; null when none or expired. */
-  function takePrimed(url: string): Response | null {
-    const entry = primed.get(url);
+  /** The primed entry for a URL and range, once; null when none or expired. */
+  function takePrimed(url: string, range?: ByteRange): Primed | null {
+    const key = primedKey(url, range);
+    const entry = primed.get(key);
     if (entry === undefined) return null;
-    primed.delete(url);
-    if (now() - entry.at > PRIMED_TTL_MS) return null;
-    return new Response(entry.bytes, { status: 200, headers: entry.headers });
+    primed.delete(key);
+    return now() > entry.expires ? null : entry;
+  }
+
+  function prime(
+    url: string,
+    bytes: ArrayBuffer,
+    headers: Headers,
+    kept: { readonly range?: ByteRange; readonly keepMs?: number; readonly rtt?: number } = {},
+  ): void {
+    const key = primedKey(url, kept.range);
+    primed.delete(key);
+    primed.set(key, {
+      bytes,
+      headers,
+      expires: now() + (kept.keepMs ?? PRIMED_TTL_MS),
+      rtt: kept.rtt ?? 0,
+    });
+    let total = 0;
+    for (const entry of primed.values()) total += entry.bytes.byteLength;
+    // The newest entry always stays, whatever its size.
+    while (primed.size > 1 && (primed.size > PRIMED_LIMIT || total > PRIMED_BYTES)) {
+      const oldest = primed.keys().next().value as string;
+      total -= (primed.get(oldest) as Primed).bytes.byteLength;
+      primed.delete(oldest);
+    }
   }
 
   function fail(
+    sink: Sink,
     token: string,
     request: InflightRequest,
     code: 'NETWORK_TIMEOUT' | 'NETWORK_HTTP_STATUS' | 'NETWORK_FAILED',
     status?: number,
   ): void {
-    live.delete(token);
-    options.absorb({
+    live.delete(sink.id + token);
+    sink.failed?.(token);
+    sink.absorb({
       type: 'SEGMENT_FAILED',
       trackId: request.trackId,
       seq: request.seq,
@@ -180,6 +261,7 @@ export function createTransport(options: TransportOptions): Transport {
   }
 
   function attempt(
+    sink: Sink,
     token: string,
     request: InflightRequest,
     effectUrl: string,
@@ -194,7 +276,7 @@ export function createTransport(options: TransportOptions): Transport {
       timeoutId: null,
       retryId: null,
     };
-    live.set(token, state);
+    live.set(sink.id + token, state);
 
     const draft: TransportRequestDraft = {
       url: effectUrl,
@@ -236,13 +318,13 @@ export function createTransport(options: TransportOptions): Transport {
         (code !== 'NETWORK_HTTP_STATUS' ||
           (status !== undefined && policy.retryStatuses.includes(status)));
       if (!retryable) {
-        fail(token, request, code, status);
+        fail(sink, token, request, code, status);
         return;
       }
       state.retryId = setTimeout(
         () => {
           state.retryId = null;
-          attempt(token, request, effectUrl, range, timeoutFromEffect, attemptNo + 1);
+          attempt(sink, token, request, effectUrl, range, timeoutFromEffect, attemptNo + 1);
         },
         backoffDelayMs(policy, attemptNo),
       );
@@ -250,9 +332,9 @@ export function createTransport(options: TransportOptions): Transport {
 
     // A preloaded manifest answers by the URL the effect named, before the
     // hooks changed it, and only once.
-    const answer = takePrimed(effectUrl);
+    const answer = takePrimed(effectUrl, range);
     (answer !== null
-      ? Promise.resolve(answer)
+      ? Promise.resolve(new Response(answer.bytes, { status: 200, headers: answer.headers }))
       : fetchImpl(draft.url, { headers: draft.headers, signal: state.controller.signal })
     )
       .then(async (response) => {
@@ -284,10 +366,11 @@ export function createTransport(options: TransportOptions): Transport {
           // The body finished before the abort took effect. The kernel
           // dropped this request already; reporting it would hand another
           // rendition's bytes to whatever replaced it.
-          live.delete(token);
+          live.delete(sink.id + token);
           return;
         }
-        const rtt = now() - startedAt;
+        // A kept response reports the time its own request took.
+        const rtt = answer !== null ? answer.rtt : now() - startedAt;
         notifyResponse({
           token,
           url: draft.url,
@@ -298,9 +381,10 @@ export function createTransport(options: TransportOptions): Transport {
           attempt: attemptNo,
           headers: response.headers,
         });
-        live.delete(token);
+        live.delete(sink.id + token);
         if (refused) {
-          options.absorb({
+          sink.failed?.(token);
+          sink.absorb({
             type: 'SEGMENT_FAILED',
             trackId: request.trackId,
             seq: request.seq,
@@ -315,7 +399,14 @@ export function createTransport(options: TransportOptions): Transport {
           });
           return;
         }
-        options.absorb({
+        if (sink.keepMs !== undefined) {
+          prime(effectUrl, bytes, response.headers, {
+            ...(range !== undefined ? { range } : {}),
+            keepMs: sink.keepMs,
+            rtt,
+          });
+        }
+        sink.absorb({
           type: 'SEGMENT_LOADED',
           trackId: request.trackId,
           seq: request.seq,
@@ -332,7 +423,7 @@ export function createTransport(options: TransportOptions): Transport {
         if (state.userAborted) {
           // The kernel already dropped this request when it emitted the
           // abort; a fact here would be noise about a corpse.
-          live.delete(token);
+          live.delete(sink.id + token);
           return;
         }
         const outcome = state.timedOut ? 'timeout' : 'failure';
@@ -375,9 +466,36 @@ export function createTransport(options: TransportOptions): Transport {
           url: effect.url,
           ...(effect.renditionId !== undefined ? { renditionId: effect.renditionId } : {}),
         };
-        attempt(effect.token, request, effect.url, effect.range, effect.timeout, 1);
+        attempt(main, effect.token, request, effect.url, effect.range, effect.timeout, 1);
         return () => cancel(effect.token);
       });
+    },
+    channel(deps) {
+      channels += 1;
+      const sink: Sink = {
+        id: `c${channels}:`,
+        absorb: deps.absorb,
+        keepMs: deps.keepMs,
+        ...(deps.failed !== undefined ? { failed: deps.failed } : {}),
+      };
+      const tokens = new Set<string>();
+      return {
+        fetch(effect) {
+          const request = deps.inflight(effect.token) ?? {
+            token: effect.token,
+            trackId: effect.token,
+            seq: -1,
+            url: effect.url,
+            ...(effect.renditionId !== undefined ? { renditionId: effect.renditionId } : {}),
+          };
+          tokens.add(effect.token);
+          attempt(sink, effect.token, request, effect.url, effect.range, effect.timeout, 1);
+          return () => cancel(sink.id + effect.token);
+        },
+        close() {
+          for (const token of tokens) cancel(sink.id + token);
+        },
+      };
     },
     async request(url, init) {
       const draft: TransportRequestDraft = {
@@ -411,10 +529,6 @@ export function createTransport(options: TransportOptions): Transport {
     pending() {
       return [...live.keys()];
     },
-    prime(url, bytes, headers) {
-      primed.delete(url);
-      primed.set(url, { bytes, headers, at: now() });
-      while (primed.size > PRIMED_LIMIT) primed.delete(primed.keys().next().value as string);
-    },
+    prime,
   };
 }

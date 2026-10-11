@@ -7,6 +7,7 @@
 
 import { createBus } from './kernel/bus.js';
 import type { HookRegistry } from './kernel/context.js';
+import { dryRun } from './kernel/dry-run.js';
 import { createEffectRunner } from './kernel/effects.js';
 import { createLifecycle } from './kernel/lifecycle.js';
 import { compose } from './kernel/loader.js';
@@ -28,6 +29,7 @@ import { createTransport } from './kernel/transport.js';
 import type { MatteboxBase, MatteboxOptions } from './types/facade.js';
 import type { ContentType, Rendition } from './types/ir.js';
 import type { KernelConfig, TracedError } from './types/kernel.js';
+import type { LoadSeed } from './types/messages.js';
 
 // Track labels from the standard characteristic tags, for a player's menus.
 export {
@@ -260,6 +262,8 @@ export function mattebox(options: MatteboxOptions): Mattebox {
   // the reducer reads it live through this object.
   const hooks: HookRegistry = { manifestTypes: composition.manifestTypes, decodable };
   let lastError: TracedError | null = null;
+  /** What each deep preload started from, by URL, for the load that follows it. */
+  const seeds = new Map<string, { readonly seed: LoadSeed; readonly expires: number }>();
 
   function accepts(mimeType: string): boolean {
     return composition.manifestTypes.has(normalizeMimeType(mimeType));
@@ -420,10 +424,13 @@ export function mattebox(options: MatteboxOptions): Mattebox {
       // A load replaces whatever is loaded, the way setting `src` does.
       const { phase } = bus.getState().lifecycle;
       if (phase !== 'idle' && phase !== 'attaching') bus.dispatch({ type: 'UNLOAD' });
+      const kept = seeds.get(absolute);
+      seeds.delete(absolute);
       bus.dispatch({
         type: 'LOAD',
         url: absolute,
         ...(loadOptions?.mimeType !== undefined ? { mimeType: loadOptions.mimeType } : {}),
+        ...(kept !== undefined && performance.now() < kept.expires ? { seed: kept.seed } : {}),
       });
     },
     async preload(url, loadOptions) {
@@ -434,6 +441,33 @@ export function mattebox(options: MatteboxOptions): Mattebox {
           code: 'MANIFEST_UNSUPPORTED',
         });
       }
+      const keepMs = (loadOptions?.keepSeconds ?? 30) * 1000;
+      const element = lifecycle.element();
+      const segments = loadOptions?.segments ?? 0;
+      if (segments > 0 && element !== null) {
+        const state = bus.getState();
+        // What the first rendition choice reads: the estimate, and the
+        // constraints that are not about this presentation's renditions.
+        const seed: LoadSeed = {
+          throughputEwma: state.stats.throughputEwma,
+          throughputFastEwma: state.stats.throughputFastEwma,
+          constraints: [...state.quality.constraints].filter(
+            ([, constraint]) =>
+              constraint.excludeIds === undefined && constraint.filter === undefined,
+          ),
+        };
+        // The load of this URL starts from the same, while the bytes are kept.
+        seeds.set(absolute, { seed, expires: performance.now() + keepMs });
+        return dryRun(
+          { slices: lifecycle.slices(), config, hooks, transport, element, seed },
+          absolute,
+          {
+            ...(loadOptions?.mimeType !== undefined ? { mimeType: loadOptions.mimeType } : {}),
+            segments,
+            keepMs,
+          },
+        );
+      }
       const response = await transport.request(absolute, { method: 'GET' });
       if (!response.ok) {
         throw Object.assign(new Error(`preload ${absolute}: HTTP ${response.status}`), {
@@ -442,7 +476,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
           status: response.status,
         });
       }
-      transport.prime(absolute, await response.arrayBuffer(), response.headers);
+      transport.prime(absolute, await response.arrayBuffer(), response.headers, { keepMs });
     },
     unload() {
       bus.dispatch({ type: 'UNLOAD' });

@@ -353,7 +353,7 @@ describe('primed responses', () => {
     expect(h.calls).toHaveLength(1);
   });
 
-  it('expire after 30 s and keep at most three, the oldest dropped first', async () => {
+  it('expire after 30 s, or after the lifetime they were given', async () => {
     const h = harness(ok(8));
     h.transport.prime(URL_A, new ArrayBuffer(1), new Headers());
     vi.advanceTimersByTime(30_001);
@@ -361,14 +361,116 @@ describe('primed responses', () => {
     await vi.runAllTimersAsync();
     expect(h.calls.map((c) => c.url)).toEqual([URL_A]);
 
-    for (const name of ['a', 'b', 'c', 'd']) {
-      h.transport.prime(`https://cdn.example/${name}`, new ArrayBuffer(1), new Headers());
+    h.transport.prime(URL_A, new ArrayBuffer(1), new Headers(), { keepMs: 90_000 });
+    vi.advanceTimersByTime(60_000);
+    h.runner.run([{ kind: 'fetch', token: 't2', url: URL_A }]);
+    await vi.runAllTimersAsync();
+    expect(h.calls).toHaveLength(1);
+  });
+
+  it('keep at most 32 entries and 48 MB, the oldest dropped first', async () => {
+    const h = harness(ok(8));
+    for (let i = 0; i < 33; i += 1) {
+      h.transport.prime(`https://cdn.example/${i}`, new ArrayBuffer(1), new Headers());
     }
     h.runner.run([
-      { kind: 'fetch', token: 't2', url: 'https://cdn.example/a' },
-      { kind: 'fetch', token: 't3', url: 'https://cdn.example/d' },
+      { kind: 'fetch', token: 't1', url: 'https://cdn.example/0' },
+      { kind: 'fetch', token: 't2', url: 'https://cdn.example/32' },
     ]);
     await vi.runAllTimersAsync();
-    expect(h.calls.map((c) => c.url)).toEqual([URL_A, 'https://cdn.example/a']);
+    expect(h.calls.map((c) => c.url)).toEqual(['https://cdn.example/0']);
+
+    const big = harness(ok(8));
+    for (const name of ['a', 'b', 'c']) {
+      big.transport.prime(
+        `https://cdn.example/${name}`,
+        new ArrayBuffer(20_000_000),
+        new Headers(),
+      );
+    }
+    big.runner.run([
+      { kind: 'fetch', token: 't1', url: 'https://cdn.example/a' },
+      { kind: 'fetch', token: 't2', url: 'https://cdn.example/c' },
+    ]);
+    await vi.runAllTimersAsync();
+    expect(big.calls.map((c) => c.url)).toEqual(['https://cdn.example/a']);
+  });
+
+  it('answer the byte range they were kept for, and no other', async () => {
+    const h = harness(ok(8));
+    h.transport.prime(URL_A, new Uint8Array([1, 2]).buffer, new Headers(), {
+      range: { start: 0, end: 99 },
+    });
+    h.runner.run([{ kind: 'fetch', token: 't1', url: URL_A, range: { start: 100, end: 199 } }]);
+    await vi.runAllTimersAsync();
+    expect(h.calls).toHaveLength(1);
+    h.runner.run([{ kind: 'fetch', token: 't2', url: URL_A, range: { start: 0, end: 99 } }]);
+    await vi.runAllTimersAsync();
+    expect(h.calls).toHaveLength(1);
+    expect(h.facts[1]).toMatchObject({ type: 'SEGMENT_LOADED', size: 2 });
+  });
+
+  it('report the time their own request took, so a kept segment measures the network', async () => {
+    const h = harness(ok(8));
+    h.transport.prime(URL_A, new ArrayBuffer(4), new Headers(), { rtt: 250 });
+    h.runner.run([{ kind: 'fetch', token: 't1', url: URL_A }]);
+    await vi.runAllTimersAsync();
+    expect(h.facts[0]).toMatchObject({ type: 'SEGMENT_LOADED', rtt: 250 });
+  });
+});
+
+describe('a channel', () => {
+  const URL_A = 'https://cdn.example/v/3.m4s';
+
+  it('sends its outcomes to its own loop, keeps each response, and names a failed request', async () => {
+    const h = harness((url) =>
+      Promise.resolve(new Response(new ArrayBuffer(8), { status: url.endsWith('x') ? 404 : 200 })),
+    );
+    const own: Fact[] = [];
+    const failed: string[] = [];
+    const channel = h.transport.channel({
+      absorb: (fact) => own.push(fact),
+      inflight: () => undefined,
+      keepMs: 30_000,
+      failed: (token) => failed.push(token),
+    });
+    channel.fetch({ kind: 'fetch', token: 'c1', url: URL_A });
+    channel.fetch({ kind: 'fetch', token: 'c2', url: 'https://cdn.example/x' });
+    await vi.runAllTimersAsync();
+
+    expect(own.map((fact) => fact.type).sort()).toEqual(['SEGMENT_FAILED', 'SEGMENT_LOADED']);
+    expect(h.facts).toEqual([]);
+    expect(failed).toEqual(['c2']);
+
+    h.runner.run([{ kind: 'fetch', token: 't1', url: URL_A }]);
+    await vi.runAllTimersAsync();
+    expect(h.calls).toHaveLength(2);
+    expect(h.facts[0]).toMatchObject({ type: 'SEGMENT_LOADED', size: 8 });
+  });
+
+  it("cancels its requests on close, and leaves the engine's own alone", async () => {
+    let release: (() => void) | null = null;
+    const h = harness(
+      (_url, init) =>
+        new Promise((resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          release = () => resolve(new Response(new ArrayBuffer(8), { status: 200 }));
+        }),
+      { retry: { maxAttempts: 1 } },
+    );
+    const own: Fact[] = [];
+    const channel = h.transport.channel({
+      absorb: (fact) => own.push(fact),
+      inflight: () => undefined,
+      keepMs: 30_000,
+    });
+    channel.fetch({ kind: 'fetch', token: 't1', url: URL_A });
+    h.runner.run([{ kind: 'fetch', token: 't1', url: 'https://cdn.example/own' }]);
+    channel.close();
+    (release as (() => void) | null)?.();
+    await vi.runAllTimersAsync();
+
+    expect(own).toEqual([]);
+    expect(h.facts.map((fact) => fact.type)).toEqual(['SEGMENT_LOADED']);
   });
 });

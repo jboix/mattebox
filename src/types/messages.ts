@@ -72,7 +72,16 @@ export interface CueDescriptor {
 export type Command =
   | { readonly type: 'ATTACH'; readonly element: HTMLMediaElement }
   | { readonly type: 'DETACH' }
-  | { readonly type: 'LOAD'; readonly url: string; readonly mimeType?: string }
+  | {
+      readonly type: 'LOAD';
+      readonly url: string;
+      readonly mimeType?: string;
+      /**
+       * What a preload of this URL started from. The load starts from the
+       * same, so it picks the rendition whose bytes were kept.
+       */
+      readonly seed?: LoadSeed;
+    }
   | { readonly type: 'UNLOAD' }
   /** Stops every request while the source stays loaded. Accepted in the ready phase only. */
   | { readonly type: 'SUSPEND' }
@@ -251,6 +260,17 @@ export type Fact =
       readonly end: number;
       readonly edge: number;
     };
+
+/**
+ * The inputs of a load's first rendition choice: the throughput estimate
+ * and the constraints that name no rendition. A preload records them, and
+ * the load of the same URL starts from them.
+ */
+export interface LoadSeed {
+  readonly throughputEwma: number;
+  readonly throughputFastEwma: number;
+  readonly constraints: ReadonlyArray<readonly [string, Constraint]>;
+}
 
 export type Message = Command | Fact;
 

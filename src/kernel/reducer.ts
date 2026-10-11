@@ -347,7 +347,12 @@ function reduceCommand(
     case 'DETACH': {
       // Idempotent and safe from any phase, including error.
       const [, aborts] = abortInflight(state);
-      return [initialState(cfg), aborts];
+      const fresh = initialState(cfg);
+      // The throughput estimate stays, as on UNLOAD: it measures this
+      // page's network, not the element. A player detaches between two
+      // sources, and the next one starts where the network just was.
+      const { throughputEwma, throughputFastEwma } = state.stats;
+      return [{ ...fresh, stats: { ...fresh.stats, throughputEwma, throughputFastEwma } }, aborts];
     }
 
     case 'LOAD': {
@@ -374,9 +379,25 @@ function reduceCommand(
       const token = `t${tokenSeq}:manifest`;
       const inflight = new Map(state.scheduling.inflight);
       inflight.set(token, { token, trackId: 'manifest', seq: 0, url: msg.url });
+      // A load after a preload starts from what the preload started from:
+      // its first rendition is then the one whose segments were kept. A
+      // stage's own constraint replaces the seeded one when it arrives.
+      const seed = msg.seed;
+      const seeded: KernelState =
+        seed === undefined
+          ? state
+          : {
+              ...state,
+              stats: {
+                ...state.stats,
+                throughputEwma: seed.throughputEwma,
+                throughputFastEwma: seed.throughputFastEwma,
+              },
+              quality: { ...state.quality, constraints: new Map(seed.constraints) },
+            };
       return [
         {
-          ...state,
+          ...seeded,
           lifecycle: { phase: 'loading' },
           scheduling: { ...state.scheduling, inflight, tokenSeq },
         },

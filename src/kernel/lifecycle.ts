@@ -50,6 +50,8 @@ export interface Lifecycle {
   attach(el: HTMLMediaElement, options?: AttachOptions): void;
   detach(): void;
   element(): HTMLMediaElement | null;
+  /** The slices the stages registered at attach, for a dry run of a load. Empty while detached. */
+  slices(): ReadonlyArray<readonly [string, SliceReducer]>;
 }
 
 function snapshot(ranges: TimeRanges): TimeRangesSnapshot {
@@ -63,6 +65,7 @@ function snapshot(ranges: TimeRanges): TimeRangesSnapshot {
 export function createLifecycle(deps: LifecycleDeps): Lifecycle {
   let element: HTMLMediaElement | null = null;
   let teardowns: Array<() => void> = [];
+  let installed: ReadonlyArray<readonly [string, SliceReducer]> = [];
   let stopWatchdog: (() => void) | null = null;
   const elementListeners: Array<{ type: string; fn: EventListener }> = [];
 
@@ -102,6 +105,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     }
     deps.bus.setReducer(createReducer(slices, deps.config, deps.hooks));
     teardowns = stageTeardowns;
+    installed = slices;
 
     deps.bus.dispatch({ type: 'ATTACH', element: el });
     // The mse controller runs the element-level sequence: occupancy check,
@@ -163,6 +167,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       fn();
     }
     teardowns = [];
+    installed = [];
     deps.mse.detach();
     for (const { type, fn } of elementListeners) {
       el.removeEventListener(type, fn);
@@ -176,5 +181,6 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     attach,
     detach,
     element: () => element,
+    slices: () => installed,
   };
 }
