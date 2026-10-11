@@ -1436,6 +1436,43 @@ canvas.chart {
   video {
     max-height: 32vh;
   }
+  /* The transport would hold half of a phone's screen, so the tab strip
+     alone pins. The script measures what sits above the strip. */
+  .pinned {
+    top: calc(-1 * var(--pin-offset, 0px));
+  }
+  /* One row to swipe through, not three rows of tabs. */
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .tabs button {
+    flex: none;
+    white-space: nowrap;
+  }
+  .pinned.stuck .tab-back {
+    position: sticky;
+    right: 0;
+    background: var(--bg);
+  }
+  /* A log line keeps its head on one row and gives the message its own. */
+  .log-row {
+    flex-wrap: wrap;
+  }
+  .log-msg {
+    flex-basis: 100%;
+  }
+  .chart-tabs {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .chart-tabs button {
+    flex: none;
+  }
 }
 
 /* ---- manifest checks -------------------------------------------------- */

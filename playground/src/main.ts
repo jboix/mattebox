@@ -500,6 +500,12 @@ for (const button of document.querySelectorAll<HTMLElement>('#tabs [data-tab]'))
     { threshold: 0 },
   );
   observer.observe(slot);
+  // On a phone the stylesheet pins the tab strip alone, and needs the
+  // height of the deck above it to do so.
+  const tabs = document.querySelector('#tabs') as HTMLElement;
+  new ResizeObserver(() => {
+    pinned.style.setProperty('--pin-offset', `${tabs.offsetTop}px`);
+  }).observe(pinned);
   (document.querySelector('#backToPlayer') as HTMLElement).addEventListener('click', () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
