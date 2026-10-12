@@ -34,7 +34,7 @@ unpinned URL follows the latest release and can change under a live page.
 ```html
 <video id="player" controls></video>
 
-<script src="https://cdn.jsdelivr.net/npm/mattebox@0.1.0/dist/cdn/mattebox.hls.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/mattebox@0.14.0/dist/cdn/mattebox.hls.min.js" defer></script>
 <script type="module">
   const video = document.getElementById('player');
   const engine = mattebox.preset();
@@ -85,13 +85,13 @@ A pinned URL can have a subresource integrity hash, and a page with a
 content security policy needs one. Compute it from the published file.
 
 ```sh
-curl -s https://cdn.jsdelivr.net/npm/mattebox@0.1.0/dist/cdn/mattebox.hls.min.js \
+curl -s https://cdn.jsdelivr.net/npm/mattebox@0.14.0/dist/cdn/mattebox.hls.min.js \
   | openssl dgst -sha384 -binary | openssl base64 -A
 ```
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/npm/mattebox@0.1.0/dist/cdn/mattebox.hls.min.js"
+  src="https://cdn.jsdelivr.net/npm/mattebox@0.14.0/dist/cdn/mattebox.hls.min.js"
   integrity="sha384-<the hash>"
   crossorigin="anonymous"
   defer></script>
@@ -108,8 +108,8 @@ are never fetched.
 
 ```html
 <script type="module">
-  import hls from 'https://cdn.jsdelivr.net/npm/mattebox@0.1.0/presets/hls/+esm';
-  import thumbnails from 'https://cdn.jsdelivr.net/npm/mattebox@0.1.0/stages/thumbnails/+esm';
+  import hls from 'https://cdn.jsdelivr.net/npm/mattebox@0.14.0/presets/hls/+esm';
+  import thumbnails from 'https://cdn.jsdelivr.net/npm/mattebox@0.14.0/stages/thumbnails/+esm';
 
   const engine = hls({ stages: [thumbnails()] });
   await engine.attach(document.querySelector('video'));
@@ -161,7 +161,7 @@ A live channel with subtitles from one script tag, pinned and verified.
 <video id="player" controls playsinline></video>
 
 <script
-  src="https://cdn.jsdelivr.net/npm/mattebox@0.1.0/dist/cdn/mattebox.hls.min.js"
+  src="https://cdn.jsdelivr.net/npm/mattebox@0.14.0/dist/cdn/mattebox.hls.min.js"
   integrity="sha384-<the hash>"
   crossorigin="anonymous"
   defer></script>
