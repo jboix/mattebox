@@ -260,7 +260,7 @@ function composedReducer() {
 app.innerHTML = `
   <header class="topbar">
     <div class="brand">
-      <a class="home" href="https://jboix.github.io/mattebox-site/"><img class="logo" src="${logoUrl}" alt="Mattebox, the website"></a>
+      <a class="home" href="https://mattebox.ch/"><img class="logo" src="${logoUrl}" alt="Mattebox, the website"></a>
       <div class="brand-text">
         <h1>Mattebox <span class="tag">playground</span></h1>
       </div>

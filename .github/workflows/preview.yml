@@ -37,10 +37,11 @@ jobs:
         # to the gh-pages branch, and its history would keep each copy.
         env:
           VITE_LOCAL_STREAMS: off
-        run: pnpm run playground:build --base=/${{ github.event.repository.name }}/pr-preview/pr-${{ github.event.number }}/
+        run: pnpm run playground:build --base=/pr-preview/pr-${{ github.event.number }}/
       - name: Deploy preview
         uses: rossjrw/pr-preview-action@ffa7509e91a3ec8dfc2e5536c4d5c1acdf7a6de9 # v1
         with:
           source-dir: playground/dist
           preview-branch: gh-pages
+          pages-base-url: engine.mattebox.ch
           umbrella-dir: pr-preview

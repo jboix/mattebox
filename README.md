@@ -59,15 +59,15 @@ The [guide](docs/guide/README.md) covers the rest, starting with
 ## Player
 
 Mattebox is the engine. Try it in the
-[playground](https://jboix.github.io/mattebox/), which lets you load streams
+[playground](https://engine.mattebox.ch/), which lets you load streams
 and pick stages in the browser. If you want a finished player on top of it,
 with controls, a theme, and a UI you can customize, use the sibling projects:
 
 - [mattebox-player](https://github.com/jboix/mattebox-player): a ready-made
-  player built on Mattebox. Try the [demo](https://jboix.github.io/mattebox-player/).
+  player built on Mattebox. Try the [demo](https://demo.mattebox.ch/).
 - [mattebox-player-editor](https://github.com/jboix/mattebox-player-editor):
   a visual theme editor for the player. Open the
-  [editor](https://jboix.github.io/mattebox-player-editor/) to customize it.
+  [editor](https://editor.mattebox.ch/) to customize it.
 
 ## Presets
 
@@ -106,7 +106,7 @@ segments, `-drm` for protected content.
 
 - [Guide](docs/guide/README.md): how to use the engine, one chapter per topic.
 - [Architecture](docs/architecture.md): how the engine is built and how a stage plugs in.
-- [Playground](https://jboix.github.io/mattebox/): try streams and stages in the browser.
+- [Playground](https://engine.mattebox.ch/): try streams and stages in the browser.
 
 ## Contributing
 

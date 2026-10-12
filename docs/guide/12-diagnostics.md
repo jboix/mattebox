@@ -91,7 +91,7 @@ holding a command the kernel rejected, diverges on replay at that entry.
 
 ## The playground
 
-The hosted [playground](https://jboix.github.io/mattebox/) shows all of this
+The hosted [playground](https://engine.mattebox.ch/) shows all of this
 live: the trace, the buffered ranges per rendition, the quality constraints,
 and a toggle per stage. Paste a manifest URL to try your own stream.
 
