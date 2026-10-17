@@ -220,6 +220,7 @@ export default function myStage(): Stage {
 | `registerParser`         | Bytes to cues for one MIME type                                                 | `text-webvtt`, `meta-id3`       |
 | `registerTransform`      | One ordered step in the segment byte pipeline                                   | `ts-transmux`, `aes-128`        |
 | `registerTimeProbe`      | The reader of a media segment's start decode time, one per composition          | `cmaf-timing`                   |
+| `registerChunkSplitter`  | Where the complete chunks of a segment still arriving end, one per composition  | `dash-ll`                       |
 | `registerNamespace`      | A public API at `engine.<name>`                                                 | `eme-core`, `thumbnails`, `pdt` |
 | `registerChooser`        | The rendition chooser                                                           | `abr`                           |
 | `registerSwitchPolicy`   | Whether a rendition switch is seamless, needs `changeType`, or a reload         | `codec-switch`                  |
@@ -236,6 +237,25 @@ The lifecycle:
 
 Transforms run in ascending `order`: decryption first, the transmuxer at
 100, caption extraction and timing fixes at 150.
+
+## Decisions
+
+These choices shape every change. A pull request that goes against one
+needs an issue first.
+
+| Decision                                                                  | Reason                                                                                                     |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| One message queue and a pure reducer                                      | Five sources write player state. One queue orders them, and a trace replays into a fresh reducer as a test |
+| The reducer reads no clock; wall time arrives on facts                    | A replay gives the same result every time                                                                  |
+| Every feature is a stage, and stages never import each other              | You bundle only the stages you load, and a stage can be replaced without touching the others               |
+| Nothing registers at import time                                          | `sideEffects: false` holds, so a bundler drops what you do not import                                      |
+| Zero runtime dependencies                                                 | The size budgets hold, and you audit one package                                                           |
+| One IR for both protocols                                                 | Nothing above layer 1 branches on HLS or DASH, so each feature is written once                             |
+| No `HTMLMediaElement` member is shadowed                                  | Your page and other libraries keep using `currentTime`, `play()` and the rest as the browser defines them  |
+| The API floor is Chromium 76                                              | The engine runs on 2021 TVs: Tizen 6.0 (Chromium 76) and webOS 6 (Chromium 79)                             |
+| Where a choice is open, the engine does what VHS, hls.js, or dash.js does | You get the behaviour the established players taught your users and your streams                           |
+| Presets are fixed lists; accessories are only in `full`                   | A preset is a known size, and a stage that changes requests (CMCD) or needs your page (chapters) is opt-in |
+| The end-to-end suite runs nightly and never blocks a release              | It plays real streams in real time, some on third-party servers, so it is too slow and too flaky to gate   |
 
 ## See also
 

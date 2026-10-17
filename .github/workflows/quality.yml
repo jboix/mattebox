@@ -56,15 +56,16 @@ jobs:
         run: pnpm run check:size-chart
       - name: Package validation
         run: pnpm run check:package
-      - name: Unit tests (tiers 1 & 2, with coverage)
-        run: pnpm run test:node --coverage
+      - name: Install browsers
+        uses: ./.github/actions/playwright-browsers
+      # Node and Chromium together, so coverage includes the MSE core.
+      - name: Node and Chromium tests, with coverage thresholds
+        run: pnpm run test:coverage
       - name: Report Coverage
         if: github.event_name == 'pull_request'
         uses: davelosert/vitest-coverage-report-action@8f86cfb56ed6d5613ea8cdc5259f207fbfd51ece # v2
-      - name: Install browsers
-        uses: ./.github/actions/playwright-browsers
-      - name: Browser tests (tier 3)
-        run: pnpm run test:browser
+      - name: Browser tests in Firefox and WebKit
+        run: pnpm exec vitest run --project=browser --browser=firefox --browser=webkit
 
   commitlint:
     if: github.event_name == 'pull_request'

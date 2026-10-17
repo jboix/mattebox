@@ -81,6 +81,8 @@ export interface BootOptions {
   readonly profile?: Profile;
   /** Low-latency lines: hls-ll and dash-ll in place of the plain ones, plus live catch-up. The LL sources set it. */
   readonly ll?: boolean;
+  /** A manifest URL to load in place of the source's: a public stream. */
+  readonly url?: string;
   /** URLs containing this start 404ing after `failAfter` seconds. */
   readonly fail?: string;
   readonly failAfter?: number;
@@ -297,7 +299,7 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
   });
 
   await engine.attach(video);
-  engine.load(sources[src]());
+  engine.load(options.url ?? sources[src]());
   return player;
 }
 

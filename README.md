@@ -15,7 +15,7 @@ MSE, EME, and standard web platform APIs.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/size-chart-dark.svg">
-  <img alt="Bundle size of adaptive streaming engines, min+gzip, each engine's compatibility build. Mattebox with every stage, transmux worker inside, is 86.9 KB, hls.js 184.1 KB, video.js with VHS built in 197.3 KB, Shaka Player 267.0 KB, dash.js 297.3 KB." src="docs/size-chart-light.svg">
+  <img alt="Bundle size of adaptive streaming engines, min+gzip, each engine's compatibility build. Mattebox with every stage, transmux worker inside, is 87.9 KB, hls.js 184.1 KB, video.js with VHS built in 197.3 KB, Shaka Player 267.0 KB, dash.js 297.3 KB." src="docs/size-chart-light.svg">
 </picture>
 
 ## Quick start
@@ -108,7 +108,8 @@ segments, `-drm` for protected content.
 ## Documentation
 
 - [Guide](docs/guide/README.md): how to use the engine, one chapter per topic.
-- [Architecture](docs/architecture.md): how the engine is built and how a stage plugs in.
+- [Architecture](docs/architecture.md): how the engine is built, how a stage plugs in, and the decisions behind it.
+- [Stability](docs/stability.md): what you can rely on before 1.0, and what 1.0 promises.
 - [Playground](https://engine.mattebox.ch/): try streams and stages in the browser.
 
 ## Contributing
@@ -116,6 +117,9 @@ segments, `-drm` for protected content.
 See the [contributing guide](docs/CONTRIBUTING.md). Participation is governed
 by the [Code of Conduct](docs/CODE_OF_CONDUCT.md). Vulnerabilities go through
 [SECURITY.md](docs/SECURITY.md).
+
+The node and Chromium test tiers cover 93% of the lines in `src/` (2026-10-16).
+CI fails below 91%.
 
 ## License
 

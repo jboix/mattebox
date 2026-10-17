@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mattebox device check</title>
+<style>
+  body { margin: 16px; font: 18px/1.4 system-ui, sans-serif; background: #111; color: #eee; }
+  video { width: 100%; max-width: 960px; background: #000; }
+  button { font: inherit; margin: 4px; padding: 8px 14px; }
+  button:focus { outline: 3px solid #4af; }
+  pre { white-space: pre-wrap; font-size: 15px; }
+  td, th { padding: 2px 8px; text-align: left; }
+</style>
+</head>
+<body>
+<!--
+  The device check page (docs/guide/19-real-devices.md). It loads the
+  ES2015 CDN bundle the TVs run, so build first: pnpm run build:cdn. Serve
+  the repository root on your network (python3 -m http.server 8080) and
+  open http://<your machine>:8080/test/devices/ on the device.
+  The script avoids syntax newer than Chromium 76 (no ?. or ??), so the
+  page itself runs where the engine does.
+-->
+<h1>Mattebox device check</h1>
+<div id="streams"></div>
+<!-- biome-ignore lint/a11y/useMediaCaption: test page without captions -->
+<video id="video" controls playsinline></video>
+<div>
+  <button type="button" id="seek">Seek to 60 %</button>
+  <button type="button" id="lower">Lowest quality</button>
+  <button type="button" id="auto">Automatic quality</button>
+  <button type="button" id="audio">Next audio track</button>
+</div>
+<pre id="status"></pre>
+<h2>Platform</h2>
+<table id="platform"></table>
+<script src="../../dist/cdn/mattebox.min.js"></script>
+<script>
+  const STREAMS = [
+    ['HLS fMP4, Apple', 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8'],
+    ['HLS MPEG-TS, Apple', 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8'],
+    ['HLS HEVC, Apple', 'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_adv_example_hevc/master.m3u8'],
+    ['DASH, Akamai Big Buck Bunny', 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd'],
+    ['DASH live, livesim2', 'https://livesim2.dashif.org/livesim2/testpic_2s/Manifest.mpd'],
+    ['LL-DASH, livesim2', 'https://livesim2.dashif.org/livesim2/chunkdur_1/ato_7/testpic4_8s/Manifest300.mpd'],
+    ['LL-HLS, Mux', 'https://stream.mux.com/v69RSHhFelSm4701snP22dYz2jICy4E4FUyk02rW4gxRM.m3u8'],
+  ];
+  const video = document.getElementById('video');
+  const engine = mattebox.preset();
+  let errors = [];
+  let audioIndex = 0;
+  engine.on('error', (error) => {
+    errors.push(error.code + (error.fatal ? ' (fatal)' : ''));
+  });
+  engine.attach(video);
+
+  const list = document.getElementById('streams');
+  for (const [label, url] of STREAMS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.onclick = () => {
+      errors = [];
+      engine.load(url);
+      video.play();
+    };
+    list.appendChild(button);
+  }
+  document.getElementById('seek').onclick = () => {
+    if (Number.isFinite(video.duration)) video.currentTime = video.duration * 0.6;
+  };
+  document.getElementById('lower').onclick = () => {
+    let lowest = null;
+    for (const rendition of engine.quality.selectable) {
+      if (lowest === null || rendition.bitrate < lowest.bitrate) lowest = rendition;
+    }
+    if (lowest !== null) engine.quality.pin(lowest.id);
+  };
+  document.getElementById('auto').onclick = () => {
+    engine.quality.auto();
+  };
+  document.getElementById('audio').onclick = () => {
+    const tracks = engine.tracks.available.filter((track) => track.contentType === 'audio');
+    if (tracks.length < 2) return;
+    audioIndex = (audioIndex + 1) % tracks.length;
+    engine.tracks.select(tracks[audioIndex].id);
+  };
+
+  const ranges = (time) => {
+    const out = [];
+    for (let i = 0; i < time.length; i += 1) {
+      out.push(`${time.start(i).toFixed(1)}-${time.end(i).toFixed(1)}`);
+    }
+    return out.join(' ');
+  };
+  setInterval(() => {
+    const playing = engine.quality.playing;
+    const live = engine.live;
+    const quality = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null;
+    document.getElementById('status').textContent = [
+      `time ${video.currentTime.toFixed(1)}${video.paused ? ' paused' : ''}`,
+      `buffered ${ranges(video.buffered)}`,
+      `quality ${playing ? `${playing.height}p ${Math.round(playing.bitrate / 1000)} kb/s` : '-'}`,
+      `latency ${live && live.latency !== null ? `${live.latency.toFixed(1)} s` : '-'}`,
+      `dropped frames ${quality ? quality.droppedVideoFrames : '-'}`,
+      `errors ${errors.length > 0 ? errors.join(', ') : 'none'}`,
+    ].join('\n');
+  }, 500);
+
+  const platform = document.getElementById('platform');
+  const row = (name, value) => {
+    const tr = document.createElement('tr');
+    const th = document.createElement('th');
+    const td = document.createElement('td');
+    th.textContent = name;
+    td.textContent = String(value);
+    tr.append(th, td);
+    platform.appendChild(tr);
+  };
+  row('User agent', navigator.userAgent);
+  row('MediaSource', 'MediaSource' in window);
+  row('ManagedMediaSource', 'ManagedMediaSource' in window);
+  row('EME', 'requestMediaKeySystemAccess' in navigator);
+  const Source = window.ManagedMediaSource || window.MediaSource;
+  const decodes = (type) => (Source ? Source.isTypeSupported(type) : false);
+  for (const codec of ['avc1.64001f', 'hvc1.1.6.L120.90', 'vp09.00.10.08', 'av01.0.05M.08']) {
+    row(`video ${codec}`, decodes(`video/mp4; codecs="${codec}"`));
+  }
+  for (const codec of ['mp4a.40.2', 'ac-3', 'ec-3']) {
+    row(`audio ${codec}`, decodes(`audio/mp4; codecs="${codec}"`));
+  }
+  const systems = [
+    ['Widevine', 'com.widevine.alpha'],
+    ['PlayReady', 'com.microsoft.playready'],
+    ['FairPlay', 'com.apple.fps'],
+  ];
+  for (const [name, keySystem] of systems) {
+    if (!navigator.requestMediaKeySystemAccess) {
+      row(name, false);
+      continue;
+    }
+    const config = {
+      initDataTypes: ['cenc', 'sinf'],
+      videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.64001f"' }],
+    };
+    navigator.requestMediaKeySystemAccess(keySystem, [config]).then(
+      () => row(name, true),
+      () => row(name, false),
+    );
+  }
+</script>
+</body>
+</html>

@@ -16,6 +16,8 @@ dist/
 
 # generated E2E stream corpus (`test/e2e/gen-streams.sh`, needs ffmpeg)
 test/fixtures/streams/
+# conformance reports (`pnpm run test:conformance`)
+test/e2e/results/
 
 # testing
 coverage/

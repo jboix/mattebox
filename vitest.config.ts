@@ -14,18 +14,13 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**'],
-      // v8 cannot instrument Firefox or WebKit; coverage measures the node tier.
-      exclude: [
-        'src/kernel/mse.ts',
-        'src/kernel/append-queue.ts',
-        'src/kernel/evictor.ts',
-        'src/kernel/lifecycle.ts',
-        'src/kernel/sinks/text-track-sink.ts',
-        'src/kernel/sinks/metadata-sink.ts',
-        'src/index.ts',
-        'src/types/**',
-      ],
-      // json-summary and json feed the PR coverage comment. No thresholds.
+      // `test:coverage` merges the node tier and the Chromium browser tier,
+      // which covers the MSE core. v8 instruments Chromium only.
+      exclude: ['src/types/**'],
+      // The measured figures on 2026-10-16 minus two points. Raise them
+      // when coverage rises; never lower them to pass.
+      thresholds: { statements: 87, branches: 79, functions: 89, lines: 91 },
+      // json-summary and json feed the PR coverage comment.
       reporter: ['text', 'json-summary', 'json'],
     },
     projects: [

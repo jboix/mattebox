@@ -171,7 +171,7 @@ the transmux Worker inside.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../preset-chart-dark.svg">
-  <img alt="Bundle size of every Mattebox preset, min+gzip, one file each. kernel 25.2 KB, hls 47.8 KB, dash 49.1 KB, dual 56.9 KB, dual-ts-drm 67.6 KB, hls-ll 50.1 KB, dash-ll 50.1 KB, dual-ll 59.3 KB, full 86.9 KB." src="../preset-chart-light.svg">
+  <img alt="Bundle size of every Mattebox preset, min+gzip, one file each. kernel 25.4 KB, hls 48.0 KB, dash 49.7 KB, dual 57.6 KB, dual-ts-drm 68.3 KB, hls-ll 50.5 KB, dash-ll 50.8 KB, dual-ll 60.2 KB, full 87.9 KB." src="../preset-chart-light.svg">
 </picture>
 
 ## Kernel config
