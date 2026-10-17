@@ -115,7 +115,7 @@ describe('on-demand profile: SegmentBase with a sidx index', () => {
     const addressing = sidx(firstRendition(NAME));
     const segments = sidxToSegments(new Uint8Array(SIDX), addressing);
     expect(segments.length).toBe(15);
-    // First media byte is indexRange.end + 1 + firstOffset.
+    // First media byte is the end of the sidx box plus firstOffset.
     expect(segments[0]?.byteRange?.start).toBe(1306);
     // Byte ranges are contiguous and durations sum to the declared 60s.
     for (let i = 1; i < segments.length; i += 1) {
@@ -123,6 +123,19 @@ describe('on-demand profile: SegmentBase with a sidx index', () => {
     }
     const total = segments.reduce((sum, s) => sum + s.duration, 0);
     expect(total).toBeCloseTo(60, 3);
+  });
+
+  it('anchors the offsets at the end of the sidx box when the index range holds more', () => {
+    // A DASH-IF 1a vector puts a uuid box after the sidx, inside indexRange.
+    const addressing = sidx(firstRendition(NAME));
+    const uuid = new Uint8Array(100);
+    new DataView(uuid.buffer).setUint32(0, 100);
+    uuid.set([0x75, 0x75, 0x69, 0x64], 4);
+    const bytes = new Uint8Array(SIDX.byteLength + uuid.byteLength);
+    bytes.set(new Uint8Array(SIDX));
+    bytes.set(uuid, SIDX.byteLength);
+    const wider = { ...addressing, indexRange: { start: 1094, end: 1405 } };
+    expect(sidxToSegments(bytes, wider)[0]?.byteRange?.start).toBe(1306);
   });
 
   it('merges resolved segments back into the rendition in place', () => {

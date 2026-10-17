@@ -1156,7 +1156,10 @@ export function sidxToSegments(sidxBytes: Uint8Array, addressing: SidxSegments):
   if (sidx === null) return [];
   const timescale = sidx.timescale || addressing.timescale || 1;
   const pto = addressing.presentationTimeOffset ?? 0;
-  let offset = addressing.indexRange.end + 1 + sidx.firstOffset;
+  // first_offset counts from the first byte after the sidx box (ISO/IEC
+  // 14496-12 §8.16.3), not from the end of the index range: a range may
+  // hold more boxes after it, as a DASH-IF 1a vector holds a uuid box.
+  let offset = addressing.indexRange.start + box.start + box.size + sidx.firstOffset;
   let mediaTime = sidx.earliestPresentationTime;
   const segments: Segment[] = [];
   for (let i = 0; i < sidx.references.length; i += 1) {
