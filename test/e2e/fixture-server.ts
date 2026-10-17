@@ -251,7 +251,77 @@ function llFragments(res: ServerResponse, source: LlSource, from: number, to: nu
   res.end(source.bytes.subarray(start, end));
 }
 
+// ---- low-latency DASH origin ----------------------------------------------
+// The same stream as chunked CMAF (DASH-IF IOP low-latency): 4 s segments,
+// each sent as its four 1 s chunks are published. @availabilityTimeOffset
+// lets a client ask for a segment three seconds before it ends.
+//
+// `skew` sets this server's clock that many seconds ahead of the real one:
+// the MPD writes availabilityStartTime and the UTCTiming date in server
+// time, so only a client that reads UTCTiming finds the live edge. `utc`
+// picks the scheme: `direct` (the date in the MPD) or `head` (the Date
+// header of /ll/time).
+
+function llMpd(source: LlSource, t0: number, skew: number, utc: string): string {
+  const serverNow = Date.now() + skew * 1000;
+  const start = new Date(t0 - LL.prelude * 1000 + skew * 1000).toISOString();
+  const timing =
+    utc === 'head'
+      ? '<UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-head:2014" value="/ll/time?skew=' +
+        `${skew}"/>`
+      : `<UTCTiming schemeIdUri="urn:mpeg:dash:utc:direct:2014" value="${new Date(serverNow).toISOString()}"/>`;
+  return `<?xml version="1.0" encoding="utf-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic" availabilityStartTime="${start}"
+  minimumUpdatePeriod="PT30S" timeShiftBufferDepth="PT30S" maxSegmentDuration="PT4S"
+  minBufferTime="PT1S" profiles="urn:mpeg:dash:profile:isoff-live:2011">
+  <ServiceDescription id="0">
+    <Latency referenceId="0" target="3000" max="9000" min="2000"/>
+    <PlaybackRate min="0.96" max="1.04"/>
+  </ServiceDescription>
+  <Period id="p0" start="PT0S">
+    <AdaptationSet contentType="video" mimeType="video/mp4" segmentAlignment="true" startWithSAP="1">
+      <SegmentTemplate timescale="1000" duration="${LL.partsPerSegment * 1000}" startNumber="0"
+        availabilityTimeOffset="${LL.partsPerSegment - 1}" availabilityTimeComplete="false"
+        initialization="init.mp4" media="dash-$Number$.m4s"/>
+      <Representation id="v" codecs="${source.codec}" bandwidth="200000" width="320" height="180"/>
+    </AdaptationSet>
+  </Period>
+  ${timing}
+</MPD>`;
+}
+
+/** Sends a segment's chunks as they are published, each in one write. */
+async function llChunked(
+  res: ServerResponse,
+  source: LlSource,
+  t0: number,
+  segment: number,
+): Promise<void> {
+  const first = segment * LL.partsPerSegment;
+  if (!(await llWait(source, t0, first, LL.partsPerSegment))) {
+    res.writeHead(404);
+    res.end('not yet');
+    return;
+  }
+  res.writeHead(200, { 'content-type': MIME['.m4s'] as string, 'cache-control': 'no-store' });
+  for (let index = first; index < first + LL.partsPerSegment; index += 1) {
+    if (!(await llWait(source, t0, index, LL.partsPerSegment))) break;
+    const fragment = source.fragments[index] as { start: number; end: number };
+    res.write(source.bytes.subarray(fragment.start, fragment.end));
+  }
+  res.end();
+}
+
 async function handleLl(url: URL, res: ServerResponse): Promise<boolean> {
+  if (url.pathname === '/ll/time') {
+    const skew = Number(url.searchParams.get('skew')) || 0;
+    res.writeHead(200, {
+      date: new Date(Date.now() + skew * 1000).toUTCString(),
+      'cache-control': 'no-store',
+    });
+    res.end();
+    return true;
+  }
   const match = /^\/ll\/(h264|vp9)\/(\d+)\/(.+)$/.exec(url.pathname);
   if (match === null) return false;
   const [, flavor, t0Text, name] = match as unknown as [string, string, string, string];
@@ -288,6 +358,17 @@ async function handleLl(url: URL, res: ServerResponse): Promise<boolean> {
       MIME['.m3u8'] as string,
       llPlaylist(source, t0, url.searchParams.get('_HLS_skip') === 'YES'),
     );
+    return true;
+  }
+  if (name === 'manifest.mpd') {
+    const skew = Number(url.searchParams.get('skew')) || 0;
+    const utc = url.searchParams.get('utc') ?? 'direct';
+    text(res, MIME['.mpd'] as string, llMpd(source, t0, skew, utc));
+    return true;
+  }
+  const chunked = /^dash-(\d+)\.m4s$/.exec(name);
+  if (chunked !== null) {
+    await llChunked(res, source, t0, Number(chunked[1]));
     return true;
   }
   if (name === 'init.mp4') {

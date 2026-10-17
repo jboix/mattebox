@@ -22,6 +22,7 @@ function compose(...factories: Array<() => Stage>) {
       registerSwitchPolicy: () => undefined,
       registerTypeProbe: () => undefined,
       registerTimeProbe: () => undefined,
+      registerChunkSplitter: () => undefined,
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
       addResponseHook: () => () => undefined,
@@ -964,6 +965,69 @@ describe('dash-live', () => {
     })();
     // end = clientNow + skew(10) - AST = 40; start = 40 - 20; edge = 40 - 6.
     expect(windowState.live).toEqual({ span: { start: 20, end: 40 }, edge: 34 });
+  });
+
+  /** Boots with this time server, after a wall-clock fact at AST + 30, and reads the window at AST + 30. */
+  function bootWith(timeServer: { scheme: string; value: string }) {
+    let state = initialState();
+    [state] = reduce(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = reduce(state, { type: 'LOAD', url: 'https://live.example/live.mpd' });
+    [state] = reduce(state, {
+      type: 'TIME_UPDATE',
+      currentTime: 0,
+      buffered: [],
+      wallClock: AST + 30,
+    });
+    const presentation = dynamicPresentation();
+    const [next, fx] = reduce(state, {
+      type: 'MANIFEST_LOADED',
+      presentation: { ...presentation, live: { ...presentation.live, timeServer } },
+    });
+    return settle(reduce, next, fx);
+  }
+
+  function windowAt(state: KernelState, wallClock: number): KernelState['live'] {
+    const [next, fx] = reduce(state, {
+      type: 'TIME_UPDATE',
+      currentTime: 0,
+      buffered: [],
+      wallClock,
+    });
+    return settle(reduce, next, fx).state.live;
+  }
+
+  it('UTCTiming direct takes the skew from the date in the MPD, with no request', () => {
+    // The server wrote the MPD 10 s ahead of the client clock.
+    const { state, effects } = bootWith({
+      scheme: 'urn:mpeg:dash:utc:direct:2014',
+      value: new Date((AST + 40) * 1000).toISOString(),
+    });
+    expect(effects).not.toContainEqual(expect.objectContaining({ token: 'dash:live:utc' }));
+    expect(windowAt(state, AST + 31)?.span.end).toBe(41);
+  });
+
+  it('UTCTiming http-head asks with HEAD and reads the Date header', () => {
+    const { state, effects } = bootWith({
+      scheme: 'urn:mpeg:dash:utc:http-head:2014',
+      value: 'https://time.example/head',
+    });
+    expect(effects).toContainEqual({
+      kind: 'fetch',
+      token: 'dash:live:utc',
+      url: 'https://time.example/head',
+      method: 'HEAD',
+    });
+    const [afterSkew] = reduce(state, {
+      type: 'SEGMENT_LOADED',
+      trackId: 'dash:live:utc',
+      seq: -1,
+      bytes: new ArrayBuffer(0),
+      rtt: 5,
+      size: 0,
+      serverDate: AST + 40,
+      wallClock: AST + 30,
+    });
+    expect(windowAt(afterSkew, AST + 31)?.span.end).toBe(41);
   });
 
   it('the window slides on wall-clock facts and quantizes small movement', () => {

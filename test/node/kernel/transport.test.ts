@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { completeChunks } from '../../../src/containers/mp4-box/index.js';
 import type { Fact, InflightRequest } from '../../../src/index.js';
 import { createEffectRunner } from '../../../src/kernel/effects.js';
 import type { FetchImpl, RetryPolicy } from '../../../src/kernel/transport.js';
@@ -472,5 +473,125 @@ describe('a channel', () => {
 
     expect(own).toEqual([]);
     expect(h.facts.map((fact) => fact.type)).toEqual(['SEGMENT_LOADED']);
+  });
+});
+
+/** An ISO BMFF box of `size` bytes in all, header included. */
+function box(type: string, size: number): Uint8Array {
+  const bytes = new Uint8Array(size);
+  new DataView(bytes.buffer).setUint32(0, size);
+  for (let i = 0; i < 4; i += 1) bytes[4 + i] = type.charCodeAt(i);
+  return bytes;
+}
+
+function concat(...parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.byteLength, 0));
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.byteLength;
+  }
+  return out;
+}
+
+/** The transport with a chunk splitter and every request chunked. */
+function chunkedHarness(fetchImpl: FetchImpl): Fact[] {
+  const facts: Fact[] = [];
+  const runner = createEffectRunner();
+  const transport = createTransport({
+    absorb: (fact) => facts.push(fact),
+    inflight: (token) => ({ ...request(token), chunked: true }),
+    fetchImpl,
+    now: () => Date.now(),
+    split: () => completeChunks,
+  });
+  transport.registerHandlers(runner);
+  runner.run([{ kind: 'fetch', token: 't1', url: 'https://cdn.example/v/3.m4s' }]);
+  return facts;
+}
+
+/** A body that sends each piece at its time in milliseconds after the headers. */
+function timedBody(pieces: ReadonlyArray<readonly [number, Uint8Array]>): FetchImpl {
+  return () =>
+    Promise.resolve(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const [at, piece] of pieces) setTimeout(() => controller.enqueue(piece), at);
+            const last = Math.max(...pieces.map(([at]) => at));
+            setTimeout(() => controller.close(), last + 1);
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+}
+
+describe('chunked segments', () => {
+  const first = concat(box('moof', 100), box('mdat', 20_000));
+  const second = concat(box('moof', 100), box('mdat', 20_000));
+
+  it('reports each complete chunk as it arrives, then the segment', async () => {
+    const facts = chunkedHarness(
+      timedBody([
+        [1000, first.subarray(0, 10_000)],
+        [1100, first.subarray(10_000)],
+        [2000, second],
+      ]),
+    );
+    await vi.runAllTimersAsync();
+    expect(facts.map((fact) => fact.type)).toEqual([
+      'SEGMENT_CHUNK',
+      'SEGMENT_CHUNK',
+      'SEGMENT_LOADED',
+    ]);
+    expect((facts[0] as { bytes: ArrayBuffer }).bytes.byteLength).toBe(first.byteLength);
+    expect((facts[1] as { bytes: ArrayBuffer }).bytes.byteLength).toBe(second.byteLength);
+    expect(facts[2]).toMatchObject({
+      bytes: new ArrayBuffer(0),
+      size: first.byteLength + second.byteLength,
+    });
+  });
+
+  it('measures throughput inside chunks only, never across the pauses between them', async () => {
+    const facts = chunkedHarness(
+      timedBody([
+        [1000, first.subarray(0, 10_000)],
+        [1100, first.subarray(10_000)],
+        [2000, second],
+      ]),
+    );
+    await vi.runAllTimersAsync();
+    // The second read finished the first chunk 100 ms after the first read
+    // began it. The second chunk came in one read, so nothing measured it.
+    expect(facts[2]).toMatchObject({
+      transfer: { bytes: first.byteLength - 10_000, ms: 100 },
+    });
+  });
+
+  it('keeps an incomplete tail for the segment fact', async () => {
+    const facts = chunkedHarness(timedBody([[100, concat(first, second.subarray(0, 50))]]));
+    await vi.runAllTimersAsync();
+    expect(facts.map((fact) => fact.type)).toEqual(['SEGMENT_CHUNK', 'SEGMENT_LOADED']);
+    expect((facts[1] as { bytes: ArrayBuffer }).bytes.byteLength).toBe(50);
+  });
+});
+
+describe('HEAD requests', () => {
+  it('send HEAD and report the Date header', async () => {
+    const methods: Array<string | undefined> = [];
+    const h = harness((_url, init) => {
+      methods.push(init.method);
+      return Promise.resolve(
+        new Response(null, { status: 200, headers: { date: 'Fri, 16 Oct 2026 20:07:50 GMT' } }),
+      );
+    });
+    h.runner.run([{ kind: 'fetch', token: 't1', url: 'https://time.example/', method: 'HEAD' }]);
+    await vi.runAllTimersAsync();
+    expect(methods).toEqual(['HEAD']);
+    expect(h.facts[0]).toMatchObject({
+      type: 'SEGMENT_LOADED',
+      serverDate: Date.parse('2026-10-16T20:07:50Z') / 1000,
+    });
   });
 });

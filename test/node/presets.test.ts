@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import dash from '../../src/presets/dash/index.js';
 import dashDrm from '../../src/presets/dash-drm/index.js';
+import dashLl from '../../src/presets/dash-ll/index.js';
 import { definePreset, mergeStages } from '../../src/presets/define.js';
 import dual from '../../src/presets/dual/index.js';
 import dualDrm from '../../src/presets/dual-drm/index.js';
@@ -22,8 +23,10 @@ function stub(name: string, requires: string[] = []): Stage {
 }
 
 const HLS = ['hls-cmaf', 'hls-live', 'aes-128'];
-const HLS_LL = ['hls-ll', 'aes-128', 'live-catchup'];
+const HLS_LL = ['hls-ll', 'aes-128'];
 const DASH = ['dash-cmaf', 'dash-live'];
+const DASH_LL = ['dash-ll'];
+const LL = ['live-catchup'];
 const BASE = [
   'abr',
   'abr-cap-size',
@@ -68,9 +71,10 @@ const MATRIX: ReadonlyArray<[typeof kernel, readonly string[]]> = [
   [dualDrm, [...HLS, ...DASH, ...BASE, ...DRM]],
   [dualTs, [...HLS, ...DASH, ...BASE, ...TS]],
   [dualTsDrm, [...HLS, ...DASH, ...BASE, ...TS, ...DRM]],
-  [hlsLl, [...HLS_LL, ...BASE]],
-  [dualLl, [...HLS_LL, ...DASH, ...BASE]],
-  [full, [...HLS_LL, ...DASH, ...BASE, ...TS, ...DRM, ...ACCESSORIES]],
+  [hlsLl, [...HLS_LL, ...LL, ...BASE]],
+  [dashLl, [...DASH_LL, ...LL, ...BASE]],
+  [dualLl, [...HLS_LL, ...DASH_LL, ...LL, ...BASE]],
+  [full, [...HLS_LL, ...DASH_LL, ...LL, ...BASE, ...TS, ...DRM, ...ACCESSORIES]],
 ];
 
 describe('the preset matrix', () => {
@@ -86,9 +90,10 @@ describe('the preset matrix', () => {
   it('full carries each of its stages once', () => {
     const names = full.stages().map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(36);
-    // hls-ll stands in for hls-cmaf and hls-live.
+    expect(names.length).toBe(35);
+    // hls-ll and dash-ll stand in for the plain lines.
     expect(names).not.toContain('hls-live');
+    expect(names).not.toContain('dash-live');
     // It changes every request, so a page adds it.
     expect(names).not.toContain('cmcd');
   });

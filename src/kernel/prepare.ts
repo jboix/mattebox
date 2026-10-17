@@ -8,6 +8,9 @@
  * here and not on the append effect: the offset has to be known first,
  * and a decrypt step has to run before anything can read a clock.
  *
+ * The chunks of a segment still arriving (SEGMENT_CHUNK) take the same
+ * route, in order with the segment's own fact.
+ *
  * Manifests and cue segments pass through untouched; the deliver effect
  * runs the pipeline for cue bytes. Without transforms and without a probe
  * the fact is forwarded as it came, synchronously.
@@ -55,7 +58,10 @@ export function createSegmentPreparer(deps: PreparerDeps): (fact: Fact) => void 
   // segment N+1 reach the reducer first.
   const chains = new Map<string, Promise<void>>();
   return (fact) => {
-    if (fact.type !== 'SEGMENT_LOADED' || fact.token === undefined) {
+    if (
+      (fact.type !== 'SEGMENT_LOADED' && fact.type !== 'SEGMENT_CHUNK') ||
+      fact.token === undefined
+    ) {
       deps.absorb(fact);
       return;
     }
@@ -91,7 +97,7 @@ export function createSegmentPreparer(deps: PreparerDeps): (fact: Fact) => void 
           ...fact,
           bytes: toArrayBuffer(data),
           ...(mediaStart !== null && request.seq >= 0 ? { mediaStart } : {}),
-        });
+        } as typeof fact);
       })
       .catch((err: unknown) => {
         // A transform failure is a container error on this segment, never

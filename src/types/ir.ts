@@ -129,6 +129,17 @@ export interface IndexedSegments {
   readonly timeline: readonly SegmentRun[] | null;
   /** Offset subtracted from media time to map into period time, in timescale units. */
   readonly presentationTimeOffset?: number;
+  /**
+   * Seconds before its end a segment may be requested (DASH
+   * `@availabilityTimeOffset`, ISO/IEC 23009-1 §5.3.9.5.3). Absent is 0.
+   */
+  readonly availabilityOffset?: number;
+  /**
+   * The server sends a segment requested early as the encoder writes it
+   * (`@availabilityTimeComplete="false"`), so its chunks can play before
+   * its end exists.
+   */
+  readonly chunked?: boolean;
 }
 
 /**
@@ -382,6 +393,10 @@ export interface LiveInfo {
   readonly timeShiftDepth?: number;
   /** Distance behind the availability end to hold playback, in seconds. */
   readonly holdBack?: number;
+  /** The playback rates catching up may use (DASH ServiceDescription PlaybackRate). */
+  readonly playbackRate?: { readonly min: number; readonly max: number };
+  /** Seconds of latency past which playback should jump to the edge (DASH ServiceDescription Latency@max). */
+  readonly maxLatency?: number;
   /** A time server for clock skew (DASH UTCTiming). */
   readonly timeServer?: { readonly scheme: string; readonly value: string };
   /** A wall-clock anchor: `wallClock` epoch seconds corresponds to `presentationTime`. */

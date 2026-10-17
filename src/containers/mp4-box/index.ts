@@ -124,6 +124,31 @@ export function walkBoxes(
   return { error: outcome === 'stop' || outcome === null ? null : outcome };
 }
 
+/**
+ * The length of the complete CMAF chunks at the start of `data`: the end
+ * of the last whole `mdat` among its complete top-level boxes, 0 when none
+ * is complete yet. A chunk is one or more `moof` and `mdat` pairs
+ * (ISO/IEC 23000-19 §7.3.3), so the bytes up to an `mdat` end decode on
+ * their own.
+ */
+export function completeChunks(data: Uint8Array): number {
+  const view = viewOf(data);
+  let offset = 0;
+  let ready = 0;
+  while (data.byteLength - offset >= 8) {
+    let size = view.getUint32(offset);
+    if (size === 1) {
+      if (data.byteLength - offset < 16) break;
+      size = Number(view.getBigUint64(offset + 8));
+    }
+    // A box that runs to the end of the file has no end to wait for.
+    if (size < 8 || offset + size > data.byteLength) break;
+    offset += size;
+    if (fourcc(data, offset - size + 4) === 'mdat') ready = offset;
+  }
+  return ready;
+}
+
 /** The first box matching a slash path such as 'moov/trak/mdia/minf/stbl/stsd'. */
 export function findBox(data: Uint8Array, path: string): BoxRef | null {
   let found: BoxRef | null = null;

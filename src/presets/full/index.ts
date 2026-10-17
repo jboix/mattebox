@@ -1,6 +1,6 @@
 /**
- * The `full` preset: `dual-ts-drm` with low-latency HLS and live catch-up
- * (`hls-ll` in place of `hls-cmaf` and `hls-live`), plus the accessories: thumbnails (fetches image playlists, so opt-in elsewhere), chapters
+ * The `full` preset: `dual-ts-drm` with low-latency HLS, low-latency DASH
+ * and live catch-up (`hls-ll` and `dash-ll` in place of the plain lines), plus the accessories: thumbnails (fetches image playlists, so opt-in elsewhere), chapters
  * (loads a file the app names), trick play (a UI control drives it),
  * timed metadata (a page reads it), CEA-708 captions (US broadcast
  * streams carry 608 beside them, which the base reads), TTML subtitles
@@ -25,11 +25,12 @@ import thumbnails from '../../stages/thumbnails/index.js';
 import timedMetadata from '../../stages/timed-metadata/index.js';
 import trickPlay from '../../stages/trick-play/index.js';
 import { definePreset } from '../define.js';
-import { base, dashLine, drmTier, hlsLlLine, tsTier } from '../tiers.js';
+import { base, dashLlLine, drmTier, hlsLlLine, lowLatencyTier, tsTier } from '../tiers.js';
 
 const preset = definePreset('full', () => [
   ...hlsLlLine(),
-  ...dashLine(),
+  ...dashLlLine(),
+  ...lowLatencyTier(),
   ...base(),
   ...tsTier(),
   ...drmTier(),

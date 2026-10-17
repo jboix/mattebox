@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   Effect,
+  IndexedSegments,
   InflightRequest,
   Period,
   Rendition,
@@ -411,6 +412,59 @@ describe('live window', () => {
     );
     // Next would be seq 20 ([80, 84]), which ends past the edge at 81.
     expect(result.effects).toEqual([]);
+  });
+});
+
+describe('an availability time offset', () => {
+  function indexed(extra: Partial<IndexedSegments>): Rendition {
+    const segments: IndexedSegments = {
+      kind: 'indexed',
+      urlTemplate: 'https://cdn.example/v/$Number$.m4s',
+      startSeq: 0,
+      endSeq: null,
+      timescale: 1,
+      segmentDuration: 4,
+      timeline: null,
+      ...extra,
+    };
+    return { id: 'v-1', bitrate: 1_000_000, codecs: 'avc1', mimeType: 'video/mp4', segments };
+  }
+  function at(rendition: Rendition) {
+    return schedule(
+      input({
+        currentTime: 76,
+        tracks: [
+          track({ rendition, period: vodPeriod(rendition), ranges: [{ start: 70, end: 80 }] }),
+        ],
+        liveWindow: { start: 40, end: 81 },
+      }),
+    );
+  }
+
+  it('fetches a segment that many seconds before its end, and marks it chunked when the server says so', () => {
+    // Segment 20 ([80, 84]) ends 3 s past the window end at 81.
+    const result = at(indexed({ availabilityOffset: 3, chunked: true }));
+    expect(result.requests).toEqual([expect.objectContaining({ seq: 20, chunked: true })]);
+  });
+
+  it('never fetches before the segment starts', () => {
+    // An offset longer than the segment counts as the segment.
+    const rendition = indexed({ availabilityOffset: 10 });
+    const result = schedule(
+      input({
+        currentTime: 76,
+        tracks: [
+          track({ rendition, period: vodPeriod(rendition), ranges: [{ start: 70, end: 84 }] }),
+        ],
+        liveWindow: { start: 40, end: 81 },
+      }),
+    );
+    expect(result.effects).toEqual([]);
+  });
+
+  it('leaves a complete early segment unmarked', () => {
+    const result = at(indexed({ availabilityOffset: 3 }));
+    expect(result.requests[0]?.chunked).toBeUndefined();
   });
 });
 

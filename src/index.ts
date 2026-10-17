@@ -122,6 +122,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
   const transport = createTransport({
     absorb: prepare,
     inflight: (token) => bus.getState().scheduling.inflight.get(token),
+    split: () => hooks.chunkSplitter ?? null,
     // A media Content-Type on the manifest response that no adapter parses
     // (an mp3, a progressive mp4) is refused before the body downloads.
     // Anything else, including octet-stream, downloads and is sniffed.

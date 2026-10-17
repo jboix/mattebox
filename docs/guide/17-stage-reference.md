@@ -8,13 +8,14 @@ and how to add or remove a stage.
 
 Import from `mattebox/protocols/<name>`.
 
-| Stage       | Does                                           | In presets                 | Guide                                      |
-| ----------- | ---------------------------------------------- | -------------------------- | ------------------------------------------ |
-| `hls-cmaf`  | Reads HLS playlists, plays on demand           | `hls*`, `dual*`, not `-ll` | [03](03-hls-and-dash.md#protocol-adapters) |
-| `hls-live`  | Reloads HLS playlists for live streams         | `hls*`, `dual*`, not `-ll` | [04](04-live-streaming.md#live-adapters)   |
-| `hls-ll`    | `hls-cmaf` and `hls-live` with low-latency HLS | `*-ll`, `full`             | [04](04-live-streaming.md#low-latency-hls) |
-| `dash-cmaf` | Reads DASH manifests, plays on demand          | `dash*`, `dual*`, `full`   | [03](03-hls-and-dash.md#protocol-adapters) |
-| `dash-live` | Reloads DASH manifests for live                | `dash*`, `dual*`, `full`   | [04](04-live-streaming.md#live-adapters)   |
+| Stage       | Does                                              | In presets                  | Guide                                       |
+| ----------- | ------------------------------------------------- | --------------------------- | ------------------------------------------- |
+| `hls-cmaf`  | Reads HLS playlists, plays on demand              | `hls*`, `dual*`, not `-ll`  | [03](03-hls-and-dash.md#protocol-adapters)  |
+| `hls-live`  | Reloads HLS playlists for live streams            | `hls*`, `dual*`, not `-ll`  | [04](04-live-streaming.md#live-adapters)    |
+| `hls-ll`    | `hls-cmaf` and `hls-live` with low-latency HLS    | `*-ll`, `full`              | [04](04-live-streaming.md#low-latency-hls)  |
+| `dash-cmaf` | Reads DASH manifests, plays on demand             | `dash*`, `dual*`, not `-ll` | [03](03-hls-and-dash.md#protocol-adapters)  |
+| `dash-live` | Reloads DASH manifests for live                   | `dash*`, `dual*`, not `-ll` | [04](04-live-streaming.md#live-adapters)    |
+| `dash-ll`   | `dash-cmaf` and `dash-live` with low-latency DASH | `*-ll`, `full`              | [04](04-live-streaming.md#low-latency-dash) |
 
 ## Containers
 

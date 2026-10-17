@@ -21,7 +21,7 @@ import type { MatteboxError } from '../../types/error.js';
 import type { Rendition, SegmentAddressing, SidxSegments } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message, Serializable } from '../../types/messages.js';
-import type { Stage } from '../../types/stage.js';
+import type { Stage, StageContext } from '../../types/stage.js';
 import { manifestFact, RETRY_SECONDS } from '../adapter-shared.js';
 import { parse, sidxToSegments } from './parse.js';
 import { installPeriods } from './periods-runtime.js';
@@ -40,7 +40,7 @@ export interface DashCmafOptions {
 }
 
 /** The MPD MIME type, ISO 23009-1 §C.2. */
-const MANIFEST_TYPES: readonly string[] = ['application/dash+xml'];
+export const MANIFEST_TYPES: readonly string[] = ['application/dash+xml'];
 
 /** Unresolved on-demand addressing, or null for an explicit list or template. */
 function asSidx(addressing: SegmentAddressing | undefined): SidxSegments | null {
@@ -170,8 +170,9 @@ function retry(state: DashSlice, renditionId: string): [DashSlice, Effect[]] {
   ];
 }
 
-const createReduceDash =
-  (retryMs: number): SliceReducer<DashSlice> =>
+/** The slice reducer. `lowLatency` reads the MPD as dash-ll does. */
+export const createReduceDash =
+  (retryMs: number, lowLatency = false): SliceReducer<DashSlice> =>
   (slice, msg, kernel) => {
     const state = slice ?? INITIAL;
 
@@ -200,7 +201,7 @@ const createReduceDash =
         state.manifestUrl,
         (text) => claims(state, text),
         (text, url) => {
-          const result = parse(text, url);
+          const result = parse(text, url, lowLatency);
           if (result.presentation !== null) warnings = result.warnings ?? [];
           return result;
         },
@@ -344,6 +345,11 @@ const createReduceDash =
  * The stage factory. `mattebox({ stages: [dashCmaf()] })` is all a consumer
  * needs for DASH-CMAF VOD, templated or on-demand.
  */
+/** Installs the period runtime, which reads the slice this stage or dash-ll keeps. */
+export function installDashPeriods(ctx: StageContext): () => void {
+  return installPeriods(ctx, () => (ctx.getState().dash as DashSlice | undefined)?.skips ?? []);
+}
+
 export default function dashCmaf(options: DashCmafOptions = {}): Stage {
   const retryMs = (options.unavailableRetrySeconds ?? RETRY_SECONDS) * 1000;
   return {
@@ -351,7 +357,7 @@ export default function dashCmaf(options: DashCmafOptions = {}): Stage {
     provides: ['dash-cmaf', ...MANIFEST_TYPES],
     install(ctx) {
       ctx.reduce('dash', createReduceDash(retryMs) as SliceReducer);
-      return installPeriods(ctx, () => (ctx.getState().dash as DashSlice | undefined)?.skips ?? []);
+      return installDashPeriods(ctx);
     },
   };
 }

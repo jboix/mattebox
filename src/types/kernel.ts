@@ -106,6 +106,8 @@ export interface InflightRequest {
   readonly segmentDuration?: number;
   /** A preload hint the server holds until the part exists. */
   readonly preload?: boolean;
+  /** A segment sent as the encoder writes it; its complete chunks append as they arrive. */
+  readonly chunked?: boolean;
   /**
    * performance.now() at dispatch. Absent in state written by the reducer,
    * which has no clock; the effect runner records it.

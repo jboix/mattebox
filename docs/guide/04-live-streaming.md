@@ -28,6 +28,18 @@ listed and then stops.
 Both refresh every active track, so audio and subtitles don't run dry while
 the video keeps going.
 
+`dash-live` reads the first `UTCTiming` element whose scheme it supports.
+
+| Scheme                    | Where the server time comes from                    |
+| ------------------------- | --------------------------------------------------- |
+| `direct`                  | The `value` attribute, the time the MPD was written |
+| `http-head`               | The `Date` header of a HEAD request to `value`      |
+| `http-xsdate`, `http-iso` | The body of a GET request to `value`                |
+
+A cross-origin `http-head` server must expose `Date` with
+`Access-Control-Expose-Headers`. Without a time server, the client clock
+counts as right.
+
 Both loops stop on `engine.suspend()` and start again on `engine.resume()`.
 The resume reloads every active playlist (or the MPD) before any segment is
 scheduled, and the playhead rejoins at the live edge. See
@@ -60,13 +72,14 @@ A seek before the window start is clamped to the window start.
 The edge sits behind the end of the window by the hold-back. Playback
 starts there.
 
-| Source                                        | Hold-back                     |
-| --------------------------------------------- | ----------------------------- |
-| HLS with `EXT-X-SERVER-CONTROL:HOLD-BACK`     | `HOLD-BACK`                   |
-| HLS without it                                | Three target durations        |
-| LL-HLS through `hls-ll`, while the parts play | `PART-HOLD-BACK`              |
-| DASH with `@suggestedPresentationDelay`       | `@suggestedPresentationDelay` |
-| DASH without it                               | 10 seconds                    |
+| Source                                             | Hold-back                     |
+| -------------------------------------------------- | ----------------------------- |
+| HLS with `EXT-X-SERVER-CONTROL:HOLD-BACK`          | `HOLD-BACK`                   |
+| HLS without it                                     | Three target durations        |
+| LL-HLS through `hls-ll`, while the parts play      | `PART-HOLD-BACK`              |
+| DASH through `dash-ll` with a `ServiceDescription` | `Latency@target`              |
+| DASH with `@suggestedPresentationDelay`            | `@suggestedPresentationDelay` |
+| DASH without it                                    | 10 seconds                    |
 
 ## Low-latency HLS
 
@@ -102,6 +115,37 @@ The `hls-ll`, `dual-ll`, and `full` presets carry it.
 - ABR measures a preload hint from its response headers on, so the time
   the server holds the request does not count as a slow link.
 
+## Low-latency DASH
+
+The `dash-ll` stage plays low-latency DASH (DASH-IF IOP low-latency
+modes). It contains `dash-cmaf` and `dash-live`, so you load it in their
+place.
+
+```ts
+import dashLl from 'mattebox/protocols/dash-ll';
+import liveCatchup from 'mattebox/stages/live-catchup';
+
+const engine = mattebox({ stages: [dashLl(), liveCatchup()] });
+```
+
+The `dash-ll`, `dual-ll`, and `full` presets carry it.
+
+| Feature          | MPD signal                                         | Behavior                                                |
+| ---------------- | -------------------------------------------------- | ------------------------------------------------------- |
+| Early requests   | `SegmentTemplate@availabilityTimeOffset`           | A segment is requested that many seconds before it ends |
+| Chunked segments | `SegmentTemplate@availabilityTimeComplete="false"` | Each `moof` and `mdat` pair appends as it arrives       |
+| Target latency   | `ServiceDescription` `Latency@target`              | Playback starts and holds that far behind the end       |
+| Catch-up bounds  | `ServiceDescription` `PlaybackRate`, `Latency@max` | `live-catchup` uses them where you set no option        |
+
+- ABR measures a chunked segment only while a chunk arrives. The pauses
+  between chunks are the encoder's, not the link's.
+- A chunk that arrives in one read gives no measurement, and the estimate
+  holds.
+- An MPD without these signals plays as `dash-cmaf` and `dash-live` play
+  it.
+- The `dash` presets do not request early, since they read each segment
+  whole: a segment requested early would take as long as the encoder.
+
 ## Live catch-up
 
 The `live-catchup` stage holds a target latency. Without it, a stream that
@@ -117,14 +161,14 @@ stalls once stays that much further behind the edge.
 - A rate your page sets wins. The stage leaves the rate alone until it is
   1 again.
 
-| Option          | Default                | Meaning                                                  |
-| --------------- | ---------------------- | -------------------------------------------------------- |
-| `targetLatency` | The hold-back          | Seconds behind the live edge to hold                     |
-| `minRate`       | 0.96                   | The slowest rate                                         |
-| `maxRate`       | 1.04                   | The fastest rate                                         |
-| `tolerance`     | 0.2                    | Seconds of error before the rate changes                 |
-| `maxLatency`    | Three times the target | Seconds of latency past which it seeks to the edge       |
-| `minBuffer`     | 0.5                    | Seconds of buffer ahead below which it does not speed up |
+| Option          | Default                                     | Meaning                                                  |
+| --------------- | ------------------------------------------- | -------------------------------------------------------- |
+| `targetLatency` | The hold-back                               | Seconds behind the live edge to hold                     |
+| `minRate`       | The manifest's, else 0.96                   | The slowest rate                                         |
+| `maxRate`       | The manifest's, else 1.04                   | The fastest rate                                         |
+| `tolerance`     | 0.2                                         | Seconds of error before the rate changes                 |
+| `maxLatency`    | The manifest's, else three times the target | Seconds of latency past which it seeks to the edge       |
+| `minBuffer`     | 0.5                                         | Seconds of buffer ahead below which it does not speed up |
 
 It adds `engine.catchup`.
 

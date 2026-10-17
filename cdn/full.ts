@@ -3,16 +3,18 @@ import preset from '../src/presets/full/index.js';
 import {
   accessoryFactories,
   baseFactories,
-  dashFactories,
+  dashLlFactories,
   drmFactories,
   hlsLlFactories,
+  lowLatencyFactories,
   tsFactories,
 } from './catalogue.js';
 import { cdnGlobal } from './global.js';
 
 export default cdnGlobal(preset, {
   ...hlsLlFactories,
-  ...dashFactories,
+  ...dashLlFactories,
+  ...lowLatencyFactories,
   ...baseFactories,
   ...tsFactories,
   ...drmFactories,

@@ -176,14 +176,12 @@ function createEmergencyReducer(options: Required<AbrOptions>): SliceReducer<Abr
     let raw: number | null = null;
     if (msg.type === 'THROUGHPUT_SAMPLE') {
       raw = msg.bps;
-    } else if (
-      msg.type === 'SEGMENT_LOADED' &&
-      msg.seq >= 0 &&
-      msg.trackId === leadTrack(kernel) &&
-      msg.rtt > 0 &&
-      msg.size >= MIN_SAMPLE_BYTES
-    ) {
-      raw = (msg.size * 8000) / msg.rtt;
+    } else if (msg.type === 'SEGMENT_LOADED' && msg.seq >= 0 && msg.trackId === leadTrack(kernel)) {
+      // A preload hint or a chunked segment waits for the encoder: only the
+      // transfer the transport measured counts.
+      const sample = msg.transfer ?? { bytes: msg.size, ms: msg.rtt };
+      if (sample.ms > 0 && sample.bytes >= MIN_SAMPLE_BYTES)
+        raw = (sample.bytes * 8000) / sample.ms;
     }
     if (raw === null) return [state, []];
 

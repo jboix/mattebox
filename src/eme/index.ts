@@ -76,6 +76,7 @@ export function attachEme(
     registerSwitchPolicy: noop,
     registerTypeProbe: noop,
     registerTimeProbe: noop,
+    registerChunkSplitter: noop,
     reduce: noop,
     dispatch: noop,
     addRequestHook: () => noop,

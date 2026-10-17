@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { initialState } from '../../../src/kernel/reducer.js';
 import type { CatchupApi, LiveCatchupOptions } from '../../../src/stages/live-catchup/index.js';
 import liveCatchup, { catchupRate } from '../../../src/stages/live-catchup/index.js';
+import type { LiveInfo } from '../../../src/types/ir.js';
 import type { KernelState } from '../../../src/types/kernel.js';
 import type { Command } from '../../../src/types/messages.js';
 
@@ -44,11 +45,17 @@ class FakeElement extends EventTarget {
   }
 }
 
-function harness(options: LiveCatchupOptions = {}) {
+function harness(options: LiveCatchupOptions = {}, info: LiveInfo = {}) {
   const element = new FakeElement();
   let state: KernelState = {
     ...initialState(),
-    presentation: { id: 'p', isLive: true, periods: [], couplings: [], live: { updatePeriod: 1 } },
+    presentation: {
+      id: 'p',
+      isLive: true,
+      periods: [],
+      couplings: [],
+      live: { updatePeriod: 1, ...info },
+    },
     live: { span: { start: 0, end: 100 }, edge: 97 },
   };
   let api: CatchupApi | null = null;
@@ -68,6 +75,7 @@ function harness(options: LiveCatchupOptions = {}) {
     registerSwitchPolicy: () => undefined,
     registerTypeProbe: () => undefined,
     registerTimeProbe: () => undefined,
+    registerChunkSplitter: () => undefined,
     getState: () => state,
     addRequestHook: () => () => undefined,
     addResponseHook: () => () => undefined,
@@ -190,6 +198,23 @@ describe('the live-catchup stage', () => {
     h.element.bufferedEnd = 100;
     h.element.tick();
     expect(h.api().active).toBe(true);
+  });
+
+  it("takes the manifest's rates and maximum latency where the options leave them", () => {
+    useClock();
+    const h = harness({}, { playbackRate: { min: 0.9, max: 1.1 }, maxLatency: 20 });
+    // 7 s behind a 3 s target: past three targets, inside the manifest's 20.
+    h.element.currentTime = 90;
+    h.element.bufferedEnd = 99;
+    h.element.tick();
+    expect(h.commands).toEqual([]);
+    expect(h.element.playbackRate).toBeCloseTo(1.1);
+    // An option still wins.
+    const fixed = harness({ maxRate: 1.02 }, { playbackRate: { min: 0.9, max: 1.1 } });
+    fixed.element.currentTime = 96;
+    fixed.element.bufferedEnd = 99;
+    fixed.element.tick();
+    expect(fixed.element.playbackRate).toBeCloseTo(1.02);
   });
 
   it('does nothing for on-demand content and gives back its rate', () => {

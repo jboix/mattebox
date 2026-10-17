@@ -11,6 +11,7 @@ import packedAudio from '../containers/packed-audio/index.js';
 import tsTransmux from '../containers/ts-transmux/index.js';
 import dashCmaf from '../protocols/dash-cmaf/index.js';
 import dashLive from '../protocols/dash-live/index.js';
+import dashLl from '../protocols/dash-ll/index.js';
 import hlsCmaf from '../protocols/hls-cmaf/index.js';
 import hlsLive from '../protocols/hls-live/index.js';
 import hlsLl from '../protocols/hls-ll/index.js';
@@ -46,17 +47,32 @@ export function hlsLine(): Stage[] {
 
 /**
  * Low-latency HLS: hls-ll in place of hls-cmaf and hls-live, which it
- * contains, and the catch-up that holds the low latency. A playlist without
- * parts plays as the HLS line plays it, and catch-up holds any live stream
- * at its hold-back.
+ * contains. A playlist without parts plays as the HLS line plays it.
  */
 export function hlsLlLine(): Stage[] {
-  return [hlsLl(), aes128(), liveCatchup()];
+  return [hlsLl(), aes128()];
 }
 
 /** DASH on demand and live. */
 export function dashLine(): Stage[] {
   return [dashCmaf(), dashLive()];
+}
+
+/**
+ * Low-latency DASH: dash-ll in place of dash-cmaf and dash-live, which it
+ * contains. An MPD without low-latency signalling plays as the DASH line
+ * plays it.
+ */
+export function dashLlLine(): Stage[] {
+  return [dashLl()];
+}
+
+/**
+ * What a low-latency line needs beside it: the catch-up that holds the
+ * latency. It holds any live stream at its hold-back.
+ */
+export function lowLatencyTier(): Stage[] {
+  return [liveCatchup()];
 }
 
 /**

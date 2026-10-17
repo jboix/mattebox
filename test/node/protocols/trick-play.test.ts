@@ -102,6 +102,7 @@ function compose(stages: readonly Stage[], hooks: Parameters<typeof createReduce
       registerSwitchPolicy: () => undefined,
       registerTypeProbe: () => undefined,
       registerTimeProbe: () => undefined,
+      registerChunkSplitter: () => undefined,
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
       addResponseHook: () => () => undefined,

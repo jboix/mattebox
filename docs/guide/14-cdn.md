@@ -22,6 +22,7 @@ lists what each preset includes.
 | HLS and DASH with MPEG-TS segments            | `mattebox.dual-ts.min.js`     |
 | HLS and DASH with MPEG-TS segments, protected | `mattebox.dual-ts-drm.min.js` |
 | Low-latency HLS                               | `mattebox.hls-ll.min.js`      |
+| Low-latency DASH                              | `mattebox.dash-ll.min.js`     |
 | Low-latency HLS and DASH                      | `mattebox.dual-ll.min.js`     |
 | Everything, accessories included              | `mattebox.min.js`             |
 

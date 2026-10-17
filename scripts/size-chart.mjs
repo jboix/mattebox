@@ -38,7 +38,8 @@ const PRESETS = [
     detail: '+ MPEG-TS + EME',
   },
   { bundle: 'mattebox.hls-ll.min.js', label: 'hls-ll', detail: 'low-latency HLS + base' },
-  { bundle: 'mattebox.dual-ll.min.js', label: 'dual-ll', detail: 'both lines, LL-HLS + base' },
+  { bundle: 'mattebox.dash-ll.min.js', label: 'dash-ll', detail: 'low-latency DASH + base' },
+  { bundle: 'mattebox.dual-ll.min.js', label: 'dual-ll', detail: 'both low-latency lines + base' },
   {
     bundle: 'mattebox.min.js',
     label: 'full',

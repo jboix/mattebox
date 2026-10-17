@@ -6,8 +6,11 @@
  *
  * - The target is the `targetLatency` option, else the manifest's hold-back,
  *   which is where playback starts: HLS PART-HOLD-BACK where the parts
- *   play, else HOLD-BACK (RFC 8216bis §4.4.3.8), DASH
- *   `@suggestedPresentationDelay`.
+ *   play, else HOLD-BACK (RFC 8216bis §4.4.3.8), DASH ServiceDescription
+ *   Latency@target with dash-ll, else `@suggestedPresentationDelay`.
+ * - A DASH ServiceDescription's PlaybackRate and Latency@max (ISO/IEC
+ *   23009-1 Annex K) set the rate bounds and the maximum latency the
+ *   options leave unset.
  * - Beyond the tolerance the rate moves with the error, within `minRate`
  *   and `maxRate`. A rate within 4% of normal keeps speech natural.
  * - No speed-up with less than `minBuffer` seconds buffered ahead, so
@@ -27,18 +30,19 @@
  * period, so a window that updates every few seconds does not read as a
  * latency that jumps by that much.
  */
+import type { Presentation } from '../../types/ir.js';
 import type { Stage } from '../../types/stage.js';
 
 export interface LiveCatchupOptions {
   /** Seconds behind the live edge to hold. Absent: the manifest's hold-back. */
   readonly targetLatency?: number;
-  /** The slowest rate, used when playback is closer to the edge than the target. Defaults to 0.96. */
+  /** The slowest rate, used when playback is closer to the edge than the target. Defaults to the manifest's, else 0.96. */
   readonly minRate?: number;
-  /** The fastest rate, used when playback is behind the target. Defaults to 1.04. */
+  /** The fastest rate, used when playback is behind the target. Defaults to the manifest's, else 1.04. */
   readonly maxRate?: number;
   /** Seconds the latency may differ from the target before the rate changes. Defaults to 0.2. */
   readonly tolerance?: number;
-  /** Seconds of latency past which the stage seeks to the edge. Defaults to three targets. */
+  /** Seconds of latency past which the stage seeks to the edge. Defaults to the manifest's, else three targets. */
   readonly maxLatency?: number;
   /** Seconds of buffer ahead below which the stage does not speed up. Defaults to 0.5. */
   readonly minBuffer?: number;
@@ -105,12 +109,8 @@ function activated(): boolean {
 }
 
 export default function liveCatchup(options: LiveCatchupOptions = {}): Stage {
-  const settings: Settings = {
-    minRate: options.minRate ?? 0.96,
-    maxRate: options.maxRate ?? 1.04,
-    tolerance: options.tolerance ?? 0.2,
-    minBuffer: options.minBuffer ?? 0.5,
-  };
+  const tolerance = options.tolerance ?? 0.2;
+  const minBuffer = options.minBuffer ?? 0.5;
   return {
     name: 'live-catchup',
     provides: ['live-catchup'],
@@ -126,13 +126,29 @@ export default function liveCatchup(options: LiveCatchupOptions = {}): Stage {
 
       const now = (): number => performance.now() / 1000;
 
-      function live(): { end: number; edge: number; period: number } | null {
+      function live(): {
+        end: number;
+        edge: number;
+        period: number;
+        info: Presentation['live'];
+      } | null {
         const state = ctx.getState();
         if (state.live === null || state.presentation?.isLive !== true) return null;
         return {
           end: state.live.span.end,
           edge: state.live.edge,
           period: state.presentation.live?.updatePeriod ?? 2,
+          info: state.presentation.live,
+        };
+      }
+
+      function settings(): Settings {
+        const rates = live()?.info?.playbackRate;
+        return {
+          minRate: options.minRate ?? rates?.min ?? 0.96,
+          maxRate: options.maxRate ?? rates?.max ?? 1.04,
+          tolerance,
+          minBuffer,
         };
       }
 
@@ -175,7 +191,7 @@ export default function liveCatchup(options: LiveCatchupOptions = {}): Stage {
       }
 
       function maxLatency(goal: number): number {
-        return options.maxLatency ?? 3 * Math.max(goal, 1);
+        return options.maxLatency ?? live()?.info?.maxLatency ?? 3 * Math.max(goal, 1);
       }
 
       const onTime = (): void => {
@@ -193,7 +209,7 @@ export default function liveCatchup(options: LiveCatchupOptions = {}): Stage {
         }
         if (!active) {
           // Back at the target, by a seek to the edge or the viewer's own.
-          if (current <= goal + settings.tolerance) active = true;
+          if (current <= goal + tolerance) active = true;
           else return;
         }
         if (element.paused || element.seeking) return;
@@ -205,7 +221,7 @@ export default function liveCatchup(options: LiveCatchupOptions = {}): Stage {
           return;
         }
         if (!activated()) return;
-        setRate(catchupRate(current, goal, bufferAhead(), settings), current, goal);
+        setRate(catchupRate(current, goal, bufferAhead(), settings()), current, goal);
       };
 
       /** After the viewer moves the playhead, hold the target only if it is still near. */

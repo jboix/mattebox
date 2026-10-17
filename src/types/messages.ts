@@ -168,6 +168,21 @@ export type Fact =
       readonly dateRanges?: readonly DateRange[];
     }
   | {
+      /**
+       * Complete media chunks of a segment still arriving, appended before
+       * the rest of it exists (chunked CMAF, ISO/IEC 23000-19 §7.3.3). The
+       * segment's own SEGMENT_LOADED follows with the bytes after the last
+       * chunk, which may be none.
+       */
+      readonly type: 'SEGMENT_CHUNK';
+      readonly trackId: TrackId;
+      readonly seq: number;
+      readonly token: string;
+      readonly bytes: ArrayBuffer;
+      /** The decode time the chunk starts at, as on SEGMENT_LOADED. */
+      readonly mediaStart?: number;
+    }
+  | {
       readonly type: 'SEGMENT_LOADED';
       readonly trackId: TrackId;
       readonly seq: number;
@@ -182,11 +197,18 @@ export type Fact =
       readonly rtt: number;
       readonly size: number;
       /**
-       * Milliseconds from the request to the response headers. A server that
-       * holds a request until the resource exists (an LL-HLS preload hint)
-       * spends this time waiting, not sending, so throughput leaves it out.
+       * The bytes and milliseconds a throughput sample covers, when that is
+       * not the whole response. A server that holds a request until the
+       * resource exists (an LL-HLS preload hint), or sends a segment as the
+       * encoder writes it (chunked CMAF), spends time waiting, not sending.
+       * The sample leaves that time out, and a zero `ms` means no sample.
        */
-      readonly wait?: number;
+      readonly transfer?: { readonly bytes: number; readonly ms: number };
+      /**
+       * The response's Date header in epoch seconds, on a HEAD request: a
+       * time server's answer (DASH UTCTiming `http-head`).
+       */
+      readonly serverDate?: number;
       /** Wall clock at receipt, epoch seconds. Live edge arithmetic input; the reducer never reads a clock. */
       readonly wallClock?: number;
       /**
@@ -297,6 +319,8 @@ export type Effect =
       readonly url: string;
       readonly range?: ByteRange;
       readonly timeout?: number;
+      /** HEAD asks for the headers alone: the fact carries no bytes and the Date header. */
+      readonly method?: 'HEAD';
       /**
        * The rendition a stage's fetch serves (a media playlist, an index).
        * A failure then names it, so content steering counts it toward

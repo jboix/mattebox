@@ -5,6 +5,9 @@
  * LIVE_WINDOW_CHANGED facts and reloads the MPD on minimumUpdatePeriod.
  * UTCTiming corrects the client clock: a few seconds of drift silently
  * breaks live playback, which is why the fetch is worth its round trip.
+ * The schemes (ISO/IEC 23009-1 §5.8.5.7): `direct` carries the date in its
+ * value, `http-head` in the Date header of a HEAD response, and
+ * `http-xsdate` and `http-iso` in the body of a GET response.
  */
 import { scheduled, tickAfter } from '../../kernel/effects.js';
 import type { Presentation } from '../../types/ir.js';
@@ -143,149 +146,164 @@ function reloadFailed(
   return [{ ...state, failures, tickPending: true }, [tick(presentation.live.updatePeriod ?? 4)]];
 }
 
-const reduceDashLive: SliceReducer<DashLiveSlice> = (slice, msg, kernel) => {
-  let state = slice ?? INITIAL;
-  // Any stamped fact refreshes the clock cache first, so every later
-  // branch computes with the newest wall time.
-  if (
-    (msg.type === 'TIME_UPDATE' || msg.type === 'SEGMENT_LOADED') &&
-    msg.wallClock !== undefined
-  ) {
-    state = { ...state, lastWallClock: msg.wallClock };
-  }
+/** The slice reducer. `lowLatency` reloads the MPD as dash-ll reads it. */
+export const createReduceDashLive =
+  (lowLatency = false): SliceReducer<DashLiveSlice> =>
+  (slice, msg, kernel) => {
+    let state = slice ?? INITIAL;
+    // Any stamped fact refreshes the clock cache first, so every later
+    // branch computes with the newest wall time.
+    if (
+      (msg.type === 'TIME_UPDATE' || msg.type === 'SEGMENT_LOADED') &&
+      msg.wallClock !== undefined
+    ) {
+      state = { ...state, lastWallClock: msg.wallClock };
+    }
 
-  if (msg.type === 'LOAD') return [{ ...INITIAL, manifestUrl: msg.url }, []];
-  if (msg.type === 'UNLOAD' || msg.type === 'DETACH') return [INITIAL, []];
+    if (msg.type === 'LOAD') return [{ ...INITIAL, manifestUrl: msg.url }, []];
+    if (msg.type === 'UNLOAD' || msg.type === 'DETACH') return [INITIAL, []];
 
-  if (msg.type === 'SUSPEND') {
-    const effects: Effect[] = [];
-    if (state.tickPending) effects.push({ kind: 'abort', token: TICK_TOKEN });
-    if (state.clockPending) effects.push({ kind: 'abort', token: CLOCK_TOKEN });
-    // An MPD reload in flight goes too. Its token is fixed, so the abort
-    // finds the request or finds nothing.
-    effects.push({ kind: 'abort', token: MPD_TOKEN });
-    // The kernel forgot the window. Forget the last end as well, or a
-    // window that barely moved during a short freeze is never reported.
-    return [
-      { ...state, tickPending: false, clockPending: false, lastWindowEnd: -1, suspended: true },
-      effects,
-    ];
-  }
+    if (msg.type === 'SUSPEND') {
+      const effects: Effect[] = [];
+      if (state.tickPending) effects.push({ kind: 'abort', token: TICK_TOKEN });
+      if (state.clockPending) effects.push({ kind: 'abort', token: CLOCK_TOKEN });
+      // An MPD reload in flight goes too. Its token is fixed, so the abort
+      // finds the request or finds nothing.
+      effects.push({ kind: 'abort', token: MPD_TOKEN });
+      // The kernel forgot the window. Forget the last end as well, or a
+      // window that barely moved during a short freeze is never reported.
+      return [
+        { ...state, tickPending: false, clockPending: false, lastWindowEnd: -1, suspended: true },
+        effects,
+      ];
+    }
 
-  if (msg.type === 'RESUME') {
-    if (!state.suspended) return [state, []];
-    const resumed = { ...state, suspended: false };
-    if (state.manifestUrl === null || !drivesWindow(kernel.presentation)) return [resumed, []];
-    // The MPD's answer restarts both loops and reports the window.
-    return [resumed, [{ kind: 'fetch', token: MPD_TOKEN, url: state.manifestUrl }]];
-  }
+    if (msg.type === 'RESUME') {
+      if (!state.suspended) return [state, []];
+      const resumed = { ...state, suspended: false };
+      if (state.manifestUrl === null || !drivesWindow(kernel.presentation)) return [resumed, []];
+      // The MPD's answer restarts both loops and reports the window.
+      return [resumed, [{ kind: 'fetch', token: MPD_TOKEN, url: state.manifestUrl }]];
+    }
 
-  if (msg.type === 'MANIFEST_LOADED') {
-    if (!drivesWindow(msg.presentation)) return [state, []];
-    const effects: Effect[] = [];
-    let next = state;
-    const server = msg.presentation.live.timeServer;
-    if (server !== undefined && state.skew === null && !state.utcPending) {
-      if (server.scheme.endsWith(':direct') || server.scheme.endsWith(':direct:2014')) {
-        // The value is the date itself; skew resolves on the next fact
-        // carrying a wall clock. Treated as zero until then.
-        next = { ...next, skew: null };
-      } else if (server.value !== '') {
-        effects.push({ kind: 'fetch', token: UTC_TOKEN, url: server.value });
-        next = { ...next, utcPending: true };
+    if (msg.type === 'MANIFEST_LOADED') {
+      if (!drivesWindow(msg.presentation)) return [state, []];
+      const effects: Effect[] = [];
+      let next = state;
+      const server = msg.presentation.live.timeServer;
+      if (server !== undefined && state.skew === null && !state.utcPending) {
+        if (server.scheme.includes(':direct:')) {
+          // The value is the server's date when it wrote the MPD, which the
+          // client received at the newest wall clock it saw.
+          const date = Date.parse(server.value);
+          if (Number.isFinite(date) && state.lastWallClock !== null) {
+            next = { ...next, skew: date / 1000 - state.lastWallClock };
+          }
+        } else {
+          const head = server.scheme.includes(':http-head:');
+          effects.push({
+            kind: 'fetch',
+            token: UTC_TOKEN,
+            url: server.value,
+            ...(head ? { method: 'HEAD' as const } : {}),
+          });
+          next = { ...next, utcPending: true };
+        }
       }
-    }
-    if (!next.tickPending) {
-      effects.push(tick(msg.presentation.live.updatePeriod ?? 4));
-      next = { ...next, tickPending: true };
-    }
-    if (!next.clockPending) {
-      effects.push(clockTick());
-      next = { ...next, clockPending: true };
-    }
-    const window = windowUpdate(next, msg.presentation.live);
-    if (window !== null) {
-      next = window.next;
-      effects.push(window.fact);
-    }
-    return [next, effects];
-  }
-
-  if (msg.type === 'TICK' && msg.token === CLOCK_TOKEN) {
-    if (state.suspended || !drivesWindow(kernel.presentation)) {
-      return [{ ...state, clockPending: false }, []];
-    }
-    let next: DashLiveSlice = { ...state, clockPending: true };
-    if (msg.wallClock !== undefined) next = { ...next, lastWallClock: msg.wallClock };
-    const effects: Effect[] = [clockTick()];
-    const live = kernel.presentation.live;
-    if (live !== undefined) {
-      const window = windowUpdate(next, live);
+      if (!next.tickPending) {
+        effects.push(tick(msg.presentation.live.updatePeriod ?? 4));
+        next = { ...next, tickPending: true };
+      }
+      if (!next.clockPending) {
+        effects.push(clockTick());
+        next = { ...next, clockPending: true };
+      }
+      const window = windowUpdate(next, msg.presentation.live);
       if (window !== null) {
         next = window.next;
         effects.push(window.fact);
       }
+      return [next, effects];
     }
-    return [next, effects];
-  }
 
-  if (msg.type === 'TICK' && msg.token === TICK_TOKEN) {
-    if (state.suspended || state.manifestUrl === null || !drivesWindow(kernel.presentation)) {
-      return [{ ...state, tickPending: false }, []];
+    if (msg.type === 'TICK' && msg.token === CLOCK_TOKEN) {
+      if (state.suspended || !drivesWindow(kernel.presentation)) {
+        return [{ ...state, clockPending: false }, []];
+      }
+      let next: DashLiveSlice = { ...state, clockPending: true };
+      if (msg.wallClock !== undefined) next = { ...next, lastWallClock: msg.wallClock };
+      const effects: Effect[] = [clockTick()];
+      const live = kernel.presentation.live;
+      if (live !== undefined) {
+        const window = windowUpdate(next, live);
+        if (window !== null) {
+          next = window.next;
+          effects.push(window.fact);
+        }
+      }
+      return [next, effects];
     }
-    return [
-      { ...state, tickPending: false },
-      [{ kind: 'fetch', token: MPD_TOKEN, url: state.manifestUrl }],
-    ];
-  }
 
-  // No time server answer: the skew stays unknown and counts as zero.
-  if (msg.type === 'SEGMENT_FAILED' && msg.trackId === UTC_TOKEN) {
-    return [{ ...state, utcPending: false }, []];
-  }
+    if (msg.type === 'TICK' && msg.token === TICK_TOKEN) {
+      if (state.suspended || state.manifestUrl === null || !drivesWindow(kernel.presentation)) {
+        return [{ ...state, tickPending: false }, []];
+      }
+      return [
+        { ...state, tickPending: false },
+        [{ kind: 'fetch', token: MPD_TOKEN, url: state.manifestUrl }],
+      ];
+    }
 
-  if (msg.type === 'SEGMENT_FAILED' && msg.trackId === MPD_TOKEN) {
-    return reloadFailed(state, kernel.presentation, msg.error.code);
-  }
-
-  if (msg.type === 'SEGMENT_LOADED' && msg.trackId === UTC_TOKEN) {
-    const serverTime = Date.parse(new TextDecoder().decode(msg.bytes).trim());
-    if (!Number.isFinite(serverTime) || msg.wallClock === undefined) {
+    // No time server answer: the skew stays unknown and counts as zero.
+    if (msg.type === 'SEGMENT_FAILED' && msg.trackId === UTC_TOKEN) {
       return [{ ...state, utcPending: false }, []];
     }
-    return [{ ...state, skew: serverTime / 1000 - msg.wallClock, utcPending: false }, []];
-  }
 
-  if (msg.type === 'SEGMENT_LOADED' && msg.trackId === MPD_TOKEN) {
-    if (state.manifestUrl === null) return [state, []];
-    const result = parse(new TextDecoder().decode(msg.bytes), state.manifestUrl);
-    if (result.presentation === null) {
-      return reloadFailed(state, kernel.presentation, result.error.code);
+    if (msg.type === 'SEGMENT_FAILED' && msg.trackId === MPD_TOKEN) {
+      return reloadFailed(state, kernel.presentation, msg.error.code);
     }
-    const effects: Effect[] = [];
-    let next: DashLiveSlice = { ...state, failures: 0 };
-    effects.push(feed({ type: 'MANIFEST_LOADED', presentation: result.presentation }));
-    if (result.presentation.isLive && result.presentation.live !== undefined) {
-      const window = windowUpdate(next, result.presentation.live);
-      if (window !== null) {
-        next = window.next;
-        effects.push(window.fact);
+
+    if (msg.type === 'SEGMENT_LOADED' && msg.trackId === UTC_TOKEN) {
+      const serverTime =
+        msg.serverDate !== undefined
+          ? msg.serverDate * 1000
+          : Date.parse(new TextDecoder().decode(msg.bytes).trim());
+      if (!Number.isFinite(serverTime) || msg.wallClock === undefined) {
+        return [{ ...state, utcPending: false }, []];
       }
+      return [{ ...state, skew: serverTime / 1000 - msg.wallClock, utcPending: false }, []];
     }
-    return [next, effects];
-  }
 
-  // Every wall-clock-stamped fact can slide the window.
-  if (
-    (msg.type === 'TIME_UPDATE' || msg.type === 'SEGMENT_LOADED') &&
-    drivesWindow(kernel.presentation)
-  ) {
-    const window = windowUpdate(state, kernel.presentation.live);
-    if (window !== null) return [window.next, [window.fact]];
-  }
+    if (msg.type === 'SEGMENT_LOADED' && msg.trackId === MPD_TOKEN) {
+      if (state.manifestUrl === null) return [state, []];
+      const result = parse(new TextDecoder().decode(msg.bytes), state.manifestUrl, lowLatency);
+      if (result.presentation === null) {
+        return reloadFailed(state, kernel.presentation, result.error.code);
+      }
+      const effects: Effect[] = [];
+      let next: DashLiveSlice = { ...state, failures: 0 };
+      effects.push(feed({ type: 'MANIFEST_LOADED', presentation: result.presentation }));
+      if (result.presentation.isLive && result.presentation.live !== undefined) {
+        const window = windowUpdate(next, result.presentation.live);
+        if (window !== null) {
+          next = window.next;
+          effects.push(window.fact);
+        }
+      }
+      return [next, effects];
+    }
 
-  return [state, []];
-};
+    // Every wall-clock-stamped fact can slide the window.
+    if (
+      (msg.type === 'TIME_UPDATE' || msg.type === 'SEGMENT_LOADED') &&
+      drivesWindow(kernel.presentation)
+    ) {
+      const window = windowUpdate(state, kernel.presentation.live);
+      if (window !== null) return [window.next, [window.fact]];
+    }
+
+    return [state, []];
+  };
 
 /** The stage factory. Requires dash-cmaf; the loader enforces it. */
 export default function dashLive(): Stage {
@@ -294,7 +312,7 @@ export default function dashLive(): Stage {
     provides: ['dash-live'],
     requires: ['dash-cmaf'],
     install(ctx) {
-      ctx.reduce('dash-live', reduceDashLive as SliceReducer);
+      ctx.reduce('dash-live', createReduceDashLive() as SliceReducer);
       registerLiveNamespace(ctx);
     },
   };

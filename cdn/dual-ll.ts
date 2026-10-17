@@ -1,5 +1,15 @@
 import preset from '../src/presets/dual-ll/index.js';
-import { baseFactories, dashFactories, hlsLlFactories } from './catalogue.js';
+import {
+  baseFactories,
+  dashLlFactories,
+  hlsLlFactories,
+  lowLatencyFactories,
+} from './catalogue.js';
 import { cdnGlobal } from './global.js';
 
-export default cdnGlobal(preset, { ...hlsLlFactories, ...dashFactories, ...baseFactories });
+export default cdnGlobal(preset, {
+  ...hlsLlFactories,
+  ...dashLlFactories,
+  ...lowLatencyFactories,
+  ...baseFactories,
+});

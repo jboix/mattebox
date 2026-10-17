@@ -821,3 +821,49 @@ describe('multi-period MPDs play as one presentation', () => {
     expect(single?.periods[0]?.duration).toBe(12);
   });
 });
+
+describe('low-latency signalling', () => {
+  const MPD = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+  availabilityStartTime="2026-01-01T00:00:00Z" suggestedPresentationDelay="PT10S">
+  <ServiceDescription id="0">
+    <Latency referenceId="0" target="3500" max="7000" min="2625"/>
+    <PlaybackRate max="1.04" min="0.96"/>
+  </ServiceDescription>
+  <Period id="p0" start="PT0S">
+    <AdaptationSet contentType="video" mimeType="video/mp4">
+      <SegmentTemplate media="$Number$.m4s" initialization="init.mp4" duration="8000"
+        timescale="1000" startNumber="0" availabilityTimeOffset="7" availabilityTimeComplete="false"/>
+      <Representation id="v" bandwidth="300000" codecs="avc1.64001e"/>
+    </AdaptationSet>
+  </Period>
+  <UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-ntp:2014" value="ntp.example"/>
+  <UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-head:2014" value="../time"/>
+</MPD>`;
+
+  it('a low-latency read takes the ServiceDescription and the availability offset', () => {
+    const presentation = parse(MPD, BASE, true).presentation;
+    expect(presentation?.live).toMatchObject({
+      holdBack: 3.5,
+      maxLatency: 7,
+      playbackRate: { min: 0.96, max: 1.04 },
+    });
+    const rendition = presentation?.periods[0]?.tracks[0]?.renditions[0] as Rendition;
+    expect(indexed(rendition)).toMatchObject({ availabilityOffset: 7, chunked: true });
+  });
+
+  it('a plain read keeps the suggested delay and requests no segment early', () => {
+    const presentation = parse(MPD, BASE).presentation;
+    expect(presentation?.live?.holdBack).toBe(10);
+    expect(presentation?.live?.playbackRate).toBeUndefined();
+    const rendition = presentation?.periods[0]?.tracks[0]?.renditions[0] as Rendition;
+    expect(indexed(rendition).availabilityOffset).toBeUndefined();
+  });
+
+  it('the first supported UTCTiming wins, its URL resolved', () => {
+    expect(parse(MPD, BASE).presentation?.live?.timeServer).toEqual({
+      scheme: 'urn:mpeg:dash:utc:http-head:2014',
+      value: 'https://cdn.example/time',
+    });
+  });
+});

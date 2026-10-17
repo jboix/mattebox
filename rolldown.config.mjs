@@ -18,6 +18,7 @@ const PRESETS = [
   'dual-ts',
   'dual-ts-drm',
   'hls-ll',
+  'dash-ll',
   'dual-ll',
 ];
 

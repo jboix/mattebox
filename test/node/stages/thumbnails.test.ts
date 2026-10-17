@@ -144,6 +144,7 @@ function compose(...stages: Stage[]) {
       registerSwitchPolicy: () => undefined,
       registerTypeProbe: () => undefined,
       registerTimeProbe: () => undefined,
+      registerChunkSplitter: () => undefined,
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
       addResponseHook: () => () => undefined,

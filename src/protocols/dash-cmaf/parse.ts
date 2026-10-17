@@ -161,6 +161,10 @@ interface TemplateInfo {
   readonly duration: number | null;
   readonly presentationTimeOffset: number;
   readonly timelineElement: Element | null;
+  /** @availabilityTimeOffset in seconds, 0 when absent or INF. */
+  readonly availabilityOffset: number;
+  /** False when @availabilityTimeComplete says a segment arrives as it is written. */
+  readonly availabilityComplete: boolean;
 }
 
 /**
@@ -421,6 +425,8 @@ function mergeTemplates(levels: readonly Element[]): TemplateInfo | null {
   let duration: number | null = null;
   let pto: number | null = null;
   let timelineElement: Element | null = null;
+  let ato: number | null = null;
+  let complete: string | null = null;
   let found = false;
   for (const level of levels) {
     const template = children(level, 'SegmentTemplate')[0];
@@ -433,6 +439,8 @@ function mergeTemplates(levels: readonly Element[]): TemplateInfo | null {
     duration = numberAttr(template, 'duration') ?? duration;
     pto = numberAttr(template, 'presentationTimeOffset') ?? pto;
     timelineElement = children(template, 'SegmentTimeline')[0] ?? timelineElement;
+    ato = numberAttr(template, 'availabilityTimeOffset') ?? ato;
+    complete = attr(template, 'availabilityTimeComplete') ?? complete;
   }
   if (!found) return null;
   return {
@@ -443,6 +451,8 @@ function mergeTemplates(levels: readonly Element[]): TemplateInfo | null {
     duration,
     presentationTimeOffset: pto ?? 0,
     timelineElement,
+    availabilityOffset: ato !== null && ato > 0 ? ato : 0,
+    availabilityComplete: complete !== 'false',
   };
 }
 
@@ -639,6 +649,7 @@ function parsePeriod(
   index: number,
   mpdBase: string,
   isLive: boolean,
+  lowLatency: boolean,
 ): ParsedPeriod | { readonly error: MatteboxError } {
   const matching = new Map<string, { asId: string | null; follows: string[] }>();
   const periodStart = span.start;
@@ -820,6 +831,16 @@ function parsePeriod(
         ...(template.presentationTimeOffset !== 0
           ? { presentationTimeOffset: template.presentationTimeOffset }
           : {}),
+        // A segment requested before it is complete arrives at the
+        // encoder's pace. Only a low-latency composition reads it as chunks
+        // and measures the network apart from that pace, so only that one
+        // requests early.
+        ...(lowLatency && isLive && template.availabilityOffset > 0
+          ? {
+              availabilityOffset: template.availabilityOffset,
+              ...(!template.availabilityComplete ? { chunked: true } : {}),
+            }
+          : {}),
       };
 
       const init: SegmentRef | null =
@@ -921,7 +942,58 @@ function parsePeriod(
 }
 
 /** parse an MPD document into a Presentation. Never throws. */
-export function parse(text: string, baseUrl: string): ParseResult {
+/** The UTCTiming schemes the dash-live stage can ask (ISO/IEC 23009-1 §5.8.5.7). */
+const UTC_SCHEME = /^urn:mpeg:dash:utc:(http-xsdate|http-iso|http-head|direct):201[24]$/;
+
+/**
+ * The first UTCTiming whose scheme the engine supports; the MPD lists them
+ * in order of preference. A time server URL is resolved like any other.
+ */
+function timeServerOf(
+  mpd: Element,
+  baseUrl: string,
+): { readonly scheme: string; readonly value: string } | null {
+  for (const timing of children(mpd, 'UTCTiming')) {
+    const scheme = attr(timing, 'schemeIdUri') ?? '';
+    const value = attr(timing, 'value') ?? '';
+    if (!UTC_SCHEME.test(scheme) || value === '') continue;
+    return { scheme, value: scheme.includes(':direct:') ? value : resolve(value, baseUrl) };
+  }
+  return null;
+}
+
+/**
+ * The latency and rates a low-latency MPD asks for (ISO/IEC 23009-1 Annex
+ * K, ServiceDescription): Latency in milliseconds, PlaybackRate as factors.
+ */
+function serviceOf(mpd: Element): {
+  readonly target?: number;
+  readonly max?: number;
+  readonly rate?: { readonly min: number; readonly max: number };
+} {
+  const service = children(mpd, 'ServiceDescription')[0];
+  if (service === undefined) return {};
+  const latency = children(service, 'Latency')[0];
+  const rates = children(service, 'PlaybackRate')[0];
+  const target = latency !== undefined ? numberAttr(latency, 'target') : null;
+  const max = latency !== undefined ? numberAttr(latency, 'max') : null;
+  const minRate = rates !== undefined ? numberAttr(rates, 'min') : null;
+  const maxRate = rates !== undefined ? numberAttr(rates, 'max') : null;
+  return {
+    ...(target !== null && target > 0 ? { target: target / 1000 } : {}),
+    ...(max !== null && max > 0 ? { max: max / 1000 } : {}),
+    ...(minRate !== null && maxRate !== null && minRate > 0 && maxRate >= minRate
+      ? { rate: { min: minRate, max: maxRate } }
+      : {}),
+  };
+}
+
+/**
+ * `lowLatency` reads what a low-latency MPD adds: the ServiceDescription
+ * target replaces `@suggestedPresentationDelay` as the hold-back, and
+ * segments with an `@availabilityTimeOffset` are requested early.
+ */
+export function parse(text: string, baseUrl: string, lowLatency = false): ParseResult {
   let doc: Document;
   try {
     doc = new DOMParser().parseFromString(text, 'text/xml');
@@ -948,8 +1020,9 @@ export function parse(text: string, baseUrl: string): ParseResult {
     const availabilityStart = Date.parse(attr(mpd, 'availabilityStartTime') ?? '');
     const updatePeriod = parseDuration(attr(mpd, 'minimumUpdatePeriod'));
     const timeShiftDepth = parseDuration(attr(mpd, 'timeShiftBufferDepth'));
-    const holdBack = parseDuration(attr(mpd, 'suggestedPresentationDelay'));
-    const timing = children(mpd, 'UTCTiming')[0];
+    const service = lowLatency ? serviceOf(mpd) : {};
+    const holdBack = service.target ?? parseDuration(attr(mpd, 'suggestedPresentationDelay'));
+    const timing = timeServerOf(mpd, baseUrl);
     live = {
       ...(Number.isFinite(availabilityStart)
         ? { availabilityStart: availabilityStart / 1000 }
@@ -957,14 +1030,9 @@ export function parse(text: string, baseUrl: string): ParseResult {
       ...(updatePeriod !== null ? { updatePeriod } : {}),
       ...(timeShiftDepth !== null ? { timeShiftDepth } : {}),
       ...(holdBack !== null ? { holdBack } : {}),
-      ...(timing !== undefined
-        ? {
-            timeServer: {
-              scheme: attr(timing, 'schemeIdUri') ?? '',
-              value: attr(timing, 'value') ?? '',
-            },
-          }
-        : {}),
+      ...(service.rate !== undefined ? { playbackRate: service.rate } : {}),
+      ...(service.max !== undefined ? { maxLatency: service.max } : {}),
+      ...(timing !== null ? { timeServer: timing } : {}),
     };
   }
 
@@ -1019,6 +1087,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
       i,
       mpdBase,
       isLive,
+      lowLatency,
     );
     if ('error' in result) return { presentation: null, error: result.error };
     parsed.push(result);

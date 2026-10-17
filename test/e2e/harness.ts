@@ -13,6 +13,7 @@ import type { Stage } from '../../src/index.js';
 import { mattebox } from '../../src/index.js';
 import dashCmaf from '../../src/protocols/dash-cmaf/index.js';
 import dashLive from '../../src/protocols/dash-live/index.js';
+import dashLl from '../../src/protocols/dash-ll/index.js';
 import hlsCmaf from '../../src/protocols/hls-cmaf/index.js';
 import hlsLive from '../../src/protocols/hls-live/index.js';
 import hlsLl from '../../src/protocols/hls-ll/index.js';
@@ -61,7 +62,11 @@ export type Source =
   | 'periods'
   | 'metadata'
   | 'hls-ll'
-  | 'mux-ll';
+  | 'mux-ll'
+  | 'dash-ll'
+  | 'dash-ll-head'
+  | 'livesim-ll'
+  | 'livesim-ll-head';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
 export interface BootOptions {
@@ -74,7 +79,7 @@ export interface BootOptions {
   /** Load the legacy container family for a CMAF source too. */
   readonly ts?: boolean;
   readonly profile?: Profile;
-  /** Low-latency HLS: hls-ll in place of hls-cmaf and hls-live, plus live catch-up. The LL sources set it. */
+  /** Low-latency lines: hls-ll and dash-ll in place of the plain ones, plus live catch-up. The LL sources set it. */
   readonly ll?: boolean;
   /** URLs containing this start 404ing after `failAfter` seconds. */
   readonly fail?: string;
@@ -137,7 +142,29 @@ const sources: Record<Source, () => string> = {
   'hls-ll': () => `/ll/${flavor}/${Date.now()}/master.m3u8`,
   // A public LL-HLS stream, H.264 High and AAC, so not on Playwright's Chromium.
   'mux-ll': () => 'https://stream.mux.com/v69RSHhFelSm4701snP22dYz2jICy4E4FUyk02rW4gxRM.m3u8',
+  // The local LL-DASH origin, chunked 4 s segments, its clock 30 s ahead of
+  // the browser's: only UTCTiming finds the edge. The t0 in the path is
+  // what `trueLatency` reads.
+  'dash-ll': () => `/ll/${flavor}/${Date.now()}/manifest.mpd?skew=30&utc=direct`,
+  'dash-ll-head': () => `/ll/${flavor}/${Date.now()}/manifest.mpd?skew=30&utc=head`,
+  // DASH-IF livesim2, chunked low latency: 8 s segments of 1 s chunks,
+  // H.264 High, so not on Playwright's Chromium. UTCTiming http-xsdate, and
+  // http-head with utc_head.
+  'livesim-ll': () =>
+    'https://livesim2.dashif.org/livesim2/chunkdur_1/ato_7/testpic4_8s/Manifest300.mpd',
+  'livesim-ll-head': () =>
+    'https://livesim2.dashif.org/livesim2/utc_head/chunkdur_1/ato_7/testpic4_8s/Manifest300.mpd',
 };
+
+/** The LL sources: they load the low-latency lines. */
+const LL_SOURCES: readonly Source[] = [
+  'hls-ll',
+  'mux-ll',
+  'dash-ll',
+  'dash-ll-head',
+  'livesim-ll',
+  'livesim-ll-head',
+];
 
 const live: Array<{ player: Player; stop: () => void }> = [];
 
@@ -187,13 +214,11 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
     return response;
   }
 
-  const ll = options.ll ?? (src === 'hls-ll' || src === 'mux-ll');
+  const ll = options.ll ?? LL_SOURCES.includes(src);
   const stages: Stage[] = [
-    ...(ll ? [hlsLl(), liveCatchup()] : [hlsCmaf(), hlsLive()]),
-    dashCmaf(),
+    ...(ll ? [hlsLl(), dashLl(), liveCatchup()] : [hlsCmaf(), hlsLive(), dashCmaf(), dashLive()]),
     textWebvtt(),
     textWebvttSegmented(),
-    dashLive(),
     pdt(),
     recovery({ readmitAfterSeconds: 60 }),
     contentSteering(),

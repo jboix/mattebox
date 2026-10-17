@@ -9,6 +9,7 @@ import tsTransmux from '../src/containers/ts-transmux/index.js';
 import { attachEme } from '../src/eme/index.js';
 import dashCmaf from '../src/protocols/dash-cmaf/index.js';
 import dashLive from '../src/protocols/dash-live/index.js';
+import dashLl from '../src/protocols/dash-ll/index.js';
 import hlsCmaf from '../src/protocols/hls-cmaf/index.js';
 import hlsLive from '../src/protocols/hls-live/index.js';
 import hlsLl from '../src/protocols/hls-ll/index.js';
@@ -47,8 +48,11 @@ import trickPlay from '../src/stages/trick-play/index.js';
 
 export const hlsFactories = { hlsCmaf, hlsLive, aes128 };
 /** Low-latency HLS. hls-cmaf and hls-live stay, so a page can build a line without parts. */
-export const hlsLlFactories = { hlsLl, hlsCmaf, hlsLive, aes128, liveCatchup };
+export const hlsLlFactories = { hlsLl, hlsCmaf, hlsLive, aes128 };
 export const dashFactories = { dashCmaf, dashLive };
+/** Low-latency DASH. dash-cmaf and dash-live stay, so a page can build a line without chunks. */
+export const dashLlFactories = { dashLl, dashCmaf, dashLive };
+export const lowLatencyFactories = { liveCatchup };
 export const baseFactories = {
   abr,
   abrCapSize,

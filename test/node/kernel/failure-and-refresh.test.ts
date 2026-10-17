@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { KernelState, Presentation, SliceReducer } from '../../../src/index.js';
+import type { BufferState, KernelState, Presentation, SliceReducer } from '../../../src/index.js';
 import { createReducer, initialState } from '../../../src/kernel/reducer.js';
 import { applyRefresh } from '../../../src/kernel/refresh.js';
 import { deepFreeze, readyStateWithInflight, vodFixture } from './helpers.js';
@@ -260,7 +260,7 @@ describe('preload hints', () => {
     expect(fx).toEqual([]);
   });
 
-  it('throughput leaves out the time the server held the hint', () => {
+  it('throughput takes the transfer the transport measured', () => {
     const state = readyStateWithInflight([hint]);
     const [next] = reduce(state, {
       type: 'SEGMENT_LOADED',
@@ -270,10 +270,108 @@ describe('preload hints', () => {
       bytes: new ArrayBuffer(100_000),
       // Held 900 ms, then 100 ms to send 100 kB: 8 Mbps, not 0.8.
       rtt: 1000,
-      wait: 900,
+      transfer: { bytes: 100_000, ms: 100 },
       size: 100_000,
     });
     // The first sample seeds both estimates.
     expect(next.stats.throughputEwma).toBe(8_000_000);
+  });
+});
+
+describe('chunked segments', () => {
+  const reduce = createReducer();
+  const chunked = {
+    token: 't1:v:5',
+    trackId: 'v',
+    seq: 5,
+    url: 'https://cdn.example/v/5.m4s',
+    renditionId: 'v-1',
+    sbId: 'sb-v',
+    segmentStart: 20,
+    segmentDuration: 4,
+    epoch: 'e0',
+    chunked: true,
+  } as const;
+
+  function initialized(): KernelState {
+    const state = readyStateWithInflight([chunked]);
+    const buffers = new Map(state.buffers);
+    buffers.set('sb-v', { ...(state.buffers.get('sb-v') as BufferState), initFor: 'v-1' });
+    return { ...state, buffers };
+  }
+
+  it('a chunk appends at once, at the offset its decode time settles', () => {
+    const [next, fx] = reduce(initialized(), {
+      type: 'SEGMENT_CHUNK',
+      trackId: 'v',
+      seq: 5,
+      token: chunked.token,
+      bytes: new ArrayBuffer(10),
+      mediaStart: 120,
+    });
+    expect(fx).toEqual([
+      { kind: 'setTimestampOffset', sbId: 'sb-v', offset: -100 },
+      { kind: 'append', sbId: 'sb-v', data: expect.any(ArrayBuffer) },
+    ]);
+    expect(next.buffers.get('sb-v')?.pendingAppends).toBe(1);
+    // The request stays in flight until the segment ends.
+    expect(next.scheduling.inflight.has(chunked.token)).toBe(true);
+  });
+
+  it('the segment fact after its chunks appends no empty rest, and records the segment', () => {
+    const [afterChunk] = reduce(initialized(), {
+      type: 'SEGMENT_CHUNK',
+      trackId: 'v',
+      seq: 5,
+      token: chunked.token,
+      bytes: new ArrayBuffer(10),
+      mediaStart: 120,
+    });
+    const [next, fx] = reduce(afterChunk, {
+      type: 'SEGMENT_LOADED',
+      trackId: 'v',
+      seq: 5,
+      token: chunked.token,
+      bytes: new ArrayBuffer(0),
+      rtt: 4000,
+      size: 50_000,
+      transfer: { bytes: 0, ms: 0 },
+    });
+    expect(fx.some((effect) => effect.kind === 'append')).toBe(false);
+    expect(fx.some((effect) => effect.kind === 'setTimestampOffset')).toBe(false);
+    expect(next.scheduling.inflight.has(chunked.token)).toBe(false);
+    expect(next.buffers.get('sb-v')?.appended).toEqual([
+      { renditionId: 'v-1', seq: 5, start: 20, end: 24 },
+    ]);
+    // Only the chunk's append is pending: one the reducer never emitted
+    // would hold scheduling forever.
+    expect(next.buffers.get('sb-v')?.pendingAppends).toBe(1);
+    // Nothing measured the link, so the estimate holds.
+    expect(next.stats).toBe(afterChunk.stats);
+  });
+
+  it('a chunk of a rendition without its init in the buffer waits for the segment', () => {
+    const [next, fx] = reduce(readyStateWithInflight([chunked]), {
+      type: 'SEGMENT_CHUNK',
+      trackId: 'v',
+      seq: 5,
+      token: chunked.token,
+      bytes: new ArrayBuffer(10),
+    });
+    expect(fx).toEqual([]);
+    expect(next.buffers.get('sb-v')?.pendingAppends).toBe(0);
+  });
+
+  it('a chunk of an aborted request is dropped', () => {
+    const state = initialized();
+    const [next, fx] = reduce(state, {
+      type: 'SEGMENT_CHUNK',
+      trackId: 'v',
+      seq: 5,
+      token: 'gone',
+      bytes: new ArrayBuffer(10),
+    });
+    expect(next).toBe(state);
+    expect(fx).toEqual([]);
   });
 });

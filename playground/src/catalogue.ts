@@ -8,6 +8,7 @@ import tsTransmux from '../../src/containers/ts-transmux/index.js';
 import type { Stage } from '../../src/index.js';
 import dashPreset from '../../src/presets/dash/index.js';
 import dashDrmPreset from '../../src/presets/dash-drm/index.js';
+import dashLlPreset from '../../src/presets/dash-ll/index.js';
 import dualPreset from '../../src/presets/dual/index.js';
 import dualDrmPreset from '../../src/presets/dual-drm/index.js';
 import dualLlPreset from '../../src/presets/dual-ll/index.js';
@@ -22,6 +23,7 @@ import hlsTsDrmPreset from '../../src/presets/hls-ts-drm/index.js';
 import kernelPreset from '../../src/presets/kernel/index.js';
 import dashCmaf from '../../src/protocols/dash-cmaf/index.js';
 import dashLive from '../../src/protocols/dash-live/index.js';
+import dashLl from '../../src/protocols/dash-ll/index.js';
 import hlsCmaf from '../../src/protocols/hls-cmaf/index.js';
 import hlsLive from '../../src/protocols/hls-live/index.js';
 import hlsLl from '../../src/protocols/hls-ll/index.js';
@@ -87,6 +89,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('protocols', dashCmaf),
   built('protocols', dashLive),
   built('protocols', hlsLl),
+  built('protocols', dashLl),
   built('stages', liveCatchup),
   built('stages', pdt),
   built('containers', mp4Box),
@@ -141,6 +144,7 @@ export const PRESETS: ReadonlyArray<{ name: string; stages: readonly string[] }>
   dualTsPreset,
   dualTsDrmPreset,
   hlsLlPreset,
+  dashLlPreset,
   dualLlPreset,
   fullPreset,
 ].map((preset) => ({ name: preset.presetName, stages: preset.stages().map((s) => s.name) }));
@@ -420,6 +424,12 @@ export const STREAMS: readonly StreamEntry[] = [
     url: 'https://stream.mux.com/v69RSHhFelSm4701snP22dYz2jICy4E4FUyk02rW4gxRM.m3u8',
     topic: 'live',
     tags: ['live', 'LL-HLS', 'parts'],
+  },
+  {
+    label: 'DASH-IF livesim2 · low-latency DASH, 1 s chunks',
+    url: 'https://livesim2.dashif.org/livesim2/chunkdur_1/ato_7/testpic4_8s/Manifest300.mpd',
+    topic: 'live',
+    tags: ['live', 'LL-DASH', 'chunked'],
   },
   {
     label: 'SRG SSR · Couleur 3, audio',

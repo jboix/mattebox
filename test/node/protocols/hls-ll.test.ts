@@ -223,6 +223,7 @@ function compose(...factories: Array<() => Stage>) {
       registerSwitchPolicy: () => undefined,
       registerTypeProbe: () => undefined,
       registerTimeProbe: () => undefined,
+      registerChunkSplitter: () => undefined,
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
       addResponseHook: () => () => undefined,

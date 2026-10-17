@@ -23,6 +23,7 @@ import {
   buildEpochs,
   epochForSeq,
   epochKey,
+  isIndexed,
   segmentAtTime,
   timestampOffsetFor,
 } from './timeline.js';
@@ -245,15 +246,22 @@ export function schedule(input: ScheduleInput): ScheduleResult {
     }
     if (segment === null) continue;
     segment = startable(track, segment);
+    // A segment may be requested this many seconds before its end exists
+    // (ISO/IEC 23009-1 §5.3.9.5.3), at most from its start.
+    const addressing = track.rendition.segments;
+    const early = isIndexed(addressing)
+      ? Math.min(addressing.availabilityOffset ?? 0, segment.duration)
+      : 0;
     if (
       input.liveWindow != null &&
       segment.preload !== true &&
-      segment.start + segment.duration > input.liveWindow.end
+      segment.start + segment.duration - early > input.liveWindow.end
     ) {
-      // Not fully available yet. The next window update reschedules it. A
+      // Not available yet. The next window update reschedules it. A
       // preload hint lies past the end on purpose: the server holds it.
       continue;
     }
+    const chunked = early > 0 && isIndexed(addressing) && addressing.chunked === true;
 
     const epochs = buildEpochs([{ period: track.period, rendition: track.rendition }]);
     const epoch = epochForSeq(epochs, segment.seq);
@@ -288,6 +296,7 @@ export function schedule(input: ScheduleInput): ScheduleResult {
       segmentStart: segment.start,
       segmentDuration: segment.duration,
       ...(segment.preload === true ? { preload: true } : {}),
+      ...(chunked ? { chunked: true } : {}),
       ...(track.sbId !== undefined ? { sbId: track.sbId } : {}),
       ...(epoch !== null ? { timestampOffset: timestampOffsetFor(epoch) } : {}),
       ...(key !== undefined ? { epoch: key } : {}),

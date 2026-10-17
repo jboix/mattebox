@@ -246,6 +246,7 @@ function composedReducer() {
       registerSwitchPolicy: () => undefined,
       registerTypeProbe: () => undefined,
       registerTimeProbe: () => undefined,
+      registerChunkSplitter: () => undefined,
       reduce: (name, reducer) => slices.push([name, reducer as SliceReducer]),
       dispatch: () => undefined,
       emit: () => undefined,

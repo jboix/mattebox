@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  completeChunks,
   earliestDecodeTime,
   findBox,
   findBoxes,
@@ -292,5 +293,49 @@ describe('CMAF decode time', () => {
     const segment = fragment(1, 48_000n);
     expect(earliestDecodeTime(segment, new Map([[2, 1000]]))).toBeNull();
     expect(earliestDecodeTime(fragment(1, 48_000n), new Map([[1, 0]]))).toBeNull();
+  });
+});
+
+describe('CMAF chunk boundaries', () => {
+  function box(type: string, size: number): Uint8Array {
+    const bytes = new Uint8Array(size);
+    new DataView(bytes.buffer).setUint32(0, size);
+    for (let i = 0; i < 4; i += 1) bytes[4 + i] = type.charCodeAt(i);
+    return bytes;
+  }
+  function concat(...parts: Uint8Array[]): Uint8Array {
+    const out = new Uint8Array(parts.reduce((sum, part) => sum + part.byteLength, 0));
+    let at = 0;
+    for (const part of parts) {
+      out.set(part, at);
+      at += part.byteLength;
+    }
+    return out;
+  }
+
+  it('ends after the last complete mdat', () => {
+    const bytes = concat(box('styp', 24), box('moof', 100), box('mdat', 500), box('moof', 100));
+    expect(completeChunks(bytes)).toBe(624);
+  });
+
+  it('is 0 before the first mdat completes', () => {
+    expect(completeChunks(box('moof', 100))).toBe(0);
+    expect(completeChunks(concat(box('moof', 100), box('mdat', 500)).subarray(0, 300))).toBe(0);
+    expect(completeChunks(new Uint8Array(4))).toBe(0);
+  });
+
+  it('reads a 64-bit mdat size', () => {
+    const mdat = new Uint8Array(40);
+    const view = new DataView(mdat.buffer);
+    view.setUint32(0, 1);
+    mdat.set([0x6d, 0x64, 0x61, 0x74], 4);
+    view.setBigUint64(8, 40n);
+    expect(completeChunks(concat(box('moof', 16), mdat))).toBe(56);
+  });
+
+  it('never ends a chunk at a box that runs to the end of the file', () => {
+    const open = box('mdat', 16);
+    new DataView(open.buffer).setUint32(0, 0);
+    expect(completeChunks(concat(box('moof', 16), open))).toBe(0);
   });
 });

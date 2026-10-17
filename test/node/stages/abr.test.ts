@@ -75,6 +75,7 @@ function composeWithAbr(options?: Parameters<typeof abr>[0]) {
     registerSwitchPolicy: () => undefined,
     registerTypeProbe: () => undefined,
     registerTimeProbe: () => undefined,
+    registerChunkSplitter: () => undefined,
     reduce: (name, reducer) => slices.push([name, reducer as SliceReducer]),
     dispatch: () => undefined,
     emit: () => undefined,
@@ -292,6 +293,17 @@ describe('4b. the emergency trigger samples only media of the active track', () 
     const { reduce, state } = healthy();
     const { effects } = run(reduce, state, [slow('v', 0), slow('v', 1), slow('v', 2)]);
     expect(emergencies(effects).length).toBeGreaterThan(0);
+  });
+
+  it('reads a held or chunked segment by its measured transfer, not its whole time', () => {
+    const { reduce, state } = healthy();
+    // 8 s for the whole segment, waiting on the encoder; 200 ms of it sending.
+    const paced = (seq: number): Message => ({
+      ...(slow('v', seq) as Extract<Message, { type: 'SEGMENT_LOADED' }>),
+      transfer: { bytes: 200_000, ms: 200 },
+    });
+    const { effects } = run(reduce, state, [paced(0), paced(1), paced(2)]);
+    expect(emergencies(effects)).toEqual([]);
   });
 });
 

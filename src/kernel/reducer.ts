@@ -309,6 +309,51 @@ function segmentedAt(
  * beside video, a text cue, or a playlist is a small transfer whose time
  * is latency, not bandwidth.
  */
+/**
+ * The offset an append of media bytes takes. The first media segment to
+ * land in an epoch settles it for every buffer: its presentation start
+ * minus the decode time the probe read from its bytes, or the manifest's
+ * prediction when nothing read one. Later segments of the epoch, on any
+ * buffer, apply the settled value, so audio and video keep the alignment
+ * their shared media clock gives them: one offset per timeline, as
+ * videojs-http-streaming takes it from its main loader. Playlist
+ * discontinuities and period boundaries both land here.
+ */
+function placeAppend(
+  timeline: KernelState['timeline'],
+  matched: InflightRequest & { readonly sbId: SbId },
+  mediaStart: number | undefined,
+): { readonly timeline: KernelState['timeline']; readonly effects: Effect[] } {
+  const effects: Effect[] = [];
+  let reconciled = timeline.reconciled;
+  let offset = matched.epoch === undefined ? undefined : reconciled.get(matched.epoch);
+  if (
+    offset === undefined &&
+    matched.epoch !== undefined &&
+    matched.seq >= 0 &&
+    matched.segmentStart !== undefined
+  ) {
+    const settled =
+      mediaStart !== undefined
+        ? reconciledOffset(matched.segmentStart, mediaStart)
+        : matched.timestampOffset;
+    if (settled !== undefined) {
+      offset = settled;
+      reconciled = new Map(reconciled).set(matched.epoch, settled);
+    }
+  }
+  if (offset === undefined) offset = matched.timestampOffset;
+  let periodOffsets = timeline.periodOffsets;
+  if (offset !== undefined && periodOffsets.get(matched.sbId) !== offset) {
+    effects.push({ kind: 'setTimestampOffset', sbId: matched.sbId, offset });
+    periodOffsets = new Map(periodOffsets).set(matched.sbId, offset);
+  }
+  if (periodOffsets === timeline.periodOffsets && reconciled === timeline.reconciled) {
+    return { timeline, effects };
+  }
+  return { timeline: { ...timeline, periodOffsets, reconciled }, effects };
+}
+
 function samplesThroughput(state: KernelState, request: InflightRequest): boolean {
   const lead = state.tracks.active.get('video') ?? state.tracks.active.get('audio');
   return lead === undefined ? request.renditionId === undefined : request.trackId === lead;
@@ -990,6 +1035,29 @@ function reduceFact(
       return [failed, [...aborts, ...report]];
     }
 
+    case 'SEGMENT_CHUNK': {
+      // Chunks append in order as they arrive. The segment's bookkeeping
+      // waits for its SEGMENT_LOADED, which also drops a segment whose
+      // rendition lost the buffer's init meanwhile.
+      const matched = state.scheduling.inflight.get(msg.token);
+      if (matched?.sbId === undefined) return [state, []];
+      const buffer = state.buffers.get(matched.sbId);
+      if (buffer === undefined || buffer.initFor !== matched.renditionId) return [state, []];
+      const placed = placeAppend(
+        state.timeline,
+        { ...matched, sbId: matched.sbId },
+        msg.mediaStart,
+      );
+      const buffers = new Map(state.buffers).set(matched.sbId, {
+        ...buffer,
+        pendingAppends: buffer.pendingAppends + 1,
+      });
+      return [
+        { ...state, buffers, timeline: placed.timeline },
+        [...placed.effects, { kind: 'append', sbId: matched.sbId, data: msg.bytes }],
+      ];
+    }
+
     case 'SEGMENT_LOADED': {
       let matched: InflightRequest | null = null;
       if (msg.token !== undefined) {
@@ -1014,13 +1082,12 @@ function reduceFact(
       // The throughput estimate follows the lead track: a 96 KB audio
       // segment beside a 2 MB video segment measures latency, not the link,
       // and would drag the estimate down to a fraction of what video sees.
-      // A preload hint waits at the server until its part exists, so only
-      // the time after the response headers measures the link.
-      const transferMs =
-        matched.preload === true && msg.wait !== undefined ? msg.rtt - msg.wait : msg.rtt;
+      // The transport says which part of the response measures the link
+      // when not all of it does: a preload hint or a chunked segment.
+      const sample = msg.transfer ?? { bytes: msg.size, ms: msg.rtt };
       const sampleBps =
-        transferMs > 0 && msg.size >= cfg.ewmaMinSampleBytes && samplesThroughput(state, matched)
-          ? (msg.size * 8000) / transferMs
+        sample.ms > 0 && sample.bytes >= cfg.ewmaMinSampleBytes && samplesThroughput(state, matched)
+          ? (sample.bytes * 8000) / sample.ms
           : null;
       const stats =
         sampleBps === null
@@ -1186,44 +1253,18 @@ function reduceFact(
             ],
           ];
         }
-        // The offset this append takes. The first media segment to land in
-        // an epoch settles it for every buffer: its presentation start minus
-        // the decode time the probe read from its bytes, or the manifest's
-        // prediction when nothing read one. Later segments of the epoch,
-        // on any buffer, apply the settled value, so audio and video keep
-        // the alignment their shared media clock gives them: one offset per
-        // timeline, as videojs-http-streaming takes it from its main loader.
-        // Playlist discontinuities and period boundaries both land here.
-        let reconciled = state.timeline.reconciled;
-        let offset = matched.epoch === undefined ? undefined : reconciled.get(matched.epoch);
-        if (
-          offset === undefined &&
-          matched.epoch !== undefined &&
-          matched.seq >= 0 &&
-          matched.segmentStart !== undefined
-        ) {
-          const settled =
-            msg.mediaStart !== undefined
-              ? reconciledOffset(matched.segmentStart, msg.mediaStart)
-              : matched.timestampOffset;
-          if (settled !== undefined) {
-            offset = settled;
-            reconciled = new Map(reconciled).set(matched.epoch, settled);
-          }
-        }
-        if (offset === undefined) offset = matched.timestampOffset;
-        let periodOffsets = state.timeline.periodOffsets;
-        if (offset !== undefined && periodOffsets.get(matched.sbId) !== offset) {
-          effects.push({ kind: 'setTimestampOffset', sbId: matched.sbId, offset });
-          periodOffsets = new Map(periodOffsets).set(matched.sbId, offset);
-        }
-        if (
-          periodOffsets !== state.timeline.periodOffsets ||
-          reconciled !== state.timeline.reconciled
-        ) {
-          timeline = { ...state.timeline, periodOffsets, reconciled };
-        }
-        effects.push({ kind: 'append', sbId: matched.sbId, data: msg.bytes });
+        const placed = placeAppend(
+          state.timeline,
+          { ...matched, sbId: matched.sbId },
+          msg.mediaStart,
+        );
+        effects.push(...placed.effects);
+        timeline = placed.timeline;
+        // The chunks of a streamed segment were appended as they came; an
+        // empty rest needs no append, and counts none: the scheduler waits
+        // for every counted append to end.
+        const appends = msg.bytes.byteLength > 0 || matched.chunked !== true;
+        if (appends) effects.push({ kind: 'append', sbId: matched.sbId, data: msg.bytes });
         const buffer = buffers.get(matched.sbId);
         if (buffer !== undefined) {
           const nextBuffers = new Map(buffers);
@@ -1248,7 +1289,7 @@ function reduceFact(
           }
           nextBuffers.set(matched.sbId, {
             ...buffer,
-            pendingAppends: buffer.pendingAppends + 1,
+            pendingAppends: buffer.pendingAppends + (appends ? 1 : 0),
             ...(appended !== undefined ? { appended } : {}),
           });
           buffers = nextBuffers;

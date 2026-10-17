@@ -18,6 +18,7 @@
 import type { ByteRange } from '../types/ir.js';
 import type { InflightRequest } from '../types/kernel.js';
 import type { Effect, Fact } from '../types/messages.js';
+import type { ChunkSplitter } from '../types/stage.js';
 import type { EffectRunner } from './effects.js';
 
 /** Retry policy as data, not code. */
@@ -87,6 +88,12 @@ export interface TransportOptions {
    * the request on the `manifest` track is checked; segments never are.
    */
   readonly acceptManifestType?: (contentType: string) => boolean;
+  /**
+   * The registered chunk splitter, read per request. With one, a request
+   * marked as chunked reads its body as a stream and reports each run of
+   * complete chunks as a SEGMENT_CHUNK fact before its SEGMENT_LOADED.
+   */
+  readonly split?: () => ChunkSplitter | null;
 }
 
 export interface Transport {
@@ -169,6 +176,61 @@ interface Primed {
 /** A primed response answers one URL and one byte range. */
 function primedKey(url: string, range?: ByteRange): string {
   return range === undefined ? url : `${url} ${range.start}-${range.end}`;
+}
+
+/** The two byte arrays as one. */
+function join(head: Uint8Array, tail: Uint8Array): Uint8Array {
+  if (head.byteLength === 0) return tail;
+  const out = new Uint8Array(head.byteLength + tail.byteLength);
+  out.set(head);
+  out.set(tail, head.byteLength);
+  return out;
+}
+
+interface Streamed {
+  /** The bytes after the last complete chunk. */
+  readonly rest: ArrayBuffer;
+  readonly size: number;
+  readonly transfer: { readonly bytes: number; readonly ms: number };
+}
+
+/**
+ * Reads a body as it arrives and hands on each run of complete chunks.
+ * The encoder pauses between chunks and not inside one, so the time
+ * between two reads while a chunk is incomplete is time the network spent
+ * sending. The transfer sample counts that time and the bytes those reads
+ * brought, and leaves out the pauses.
+ */
+async function readChunks(
+  body: ReadableStream<Uint8Array>,
+  split: ChunkSplitter,
+  onChunk: (bytes: ArrayBuffer) => void,
+  now: () => number,
+): Promise<Streamed> {
+  const reader = body.getReader();
+  let held: Uint8Array = new Uint8Array(0);
+  let size = 0;
+  let bytes = 0;
+  let ms = 0;
+  let last = now();
+  for (;;) {
+    const read = await reader.read();
+    if (read.done) break;
+    const at = now();
+    if (held.byteLength > 0) {
+      ms += at - last;
+      bytes += read.value.byteLength;
+    }
+    last = at;
+    size += read.value.byteLength;
+    held = join(held, read.value);
+    const ready = split(held);
+    if (ready > 0) {
+      onChunk(held.slice(0, ready).buffer as ArrayBuffer);
+      held = held.slice(ready);
+    }
+  }
+  return { rest: held.slice().buffer as ArrayBuffer, size, transfer: { bytes, ms } };
 }
 
 interface LiveRequest {
@@ -268,6 +330,7 @@ export function createTransport(options: TransportOptions): Transport {
     effectUrl: string,
     range: { start: number; end: number } | undefined,
     timeoutFromEffect: number | undefined,
+    head: boolean,
     attemptNo: number,
   ): void {
     const state: LiveRequest = {
@@ -325,7 +388,7 @@ export function createTransport(options: TransportOptions): Transport {
       state.retryId = setTimeout(
         () => {
           state.retryId = null;
-          attempt(sink, token, request, effectUrl, range, timeoutFromEffect, attemptNo + 1);
+          attempt(sink, token, request, effectUrl, range, timeoutFromEffect, head, attemptNo + 1);
         },
         backoffDelayMs(policy, attemptNo),
       );
@@ -336,7 +399,11 @@ export function createTransport(options: TransportOptions): Transport {
     const answer = takePrimed(effectUrl, range);
     (answer !== null
       ? Promise.resolve(new Response(answer.bytes, { status: 200, headers: answer.headers }))
-      : fetchImpl(draft.url, { headers: draft.headers, signal: state.controller.signal })
+      : fetchImpl(draft.url, {
+          ...(head ? { method: 'HEAD' } : {}),
+          headers: draft.headers,
+          signal: state.controller.signal,
+        })
     )
       .then(async (response) => {
         if (state.timeoutId !== null) clearTimeout(state.timeoutId);
@@ -363,7 +430,31 @@ export function createTransport(options: TransportOptions): Transport {
           contentType !== null &&
           options.acceptManifestType?.(contentType) === false;
         if (refused) await response.body?.cancel();
-        const bytes = refused ? new ArrayBuffer(0) : await response.arrayBuffer();
+        const split =
+          request.chunked === true && sink === main && answer === null
+            ? (options.split?.() ?? null)
+            : null;
+        const streamed =
+          split !== null && response.body != null
+            ? await readChunks(
+                response.body,
+                split,
+                (chunk) =>
+                  sink.absorb({
+                    type: 'SEGMENT_CHUNK',
+                    trackId: request.trackId,
+                    seq: request.seq,
+                    token,
+                    bytes: chunk,
+                  }),
+                now,
+              )
+            : null;
+        let bytes: ArrayBuffer;
+        if (refused) bytes = new ArrayBuffer(0);
+        else if (streamed !== null) bytes = streamed.rest;
+        else bytes = await response.arrayBuffer();
+        const size = streamed?.size ?? bytes.byteLength;
         if (state.userAborted) {
           // The body finished before the abort took effect. The kernel
           // dropped this request already; reporting it would hand another
@@ -378,7 +469,7 @@ export function createTransport(options: TransportOptions): Transport {
           url: draft.url,
           status: response.status,
           rtt,
-          size: bytes.byteLength,
+          size,
           outcome: refused ? 'failure' : 'success',
           attempt: attemptNo,
           headers: response.headers,
@@ -408,6 +499,13 @@ export function createTransport(options: TransportOptions): Transport {
             rtt,
           });
         }
+        // A preload hint waits at the server until its part exists, so
+        // only the time after the response headers measures the link.
+        let transfer = streamed?.transfer;
+        if (transfer === undefined && request.preload === true && answer === null) {
+          transfer = { bytes: size, ms: rtt - wait };
+        }
+        const date = head ? Date.parse(response.headers.get('date') ?? '') : Number.NaN;
         sink.absorb({
           type: 'SEGMENT_LOADED',
           trackId: request.trackId,
@@ -415,8 +513,9 @@ export function createTransport(options: TransportOptions): Transport {
           token,
           bytes,
           rtt,
-          size: bytes.byteLength,
-          ...(answer === null ? { wait } : {}),
+          size,
+          ...(transfer !== undefined ? { transfer } : {}),
+          ...(Number.isFinite(date) ? { serverDate: date / 1000 } : {}),
           // Wall time at receipt: the live stages' clock input.
           wallClock: Date.now() / 1000,
         });
@@ -469,7 +568,16 @@ export function createTransport(options: TransportOptions): Transport {
           url: effect.url,
           ...(effect.renditionId !== undefined ? { renditionId: effect.renditionId } : {}),
         };
-        attempt(main, effect.token, request, effect.url, effect.range, effect.timeout, 1);
+        attempt(
+          main,
+          effect.token,
+          request,
+          effect.url,
+          effect.range,
+          effect.timeout,
+          effect.method === 'HEAD',
+          1,
+        );
         return () => cancel(effect.token);
       });
     },
@@ -492,7 +600,16 @@ export function createTransport(options: TransportOptions): Transport {
             ...(effect.renditionId !== undefined ? { renditionId: effect.renditionId } : {}),
           };
           tokens.add(effect.token);
-          attempt(sink, effect.token, request, effect.url, effect.range, effect.timeout, 1);
+          attempt(
+            sink,
+            effect.token,
+            request,
+            effect.url,
+            effect.range,
+            effect.timeout,
+            effect.method === 'HEAD',
+            1,
+          );
           return () => cancel(sink.id + effect.token);
         },
         close() {

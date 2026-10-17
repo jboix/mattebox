@@ -9,6 +9,7 @@ import type { ContentType } from '../types/ir.js';
 import type { SliceReducer } from '../types/kernel.js';
 import type { AbrChooser, SwitchPolicy } from '../types/quality.js';
 import type {
+  ChunkSplitter,
   MediaTimeProbe,
   StageContext,
   Teardown,
@@ -27,6 +28,8 @@ export interface HookRegistry {
   typeProbe?: TypeProbe | null;
   /** Reads the decode time media bytes start at; the segment preparer consults it after the transforms. */
   timeProbe?: MediaTimeProbe | null;
+  /** Finds complete chunks in a segment still arriving; the transport streams chunked segments with it. */
+  chunkSplitter?: ChunkSplitter | null;
   /** The composition's manifest MIME types; static, set by the composition root. */
   readonly manifestTypes?: ReadonlySet<string>;
   /** Whether the browser decodes a full MSE type; static, set by the composition root. */
@@ -74,6 +77,7 @@ export function createStageContext(deps: ContextDeps): { ctx: StageContext; tear
   let registeredPolicy = false;
   let registeredProbe = false;
   let registeredTimeProbe = false;
+  let registeredSplitter = false;
 
   const ctx: StageContext = {
     element: deps.element,
@@ -143,6 +147,13 @@ export function createStageContext(deps: ContextDeps): { ctx: StageContext; tear
       deps.hooks.timeProbe = probe;
       registeredTimeProbe = true;
     },
+    registerChunkSplitter(split) {
+      if (deps.hooks.chunkSplitter != null) {
+        throw new Error('a chunk splitter is already registered');
+      }
+      deps.hooks.chunkSplitter = split;
+      registeredSplitter = true;
+    },
     reduce(slice, reducer) {
       deps.slices.push([slice, reducer as SliceReducer]);
     },
@@ -174,6 +185,7 @@ export function createStageContext(deps: ContextDeps): { ctx: StageContext; tear
       if (registeredPolicy) deps.hooks.switchPolicy = null;
       if (registeredProbe) deps.hooks.typeProbe = null;
       if (registeredTimeProbe) deps.hooks.timeProbe = null;
+      if (registeredSplitter) deps.hooks.chunkSplitter = null;
     },
   };
 }

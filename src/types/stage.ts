@@ -27,6 +27,13 @@ export type TypeProbe = (bytes: Uint8Array) => string | null;
  */
 export type MediaTimeProbe = (bytes: Uint8Array, meta: SegmentMeta) => number | null;
 
+/**
+ * Finds where the complete chunks at the start of a segment's received
+ * bytes end: the length a SourceBuffer can take now, 0 when no chunk is
+ * complete yet. For CMAF, a chunk is a moof box and its mdat.
+ */
+export type ChunkSplitter = (bytes: Uint8Array) => number;
+
 /** The mutable outgoing-request view request hooks receive; url, headers, and timeout are writable. */
 export interface TransportRequestDraftView {
   url: string;
@@ -166,6 +173,13 @@ export interface StageContext {
    * loader's first segment. One per composition; cmaf-timing provides it.
    */
   registerTimeProbe(probe: MediaTimeProbe): void;
+  /**
+   * Registers the reader of chunk boundaries. With one, the transport reads
+   * a segment marked as chunked as a stream and hands each complete chunk
+   * to the append path as it arrives. One per composition; dash-ll
+   * provides it.
+   */
+  registerChunkSplitter(split: ChunkSplitter): void;
   /** Contributes a named state slice. The reducer receives only that slice plus a read-only kernel view. */
   reduce<S>(slice: string, reducer: SliceReducer<S>): void;
   dispatch(cmd: Command): void;
