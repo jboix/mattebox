@@ -33,7 +33,7 @@ import type {
 import type { ParseResult } from '../adapter-shared.js';
 import { manifestError } from '../adapter-shared.js';
 import { dimensions } from '../dimensions.js';
-import type { TagLine } from './lexer.js';
+import type { Line, TagLine } from './lexer.js';
 import { lex } from './lexer.js';
 
 export type { ParseResult } from '../adapter-shared.js';
@@ -52,6 +52,20 @@ export interface MediaPlaylist {
   readonly tiles?: TileGrid;
   /** The playlist's EXT-X-DATERANGE tags, merged by ID, on the presentation timeline. */
   readonly dateRanges?: readonly DateRange[];
+  /**
+   * Seconds behind the end to start and hold playback: EXT-X-SERVER-CONTROL
+   * HOLD-BACK (RFC 8216bis §4.4.3.8), or PART-HOLD-BACK where the parts
+   * play. Absent: three target durations, the RFC's minimum.
+   */
+  readonly holdBack?: number;
+  /** The EXT-X-SERVER-CONTROL attributes as written. */
+  readonly serverControl?: Readonly<Record<string, string>>;
+  /**
+   * EXT-X-SKIP SKIPPED-SEGMENTS of a delta update (RFC 8216bis §4.4.5.2):
+   * the segments before the first listed one that the playlist leaves out.
+   * The first listed segment's number counts them.
+   */
+  readonly skipped?: number;
 }
 
 /** Epoch seconds from an ISO 8601 date, or null. */
@@ -113,7 +127,7 @@ export type MediaPlaylistResult =
   | { readonly playlist: null; readonly error: MatteboxError };
 
 /** n@o or n (continuing after the previous range). RFC 8216 §4.3.2.2. */
-function parseByteRange(value: string, previousEnd: number | null): ByteRange | null {
+export function parseByteRange(value: string, previousEnd: number | null): ByteRange | null {
   const [lengthText, offsetText] = value.split('@');
   const length = Number(lengthText);
   if (!Number.isFinite(length)) return null;
@@ -220,7 +234,11 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
   if (!text.trimStart().startsWith('#EXTM3U')) {
     return { playlist: null, error: manifestError('missing #EXTM3U') };
   }
-  const lines = lex(text);
+  return parseMediaLines(lex(text), baseUrl);
+}
+
+/** A lexed media playlist into segments, for a caller that reads the lines itself too. */
+export function parseMediaLines(lines: readonly Line[], baseUrl: string): MediaPlaylistResult {
   const segments: Segment[] = [];
   let init: SegmentRef | null = null;
   let targetDuration = 0;
@@ -242,6 +260,8 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
   let previousRangeEnd: number | null = null;
   let start = 0;
   let seq = 0;
+  let serverControl: Readonly<Record<string, string>> | null = null;
+  let skipped = 0;
 
   for (const line of lines) {
     if (line.kind === 'tag') {
@@ -306,6 +326,15 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
           // first one describes the rendition, as packagers repeat one grid.
           tiles = tiles ?? tileGridFrom(line.attributes);
           break;
+        case 'EXT-X-SERVER-CONTROL':
+          serverControl = line.attributes;
+          break;
+        case 'EXT-X-SKIP':
+          // RFC 8216bis §4.4.5.2: the skipped segments still count, so the
+          // first listed one keeps its media sequence number.
+          skipped = Number(line.attributes['SKIPPED-SEGMENTS']) || 0;
+          seq += skipped;
+          break;
         default:
           break;
       }
@@ -357,6 +386,11 @@ export function parseMediaPlaylist(text: string, baseUrl: string): MediaPlaylist
       ...(dateRangeTags.length > 0
         ? { dateRanges: dateRangesFrom(dateRangeTags, dateAnchor) }
         : {}),
+      ...(serverControl !== null ? { serverControl } : {}),
+      ...(Number(serverControl?.['HOLD-BACK']) > 0
+        ? { holdBack: Number(serverControl?.['HOLD-BACK']) }
+        : {}),
+      ...(skipped > 0 ? { skipped } : {}),
     },
     error: null,
   };
@@ -550,7 +584,11 @@ function sessionDataFrom(
 }
 
 /** parse either playlist form into a Presentation. Never throws. */
-export function parse(text: string, baseUrl: string): ParseResult {
+export function parse(
+  text: string,
+  baseUrl: string,
+  parseMedia: (text: string, url: string) => MediaPlaylistResult = parseMediaPlaylist,
+): ParseResult {
   if (!text.trimStart().startsWith('#EXTM3U')) {
     return { presentation: null, error: manifestError('missing #EXTM3U') };
   }
@@ -560,7 +598,7 @@ export function parse(text: string, baseUrl: string): ParseResult {
   );
   if (!isMultivariant) {
     // A bare media playlist is a valid source: one video track, one rendition.
-    const media = parseMediaPlaylist(text, baseUrl);
+    const media = parseMedia(text, baseUrl);
     if (media.playlist === null) {
       return { presentation: null, error: media.error ?? manifestError('unparsable playlist') };
     }
@@ -605,6 +643,9 @@ export function parse(text: string, baseUrl: string): ParseResult {
           : {
               live: {
                 updatePeriod: media.playlist.targetDuration || 4,
+                ...(media.playlist.holdBack !== undefined
+                  ? { holdBack: media.playlist.holdBack }
+                  : {}),
                 ...(media.playlist.dateAnchor !== undefined
                   ? { dateAnchor: media.playlist.dateAnchor }
                   : {}),
@@ -939,8 +980,11 @@ export function refreshFor(
   }
   // A reload older than what is already known (a CDN edge behind another)
   // must not pull the rendition's window backwards; keep the newer list.
-  const knownLast = Array.isArray(previous) ? previous[previous.length - 1] : undefined;
-  const incomingLast = playlist.segments[playlist.segments.length - 1];
+  // A preload hint is a guess at what comes next, not what the window holds.
+  const knownLast = Array.isArray(previous)
+    ? (previous as readonly Segment[]).filter((s) => s.preload !== true).pop()
+    : undefined;
+  const incomingLast = playlist.segments.filter((s) => s.preload !== true).pop();
   if (
     knownLast !== undefined &&
     incomingLast !== undefined &&
@@ -967,6 +1011,9 @@ export function refreshFor(
     protection: playlist.protection,
     endlist: playlist.endlist,
     ...(playlist.endlist ? {} : { updatePeriod: playlist.targetDuration || 4 }),
+    ...(!playlist.endlist && playlist.holdBack !== undefined
+      ? { holdBack: playlist.holdBack }
+      : {}),
     ...(playlist.dateAnchor !== undefined
       ? {
           dateAnchor: {

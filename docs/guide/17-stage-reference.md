@@ -8,12 +8,13 @@ and how to add or remove a stage.
 
 Import from `mattebox/protocols/<name>`.
 
-| Stage       | Does                                   | In presets               | Guide                                      |
-| ----------- | -------------------------------------- | ------------------------ | ------------------------------------------ |
-| `hls-cmaf`  | Reads HLS playlists, plays on demand   | `hls*`, `dual*`, `full`  | [03](03-hls-and-dash.md#protocol-adapters) |
-| `hls-live`  | Reloads HLS playlists for live streams | `hls*`, `dual*`, `full`  | [04](04-live-streaming.md#live-adapters)   |
-| `dash-cmaf` | Reads DASH manifests, plays on demand  | `dash*`, `dual*`, `full` | [03](03-hls-and-dash.md#protocol-adapters) |
-| `dash-live` | Reloads DASH manifests for live        | `dash*`, `dual*`, `full` | [04](04-live-streaming.md#live-adapters)   |
+| Stage       | Does                                           | In presets                 | Guide                                      |
+| ----------- | ---------------------------------------------- | -------------------------- | ------------------------------------------ |
+| `hls-cmaf`  | Reads HLS playlists, plays on demand           | `hls*`, `dual*`, not `-ll` | [03](03-hls-and-dash.md#protocol-adapters) |
+| `hls-live`  | Reloads HLS playlists for live streams         | `hls*`, `dual*`, not `-ll` | [04](04-live-streaming.md#live-adapters)   |
+| `hls-ll`    | `hls-cmaf` and `hls-live` with low-latency HLS | `*-ll`, `full`             | [04](04-live-streaming.md#low-latency-hls) |
+| `dash-cmaf` | Reads DASH manifests, plays on demand          | `dash*`, `dual*`, `full`   | [03](03-hls-and-dash.md#protocol-adapters) |
+| `dash-live` | Reloads DASH manifests for live                | `dash*`, `dual*`, `full`   | [04](04-live-streaming.md#live-adapters)   |
 
 ## Containers
 
@@ -47,6 +48,14 @@ these.
 | `codec-probe`           | Reads the codecs from an init segment                       | [08](08-legacy-transport-streams.md#the-codec-probe-stage) |
 | `mp4-box`               | Reads MP4 boxes, for `codec-probe` and DASH indexes         | [08](08-legacy-transport-streams.md#the-codec-probe-stage) |
 | `aes-128`               | Decrypts AES-128 segments. HLS presets only                 | [08](08-legacy-transport-streams.md#the-aes-128-stage)     |
+
+## Stages in the `-ll` presets
+
+| Stage          | Does                                          | Guide                                    |
+| -------------- | --------------------------------------------- | ---------------------------------------- |
+| `live-catchup` | Holds a target latency with the playback rate | [04](04-live-streaming.md#live-catch-up) |
+
+`full` includes it too.
 
 ## Stages in the `-ts` presets
 

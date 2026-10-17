@@ -32,6 +32,13 @@ const ATTRIBUTE_TAGS = new Set([
   'EXT-X-TILES',
   'EXT-X-CONTENT-STEERING',
   'EXT-X-DATERANGE',
+  // RFC 8216bis §4.4.3.8, §4.4.4.9, §4.4.5.2 to §4.4.5.4: low latency.
+  'EXT-X-SERVER-CONTROL',
+  'EXT-X-PART-INF',
+  'EXT-X-PART',
+  'EXT-X-PRELOAD-HINT',
+  'EXT-X-RENDITION-REPORT',
+  'EXT-X-SKIP',
 ]);
 
 /**

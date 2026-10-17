@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { KernelState, Presentation, SliceReducer } from '../../../src/index.js';
 import { createReducer, initialState } from '../../../src/kernel/reducer.js';
 import { applyRefresh } from '../../../src/kernel/refresh.js';
-import { deepFreeze, vodFixture } from './helpers.js';
+import { deepFreeze, readyStateWithInflight, vodFixture } from './helpers.js';
 
 /** The fixture with its video rendition unresolved, the way a multivariant playlist leaves it. */
 const unresolved: Presentation = {
@@ -228,5 +228,52 @@ describe('a failed engine starts nothing', () => {
     expect(state.lifecycle.phase).not.toBe('error');
     const [, fx] = reduce(state, { type: 'TICK', token: 'eager:tick' });
     expect(fx.map((e) => e.kind)).toContain('fetch');
+  });
+});
+
+describe('preload hints', () => {
+  const reduce = createReducer();
+  const hint = {
+    token: 't1:v:2',
+    trackId: 'v',
+    seq: 2,
+    url: 'https://cdn.example/v/2.0.m4s',
+    renditionId: 'v-1',
+    sbId: 'sb-v',
+    segmentStart: 8,
+    segmentDuration: 1,
+    preload: true,
+  } as const;
+
+  it('a failed hint drops its request and reports nothing', () => {
+    const state = readyStateWithInflight([hint]);
+    const [next, fx] = reduce(state, {
+      type: 'SEGMENT_FAILED',
+      trackId: 'v',
+      seq: 2,
+      renditionId: 'v-1',
+      preload: true,
+      status: 404,
+      error: { category: 'network', code: 'NETWORK_HTTP_STATUS', fatal: false, recoverable: true },
+    });
+    expect(next.scheduling.inflight.size).toBe(0);
+    expect(fx).toEqual([]);
+  });
+
+  it('throughput leaves out the time the server held the hint', () => {
+    const state = readyStateWithInflight([hint]);
+    const [next] = reduce(state, {
+      type: 'SEGMENT_LOADED',
+      trackId: 'v',
+      seq: 2,
+      token: hint.token,
+      bytes: new ArrayBuffer(100_000),
+      // Held 900 ms, then 100 ms to send 100 kB: 8 Mbps, not 0.8.
+      rtt: 1000,
+      wait: 900,
+      size: 100_000,
+    });
+    // The first sample seeds both estimates.
+    expect(next.stats.throughputEwma).toBe(8_000_000);
   });
 });

@@ -82,28 +82,32 @@ engine.load(url);
 Pick by protocol, whether you have MPEG-TS segments, and whether content is
 protected.
 
-| Preset        | Line       | MPEG-TS | DRM |
-| ------------- | ---------- | ------- | --- |
-| `hls`         | HLS        |         |     |
-| `hls-drm`     | HLS        |         | yes |
-| `hls-ts`      | HLS        | yes     |     |
-| `hls-ts-drm`  | HLS        | yes     | yes |
-| `dash`        | DASH       |         |     |
-| `dash-drm`    | DASH       |         | yes |
-| `dual`        | HLS + DASH |         |     |
-| `dual-drm`    | HLS + DASH |         | yes |
-| `dual-ts`     | HLS + DASH | yes     |     |
-| `dual-ts-drm` | HLS + DASH | yes     | yes |
-| `full`        | HLS + DASH | yes     | yes |
-| `kernel`      | none       |         |     |
+| Preset        | Line          | MPEG-TS | DRM |
+| ------------- | ------------- | ------- | --- |
+| `hls`         | HLS           |         |     |
+| `hls-drm`     | HLS           |         | yes |
+| `hls-ts`      | HLS           | yes     |     |
+| `hls-ts-drm`  | HLS           | yes     | yes |
+| `dash`        | DASH          |         |     |
+| `dash-drm`    | DASH          |         | yes |
+| `dual`        | HLS + DASH    |         |     |
+| `dual-drm`    | HLS + DASH    |         | yes |
+| `dual-ts`     | HLS + DASH    | yes     |     |
+| `dual-ts-drm` | HLS + DASH    | yes     | yes |
+| `hls-ll`      | LL-HLS        |         |     |
+| `dual-ll`     | LL-HLS + DASH |         |     |
+| `full`        | LL-HLS + DASH | yes     | yes |
+| `kernel`      | none          |         |     |
 
 Every preset except `kernel` includes the same base: on
 demand and live playback, adaptive quality with a size cap, recovery, content steering, alternate audio with codec switching,
 WebVTT subtitles, forced subtitles, CEA-608 captions, CMAF live timing, program date time,
 and the codec probe. The HLS lines add AES-128 segment decryption.
 `-ts` adds the transmuxer, packed audio, and ID3 metadata. `-drm` adds the
-three EME stages. `full` is `dual-ts-drm` plus the ten stages below, and
-`kernel` is nothing, for a stack you build by hand.
+three EME stages. `-ll` replaces `hls-cmaf` and `hls-live` with `hls-ll`
+and adds `live-catchup` (see [chapter 04](04-live-streaming.md#low-latency-hls)).
+`full` is `dual-ts-drm` with the `-ll` HLS line, plus the ten stages below,
+and `kernel` is nothing, for a stack you build by hand.
 
 Ten stages are only in `full`. Add them with `stages` when you need them.
 
@@ -165,7 +169,7 @@ the transmux Worker inside.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../preset-chart-dark.svg">
-  <img alt="Bundle size of every Mattebox preset, min+gzip, one file each. kernel 22.8 KB, hls 44.7 KB, dash 46.0 KB, dual 53.3 KB, dual-ts-drm 64.0 KB, full 81.1 KB." src="../preset-chart-light.svg">
+  <img alt="Bundle size of every Mattebox preset, min+gzip, one file each. kernel 24.5 KB, hls 47.0 KB, dash 47.7 KB, dual 55.8 KB, dual-ts-drm 66.5 KB, hls-ll 49.3 KB, dual-ll 57.9 KB, full 85.5 KB." src="../preset-chart-light.svg">
 </picture>
 
 ## Kernel config

@@ -148,6 +148,14 @@ describe('recovery: rendition exclusion', () => {
     ).toBe(true);
   });
 
+  it('a dropped preload hint counts toward nothing', () => {
+    let state = ready();
+    for (let i = 0; i < 4; i += 1) {
+      [state] = reduce(state, { ...(fail(0, 'v-low') as object), preload: true } as Message);
+    }
+    expect([...state.quality.constraints.keys()]).toEqual([]);
+  });
+
   it('arbitration switches away from the excluded rendition', () => {
     const state = ready();
     let settled = settle(reduce, ...reduce(state, fail(0, 'v-low')));

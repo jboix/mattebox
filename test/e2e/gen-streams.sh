@@ -153,6 +153,26 @@ captions_master() {
     "$audio" "$codecs" > "$dir/master-captions-708.m3u8"
 }
 
+# The low-latency HLS source: one fragmented MP4 with a fragment every second
+# and a key frame every four, so the fixture server cuts it into 4 s segments
+# of four 1 s parts, the first of each independent. The server plays it out
+# live (fixture-server.ts). codec.txt holds the codec string for the master.
+ll_flavor() { # flavor vcodec extra...
+  local flavor=$1 vcodec=$2
+  shift 2
+  local dir="$OUT/$flavor-ll"
+  mkdir -p "$dir"
+  ffmpeg -y -loglevel error -f lavfi -i "testsrc2=size=320x180:rate=30" -t 1 \
+    -c:v "$vcodec" -pix_fmt yuv420p -b:v 150k "$@" \
+    -f dash -dash_segment_type mp4 "$dir/probe.mpd"
+  grep -o 'codecs="[^"]*"' "$dir/probe.mpd" | head -1 | sed 's/codecs="//;s/"//' > "$dir/codec.txt"
+  rm -f "$dir"/probe.mpd "$dir"/*.m4s
+  ffmpeg -y -loglevel error -f lavfi -i "testsrc2=size=320x180:rate=30" -t 160 \
+    -c:v "$vcodec" -pix_fmt yuv420p -b:v 150k -g 120 -keyint_min 120 -sc_threshold 0 "$@" \
+    -movflags +frag_keyframe+empty_moov+default_base_moof -frag_duration 1000000 \
+    "$dir/stream.mp4"
+}
+
 if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
    [ -f "$OUT/h264-dash/manifest.mpd" ] && [ -f "$OUT/vp9-dash/manifest.mpd" ] &&
    [ -f "$OUT/ts/master.m3u8" ] && [ -f "$OUT/aac/master.m3u8" ]; then
@@ -162,6 +182,8 @@ if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
     [ -f "$OUT/$flavor/master-names.m3u8" ] || names_master "$flavor"
   done
   [ -f "$OUT/h264/master-captions-708.m3u8" ] || captions_master
+  [ -f "$OUT/h264-ll/stream.mp4" ] || ll_flavor h264 libx264 -profile:v baseline
+  [ -f "$OUT/vp9-ll/stream.mp4" ] || ll_flavor vp9 libvpx-vp9 -deadline realtime -cpu-used 8
   [ -f "$OUT/ts/master-metadata.m3u8" ] || node "$ROOT/test/e2e/inject-id3.mjs" "$OUT/ts"
   for flavor in h264 vp9; do
     [ -f "$OUT/$flavor-dash/manifest-ttml.mpd" ] || node "$ROOT/test/e2e/gen-ttml.mjs" "$OUT/$flavor-dash"
@@ -357,5 +379,7 @@ ts_flavor
 node "$ROOT/test/e2e/inject-id3.mjs" "$OUT/ts"
 aac_flavor
 images_flavor
+ll_flavor h264 libx264 -profile:v baseline
+ll_flavor vp9 libvpx-vp9 -deadline realtime -cpu-used 8
 
 echo "generated: h264 [$H_LOW] vp9 [$V_LOW] plus dash flavors, three rungs"

@@ -9,7 +9,14 @@
  * live stage owns edge computation. Output is fetch effects plus the
  * in-flight records to store.
  */
-import type { Period, Rendition, TimeRange, TimeRangesSnapshot, TrackId } from '../types/ir.js';
+import type {
+  Period,
+  Rendition,
+  Segment,
+  TimeRange,
+  TimeRangesSnapshot,
+  TrackId,
+} from '../types/ir.js';
 import type { InflightRequest, SbId } from '../types/kernel.js';
 import type { Effect } from '../types/messages.js';
 import {
@@ -156,6 +163,28 @@ function received(track: ScheduleTrackInput, seq: number): boolean {
   return track.appended?.some((entry) => entry.seq === seq && entry.renditionId === id) === true;
 }
 
+/**
+ * The entry to fetch for `segment` so the decoder gets a frame it can start
+ * from. An entry marked not independent (a low-latency part that starts
+ * without a key frame, RFC 8216bis §4.4.4.9) only continues the entry
+ * before it. When this rendition's buffer did not receive that entry (a
+ * switch, a seek, the start), the run begins at the latest independent
+ * entry before it, and then continues entry by entry, over media another
+ * rendition already buffered.
+ */
+function startable(track: ScheduleTrackInput, segment: Segment): Segment {
+  const list = track.rendition.segments;
+  if (segment.independent !== false || !Array.isArray(list)) return segment;
+  const entries = list as readonly Segment[];
+  const index = entries.findIndex((entry) => entry.seq === segment.seq);
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const entry = entries[i] as Segment;
+    if (received(track, entry.seq)) return entries[i + 1] as Segment;
+    if (entry.independent !== false) return entry;
+  }
+  return segment;
+}
+
 export function schedule(input: ScheduleInput): ScheduleResult {
   const tolerance = input.gapToleranceSeconds ?? DEFAULT_GAP_TOLERANCE;
   const effects: Effect[] = [];
@@ -215,8 +244,14 @@ export function schedule(input: ScheduleInput): ScheduleResult {
       );
     }
     if (segment === null) continue;
-    if (input.liveWindow != null && segment.start + segment.duration > input.liveWindow.end) {
-      // Not fully available yet. The next window update reschedules it.
+    segment = startable(track, segment);
+    if (
+      input.liveWindow != null &&
+      segment.preload !== true &&
+      segment.start + segment.duration > input.liveWindow.end
+    ) {
+      // Not fully available yet. The next window update reschedules it. A
+      // preload hint lies past the end on purpose: the server holds it.
       continue;
     }
 
@@ -252,6 +287,7 @@ export function schedule(input: ScheduleInput): ScheduleResult {
       renditionId: track.rendition.id,
       segmentStart: segment.start,
       segmentDuration: segment.duration,
+      ...(segment.preload === true ? { preload: true } : {}),
       ...(track.sbId !== undefined ? { sbId: track.sbId } : {}),
       ...(epoch !== null ? { timestampOffset: timestampOffsetFor(epoch) } : {}),
       ...(key !== undefined ? { epoch: key } : {}),

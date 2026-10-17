@@ -23,10 +23,10 @@ engine factory, `mattebox.preset()` is the bundle's preset, and the preset's
 stage factories are on it too. Nothing tree-shakes, so pick the smallest
 bundle that has what you need.
 
-| Bundle                              | Preset                                                                                                                                                               |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dist/cdn/mattebox.<preset>.min.js` | One per preset in [chapter 02](02-presets-and-stages.md): `hls`, `hls-drm`, `hls-ts`, `hls-ts-drm`, `dash`, `dash-drm`, `dual`, `dual-drm`, `dual-ts`, `dual-ts-drm` |
-| `dist/cdn/mattebox.min.js`          | `full`                                                                                                                                                               |
+| Bundle                              | Preset                                                                                                                                                                                    |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dist/cdn/mattebox.<preset>.min.js` | One per preset in [chapter 02](02-presets-and-stages.md): `hls`, `hls-drm`, `hls-ts`, `hls-ts-drm`, `dash`, `dash-drm`, `dual`, `dual-drm`, `dual-ts`, `dual-ts-drm`, `hls-ll`, `dual-ll` |
+| `dist/cdn/mattebox.min.js`          | `full`                                                                                                                                                                                    |
 
 The bundles are the same ES2015 build as the default ESM, minified.
 

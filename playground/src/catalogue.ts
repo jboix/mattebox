@@ -10,11 +10,13 @@ import dashPreset from '../../src/presets/dash/index.js';
 import dashDrmPreset from '../../src/presets/dash-drm/index.js';
 import dualPreset from '../../src/presets/dual/index.js';
 import dualDrmPreset from '../../src/presets/dual-drm/index.js';
+import dualLlPreset from '../../src/presets/dual-ll/index.js';
 import dualTsPreset from '../../src/presets/dual-ts/index.js';
 import dualTsDrmPreset from '../../src/presets/dual-ts-drm/index.js';
 import fullPreset from '../../src/presets/full/index.js';
 import hlsPreset from '../../src/presets/hls/index.js';
 import hlsDrmPreset from '../../src/presets/hls-drm/index.js';
+import hlsLlPreset from '../../src/presets/hls-ll/index.js';
 import hlsTsPreset from '../../src/presets/hls-ts/index.js';
 import hlsTsDrmPreset from '../../src/presets/hls-ts-drm/index.js';
 import kernelPreset from '../../src/presets/kernel/index.js';
@@ -22,6 +24,7 @@ import dashCmaf from '../../src/protocols/dash-cmaf/index.js';
 import dashLive from '../../src/protocols/dash-live/index.js';
 import hlsCmaf from '../../src/protocols/hls-cmaf/index.js';
 import hlsLive from '../../src/protocols/hls-live/index.js';
+import hlsLl from '../../src/protocols/hls-ll/index.js';
 import abr from '../../src/stages/abr/index.js';
 import abrCapSize from '../../src/stages/abr-cap-size/index.js';
 import aes128 from '../../src/stages/aes-128/index.js';
@@ -38,6 +41,7 @@ import emeCore from '../../src/stages/eme-core/index.js';
 import emeFairplay from '../../src/stages/eme-fairplay/index.js';
 import forcedSubtitles from '../../src/stages/forced-subtitles/index.js';
 import hdr from '../../src/stages/hdr/index.js';
+import liveCatchup from '../../src/stages/live-catchup/index.js';
 import metaId3 from '../../src/stages/meta-id3/index.js';
 import mp4Box from '../../src/stages/mp4-box/index.js';
 import nalScan from '../../src/stages/nal-scan/index.js';
@@ -82,6 +86,8 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('protocols', hlsLive),
   built('protocols', dashCmaf),
   built('protocols', dashLive),
+  built('protocols', hlsLl),
+  built('stages', liveCatchup),
   built('stages', pdt),
   built('containers', mp4Box),
   built('containers', codecProbe),
@@ -134,6 +140,8 @@ export const PRESETS: ReadonlyArray<{ name: string; stages: readonly string[] }>
   dualDrmPreset,
   dualTsPreset,
   dualTsDrmPreset,
+  hlsLlPreset,
+  dualLlPreset,
   fullPreset,
 ].map((preset) => ({ name: preset.presetName, stages: preset.stages().map((s) => s.name) }));
 
@@ -406,6 +414,12 @@ export const STREAMS: readonly StreamEntry[] = [
     url: 'https://rtsinfo-d.akamaized.net/out/v1/lsvs/rts-info/cmaf/hls-master.m3u8?dw=7201',
     topic: 'live',
     tags: ['live', 'DVR'],
+  },
+  {
+    label: 'Mux · low-latency HLS, Big Buck Bunny and a timer',
+    url: 'https://stream.mux.com/v69RSHhFelSm4701snP22dYz2jICy4E4FUyk02rW4gxRM.m3u8',
+    topic: 'live',
+    tags: ['live', 'LL-HLS', 'parts'],
   },
   {
     label: 'SRG SSR · Couleur 3, audio',

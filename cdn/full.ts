@@ -5,13 +5,13 @@ import {
   baseFactories,
   dashFactories,
   drmFactories,
-  hlsFactories,
+  hlsLlFactories,
   tsFactories,
 } from './catalogue.js';
 import { cdnGlobal } from './global.js';
 
 export default cdnGlobal(preset, {
-  ...hlsFactories,
+  ...hlsLlFactories,
   ...dashFactories,
   ...baseFactories,
   ...tsFactories,

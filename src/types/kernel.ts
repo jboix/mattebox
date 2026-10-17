@@ -104,6 +104,8 @@ export interface InflightRequest {
   /** Segment window in presentation time, for the append log. */
   readonly segmentStart?: number;
   readonly segmentDuration?: number;
+  /** A preload hint the server holds until the part exists. */
+  readonly preload?: boolean;
   /**
    * performance.now() at dispatch. Absent in state written by the reducer,
    * which has no clock; the effect runner records it.

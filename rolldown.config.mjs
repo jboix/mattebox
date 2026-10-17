@@ -17,6 +17,8 @@ const PRESETS = [
   'dual-drm',
   'dual-ts',
   'dual-ts-drm',
+  'hls-ll',
+  'dual-ll',
 ];
 
 // The package's default target, the same as dist/es2015.

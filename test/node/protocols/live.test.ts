@@ -196,7 +196,7 @@ describe('hls-live', () => {
       }),
     );
     expect(settled.state.live).toEqual({ span: { start: 100, end: 120 }, edge: 108 });
-    expect(settled.effects).toContainEqual({ kind: 'seekElement', to: 108 });
+    expect(settled.effects).toContainEqual({ kind: 'seekElement', to: 107.95 });
     expect(settled.effects).toContainEqual(
       expect.objectContaining({ kind: 'schedule', token: 'hls-live:reload' }),
     );
@@ -754,10 +754,10 @@ describe('hls-live', () => {
     expect(urls.some((u) => u.includes('seg-9'))).toBe(false);
   });
 
-  it('SEEK_TO_LIVE_EDGE lands on the reported edge', () => {
+  it('SEEK_TO_LIVE_EDGE lands just inside the reported edge', () => {
     const { state } = bootHls(reduce);
     const [, fx] = reduce(state, { type: 'SEEK_TO_LIVE_EDGE' });
-    expect(fx).toContainEqual({ kind: 'seekElement', to: 8 });
+    expect(fx).toContainEqual({ kind: 'seekElement', to: 7.95 });
   });
 });
 

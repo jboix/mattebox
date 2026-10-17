@@ -13,6 +13,7 @@ import dashCmaf from '../protocols/dash-cmaf/index.js';
 import dashLive from '../protocols/dash-live/index.js';
 import hlsCmaf from '../protocols/hls-cmaf/index.js';
 import hlsLive from '../protocols/hls-live/index.js';
+import hlsLl from '../protocols/hls-ll/index.js';
 import abr from '../stages/abr/index.js';
 import abrCapSize from '../stages/abr-cap-size/index.js';
 import aes128 from '../stages/aes-128/index.js';
@@ -25,6 +26,7 @@ import emeCenc from '../stages/eme-cenc/index.js';
 import emeCore from '../stages/eme-core/index.js';
 import emeFairplay from '../stages/eme-fairplay/index.js';
 import forcedSubtitles from '../stages/forced-subtitles/index.js';
+import liveCatchup from '../stages/live-catchup/index.js';
 import metaId3 from '../stages/meta-id3/index.js';
 import mp4Box from '../stages/mp4-box/index.js';
 import nalScan from '../stages/nal-scan/index.js';
@@ -40,6 +42,16 @@ export function hlsLine(): Stage[] {
   // AES-128 rides with HLS: full-segment keys are common enough on HLS, and
   // the stage is a kilobyte, so no HLS deployment should meet one unprepared.
   return [hlsCmaf(), hlsLive(), aes128()];
+}
+
+/**
+ * Low-latency HLS: hls-ll in place of hls-cmaf and hls-live, which it
+ * contains, and the catch-up that holds the low latency. A playlist without
+ * parts plays as the HLS line plays it, and catch-up holds any live stream
+ * at its hold-back.
+ */
+export function hlsLlLine(): Stage[] {
+  return [hlsLl(), aes128(), liveCatchup()];
 }
 
 /** DASH on demand and live. */

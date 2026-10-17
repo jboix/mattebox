@@ -122,6 +122,207 @@ function liveDash(flavor: string, t0: number): string {
 </MPD>`;
 }
 
+// ---- low-latency HLS origin -------------------------------------------------
+// LL-HLS (RFC 8216bis) over one fragmented MP4 with a fragment every second
+// and a key frame every four (gen-streams.sh ll_flavor): 4 s segments of four
+// 1 s parts. The stream plays out live from the t0 in the path, with a
+// prelude so a window exists at boot. Playlist requests block on _HLS_msn and
+// _HLS_part, _HLS_skip=YES gets a delta update, and a part request blocks
+// until the part exists, as a preload hint needs.
+
+const LL = { prelude: 24, window: 10, partsPerSegment: 4, withParts: 3, skipUntil: 24 };
+
+interface LlSource {
+  readonly bytes: Buffer;
+  readonly init: Buffer;
+  /** Byte ranges of each moof+mdat pair, one per second. */
+  readonly fragments: ReadonlyArray<{ start: number; end: number }>;
+  readonly codec: string;
+}
+
+const llCache = new Map<string, LlSource>();
+
+function llSource(flavor: string): LlSource {
+  let source = llCache.get(flavor);
+  if (source === undefined) {
+    const dir = join(STREAMS, `${flavor}-ll`);
+    const bytes = readFileSync(join(dir, 'stream.mp4'));
+    const fragments: Array<{ start: number; end: number }> = [];
+    let initEnd = 0;
+    let at = 0;
+    while (at + 8 <= bytes.length) {
+      const size = bytes.readUInt32BE(at);
+      const type = bytes.toString('latin1', at + 4, at + 8);
+      if (type === 'moof') {
+        if (initEnd === 0) initEnd = at;
+        fragments.push({ start: at, end: at + size });
+      } else if (type === 'mdat') {
+        const last = fragments[fragments.length - 1];
+        if (last !== undefined) last.end = at + size;
+      }
+      at += size;
+    }
+    source = {
+      bytes,
+      init: bytes.subarray(0, initEnd),
+      fragments,
+      codec: readFileSync(join(dir, 'codec.txt'), 'utf8').trim(),
+    };
+    llCache.set(flavor, source);
+  }
+  return source;
+}
+
+/** Fragments published by now. */
+function llAvailable(source: LlSource, t0: number): number {
+  const elapsed = (Date.now() - t0) / 1000 + LL.prelude;
+  return Math.min(source.fragments.length, Math.max(0, Math.floor(elapsed)));
+}
+
+function llPlaylist(source: LlSource, t0: number, skip: boolean): string {
+  const available = llAvailable(source, t0);
+  const per = LL.partsPerSegment;
+  const complete = Math.floor(available / per);
+  const ended = available >= source.fragments.length;
+  const trailing = ended ? 0 : available % per;
+  const oldest = Math.max(0, complete - LL.window);
+  // RFC 8216bis §6.2.5.1: a delta update leaves out the segments that end
+  // more than CAN-SKIP-UNTIL seconds before the end of the playlist.
+  let skipped = 0;
+  if (skip) {
+    while (
+      oldest + skipped < complete &&
+      (oldest + skipped + 1) * per <= available - LL.skipUntil
+    ) {
+      skipped += 1;
+    }
+  }
+  const lines = [
+    '#EXTM3U',
+    '#EXT-X-VERSION:9',
+    `#EXT-X-TARGETDURATION:${per}`,
+    `#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=3.0,CAN-SKIP-UNTIL=${LL.skipUntil}.0`,
+    '#EXT-X-PART-INF:PART-TARGET=1.0',
+    `#EXT-X-MEDIA-SEQUENCE:${oldest}`,
+    '#EXT-X-MAP:URI="init.mp4"',
+  ];
+  if (skipped > 0) lines.push(`#EXT-X-SKIP:SKIPPED-SEGMENTS=${skipped}`);
+  const first = oldest + skipped;
+  const epoch = t0 - LL.prelude * 1000;
+  lines.push(`#EXT-X-PROGRAM-DATE-TIME:${new Date(epoch + first * per * 1000).toISOString()}`);
+  const parts = (msn: number, count: number) => {
+    for (let p = 0; p < count; p += 1) {
+      const flag = p === 0 ? ',INDEPENDENT=YES' : '';
+      lines.push(`#EXT-X-PART:DURATION=1.0,URI="part-${msn}.${p}.m4s"${flag}`);
+    }
+  };
+  for (let msn = first; msn < complete; msn += 1) {
+    if (!ended && msn >= complete - LL.withParts) parts(msn, per);
+    lines.push(`#EXTINF:${per}.0,`, `seg-${msn}.m4s`);
+  }
+  if (ended) {
+    lines.push('#EXT-X-ENDLIST');
+  } else {
+    parts(complete, trailing);
+    lines.push(`#EXT-X-PRELOAD-HINT:TYPE=PART,URI="part-${complete}.${trailing}.m4s"`);
+  }
+  return lines.join('\n');
+}
+
+/** Waits until fragment `index` is published; false when it never will be soon. */
+async function llWait(
+  source: LlSource,
+  t0: number,
+  index: number,
+  slack: number,
+): Promise<boolean> {
+  if (index >= source.fragments.length) return false;
+  if (index > llAvailable(source, t0) + slack) return false;
+  while (index >= llAvailable(source, t0)) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return true;
+}
+
+function llFragments(res: ServerResponse, source: LlSource, from: number, to: number): void {
+  const start = (source.fragments[from] as { start: number }).start;
+  const end = (source.fragments[to] as { end: number }).end;
+  res.writeHead(200, { 'content-type': MIME['.m4s'] as string, 'cache-control': 'no-store' });
+  res.end(source.bytes.subarray(start, end));
+}
+
+async function handleLl(url: URL, res: ServerResponse): Promise<boolean> {
+  const match = /^\/ll\/(h264|vp9)\/(\d+)\/(.+)$/.exec(url.pathname);
+  if (match === null) return false;
+  const [, flavor, t0Text, name] = match as unknown as [string, string, string, string];
+  const t0 = Number(t0Text);
+  const source = llSource(flavor);
+  const per = LL.partsPerSegment;
+  if (name === 'master.m3u8') {
+    text(
+      res,
+      MIME['.m3u8'] as string,
+      [
+        '#EXTM3U',
+        '#EXT-X-VERSION:9',
+        `#EXT-X-STREAM-INF:BANDWIDTH=200000,RESOLUTION=320x180,CODECS="${source.codec}"`,
+        'media.m3u8',
+      ].join('\n'),
+    );
+    return true;
+  }
+  if (name === 'media.m3u8') {
+    const msn = url.searchParams.get('_HLS_msn');
+    if (msn !== null) {
+      const part = url.searchParams.get('_HLS_part');
+      const index = Number(msn) * per + (part === null ? per - 1 : Number(part));
+      // RFC 8216bis §6.2.5.2: a request too far ahead is a client error.
+      if (!(await llWait(source, t0, index, 3 * per))) {
+        res.writeHead(400);
+        res.end('too far ahead');
+        return true;
+      }
+    }
+    text(
+      res,
+      MIME['.m3u8'] as string,
+      llPlaylist(source, t0, url.searchParams.get('_HLS_skip') === 'YES'),
+    );
+    return true;
+  }
+  if (name === 'init.mp4') {
+    res.writeHead(200, { 'content-type': MIME['.mp4'] as string, 'cache-control': 'no-store' });
+    res.end(source.init);
+    return true;
+  }
+  const part = /^part-(\d+)\.(\d+)\.m4s$/.exec(name);
+  if (part !== null) {
+    const index = Number(part[1]) * per + Number(part[2]);
+    // A preload hint names the next part: hold the request until it exists.
+    if (!(await llWait(source, t0, index, 2))) {
+      res.writeHead(404);
+      res.end('no such part');
+      return true;
+    }
+    llFragments(res, source, index, index);
+    return true;
+  }
+  const segment = /^seg-(\d+)\.m4s$/.exec(name);
+  if (segment !== null) {
+    const first = Number(segment[1]) * per;
+    if (first + per > llAvailable(source, t0)) {
+      res.writeHead(404);
+      res.end('not yet');
+      return true;
+    }
+    llFragments(res, source, first, first + per - 1);
+    return true;
+  }
+  res.writeHead(404);
+  res.end('not found');
+  return true;
+}
+
 // ---- routing --------------------------------------------------------------
 
 function text(res: ServerResponse, contentType: string, body: string): void {
@@ -212,6 +413,16 @@ export function fixtureServer(): Plugin {
     name: 'e2e-fixture-server',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
+        const url = new URL(req.url ?? '/', 'http://localhost');
+        if (url.pathname.startsWith('/ll/')) {
+          handleLl(url, res).then(
+            (handled) => {
+              if (!handled) next();
+            },
+            (error: unknown) => next(error),
+          );
+          return;
+        }
         if (!handle(req, res)) next();
       });
     },

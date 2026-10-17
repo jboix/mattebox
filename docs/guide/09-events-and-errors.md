@@ -14,24 +14,25 @@ off();
 Media element events stay on the element. Subscribe to `timeupdate`,
 `waiting`, `ended`, and the rest there.
 
-| Event                               | Meaning                                                                                    |
-| ----------------------------------- | ------------------------------------------------------------------------------------------ |
-| `tracks:changed`                    | The set of available tracks changed                                                        |
-| `tracks:selected`                   | A track was selected or deselected: `{ contentType, trackId }`, `trackId` null on deselect |
-| `playback:stalled`                  | The decoder stopped inside buffered data, or `waiting` fired                               |
-| `playback:ended`                    | The presentation reached its end                                                           |
-| `lifecycle:suspended`               | `engine.suspend()` took effect                                                             |
-| `lifecycle:resumed`                 | `engine.resume()` took effect                                                              |
-| `quality:constraints-unsatisfiable` | Constraints were dropped to keep a playable rendition                                      |
-| `quality:pin-unsatisfiable`         | A pinned rendition is not allowed                                                          |
-| `quality:coupling-unsatisfiable`    | No rendition satisfies the active audio and text tracks                                    |
-| `quota:exhausted`                   | Eviction could not free enough buffer                                                      |
-| `command:rejected`                  | The reducer refused a command in the current state                                         |
-| `recovery:*`                        | What the recovery stage did. See below                                                     |
-| `drm:*`                             | Key system and key status. See [chapter 07](07-drm.md)                                     |
-| `steering:failover`                 | The steering stage switched pathway                                                        |
-| `codecprobe:detected`               | The probe read a codec string from an init segment                                         |
-| `error`                             | Every error, fatal or not                                                                  |
+| Event                               | Meaning                                                                                       |
+| ----------------------------------- | --------------------------------------------------------------------------------------------- |
+| `tracks:changed`                    | The set of available tracks changed                                                           |
+| `tracks:selected`                   | A track was selected or deselected: `{ contentType, trackId }`, `trackId` null on deselect    |
+| `playback:stalled`                  | The decoder stopped inside buffered data, or `waiting` fired                                  |
+| `playback:ended`                    | The presentation reached its end                                                              |
+| `lifecycle:suspended`               | `engine.suspend()` took effect                                                                |
+| `lifecycle:resumed`                 | `engine.resume()` took effect                                                                 |
+| `quality:constraints-unsatisfiable` | Constraints were dropped to keep a playable rendition                                         |
+| `quality:pin-unsatisfiable`         | A pinned rendition is not allowed                                                             |
+| `quality:coupling-unsatisfiable`    | No rendition satisfies the active audio and text tracks                                       |
+| `quota:exhausted`                   | Eviction could not free enough buffer                                                         |
+| `command:rejected`                  | The reducer refused a command in the current state                                            |
+| `recovery:*`                        | What the recovery stage did. See below                                                        |
+| `drm:*`                             | Key system and key status. See [chapter 07](07-drm.md)                                        |
+| `catchup:*`                         | Rate changes and seeks of live catch-up. See [chapter 04](04-live-streaming.md#live-catch-up) |
+| `steering:failover`                 | The steering stage switched pathway                                                           |
+| `codecprobe:detected`               | The probe read a codec string from an init segment                                            |
+| `error`                             | Every error, fatal or not                                                                     |
 
 ## Errors
 

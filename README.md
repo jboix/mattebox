@@ -15,7 +15,7 @@ MSE, EME, and standard web platform APIs.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/size-chart-dark.svg">
-  <img alt="Bundle size of adaptive streaming engines, min+gzip, each engine's compatibility build. Mattebox with every stage, transmux worker inside, is 81.1 KB, hls.js 184.1 KB, video.js with VHS built in 197.3 KB, Shaka Player 267.0 KB, dash.js 297.3 KB." src="docs/size-chart-light.svg">
+  <img alt="Bundle size of adaptive streaming engines, min+gzip, each engine's compatibility build. Mattebox with every stage, transmux worker inside, is 85.5 KB, hls.js 184.1 KB, video.js with VHS built in 197.3 KB, Shaka Player 267.0 KB, dash.js 297.3 KB." src="docs/size-chart-light.svg">
 </picture>
 
 ## Quick start
@@ -84,20 +84,22 @@ Every preset plays on demand and live, adapts quality, recovers, switches
 audio, and renders WebVTT and CEA-608 captions. The name says what it adds: `-ts` for MPEG-TS
 segments, `-drm` for protected content.
 
-| Preset        | Line       | MPEG-TS | DRM |
-| ------------- | ---------- | ------- | --- |
-| `hls`         | HLS        |         |     |
-| `hls-drm`     | HLS        |         | yes |
-| `hls-ts`      | HLS        | yes     |     |
-| `hls-ts-drm`  | HLS        | yes     | yes |
-| `dash`        | DASH       |         |     |
-| `dash-drm`    | DASH       |         | yes |
-| `dual`        | HLS + DASH |         |     |
-| `dual-drm`    | HLS + DASH |         | yes |
-| `dual-ts`     | HLS + DASH | yes     |     |
-| `dual-ts-drm` | HLS + DASH | yes     | yes |
-| `full`        | HLS + DASH | yes     | yes |
-| `kernel`      | none       |         |     |
+| Preset        | Line          | MPEG-TS | DRM |
+| ------------- | ------------- | ------- | --- |
+| `hls`         | HLS           |         |     |
+| `hls-drm`     | HLS           |         | yes |
+| `hls-ts`      | HLS           | yes     |     |
+| `hls-ts-drm`  | HLS           | yes     | yes |
+| `dash`        | DASH          |         |     |
+| `dash-drm`    | DASH          |         | yes |
+| `dual`        | HLS + DASH    |         |     |
+| `dual-drm`    | HLS + DASH    |         | yes |
+| `dual-ts`     | HLS + DASH    | yes     |     |
+| `dual-ts-drm` | HLS + DASH    | yes     | yes |
+| `hls-ll`      | LL-HLS        |         |     |
+| `dual-ll`     | LL-HLS + DASH |         |     |
+| `full`        | LL-HLS + DASH | yes     | yes |
+| `kernel`      | none          |         |     |
 
 `full` is the Mattebox bar in the chart above. See
 [Size per preset](docs/guide/02-presets-and-stages.md#size-per-preset) for the others.

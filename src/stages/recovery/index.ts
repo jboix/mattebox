@@ -124,8 +124,15 @@ function createRecoveryReducer(options: RecoveryOptions): SliceReducer<RecoveryS
 
     if (msg.type === 'SEGMENT_FAILED') {
       // Manifest and steering fetches have their own loops; cue tracks
-      // already degrade on their own.
-      if (msg.renditionId === undefined || isCueTrack(kernel, msg.trackId)) return [state, []];
+      // already degrade on their own. A dropped preload hint is no fault of
+      // the rendition: the next playlist says what exists.
+      if (
+        msg.renditionId === undefined ||
+        msg.preload === true ||
+        isCueTrack(kernel, msg.trackId)
+      ) {
+        return [state, []];
+      }
       const effects: Effect[] = [];
       const renditionFails = {
         ...state.renditionFails,

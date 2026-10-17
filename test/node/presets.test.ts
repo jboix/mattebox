@@ -4,11 +4,13 @@ import dashDrm from '../../src/presets/dash-drm/index.js';
 import { definePreset, mergeStages } from '../../src/presets/define.js';
 import dual from '../../src/presets/dual/index.js';
 import dualDrm from '../../src/presets/dual-drm/index.js';
+import dualLl from '../../src/presets/dual-ll/index.js';
 import dualTs from '../../src/presets/dual-ts/index.js';
 import dualTsDrm from '../../src/presets/dual-ts-drm/index.js';
 import full from '../../src/presets/full/index.js';
 import hls from '../../src/presets/hls/index.js';
 import hlsDrm from '../../src/presets/hls-drm/index.js';
+import hlsLl from '../../src/presets/hls-ll/index.js';
 import hlsTs from '../../src/presets/hls-ts/index.js';
 import hlsTsDrm from '../../src/presets/hls-ts-drm/index.js';
 import kernel from '../../src/presets/kernel/index.js';
@@ -20,6 +22,7 @@ function stub(name: string, requires: string[] = []): Stage {
 }
 
 const HLS = ['hls-cmaf', 'hls-live', 'aes-128'];
+const HLS_LL = ['hls-ll', 'aes-128', 'live-catchup'];
 const DASH = ['dash-cmaf', 'dash-live'];
 const BASE = [
   'abr',
@@ -65,7 +68,9 @@ const MATRIX: ReadonlyArray<[typeof kernel, readonly string[]]> = [
   [dualDrm, [...HLS, ...DASH, ...BASE, ...DRM]],
   [dualTs, [...HLS, ...DASH, ...BASE, ...TS]],
   [dualTsDrm, [...HLS, ...DASH, ...BASE, ...TS, ...DRM]],
-  [full, [...HLS, ...DASH, ...BASE, ...TS, ...DRM, ...ACCESSORIES]],
+  [hlsLl, [...HLS_LL, ...BASE]],
+  [dualLl, [...HLS_LL, ...DASH, ...BASE]],
+  [full, [...HLS_LL, ...DASH, ...BASE, ...TS, ...DRM, ...ACCESSORIES]],
 ];
 
 describe('the preset matrix', () => {
@@ -82,6 +87,8 @@ describe('the preset matrix', () => {
     const names = full.stages().map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names.length).toBe(36);
+    // hls-ll stands in for hls-cmaf and hls-live.
+    expect(names).not.toContain('hls-live');
     // It changes every request, so a page adds it.
     expect(names).not.toContain('cmcd');
   });

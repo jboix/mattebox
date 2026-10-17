@@ -4,6 +4,7 @@ import type {
   InflightRequest,
   Period,
   Rendition,
+  Segment,
   TimeRangesSnapshot,
 } from '../../../src/index.js';
 import { createReducer } from '../../../src/kernel/reducer.js';
@@ -492,5 +493,118 @@ describe('the sink abstraction is real', () => {
     };
     expect(nullSink.accept('v', bytes, meta)).toEqual(mseSink.accept('v', bytes, meta));
     expect(nullSink.clear('v', 0, 2)).toEqual(mseSink.clear('v', 0, 2));
+  });
+});
+
+describe('low-latency parts', () => {
+  /** Segment 0 whole, then segment 1 as four 1 s parts (the first independent), then a hint. */
+  function partRendition(id = 'v-1'): Rendition {
+    const parts = [0, 1, 2, 3].map((p) => ({
+      seq: 1 + p / 1000,
+      start: 4 + p,
+      duration: 1,
+      url: `https://cdn.example/${id}/1.${p}.m4s`,
+      independent: p === 0,
+    }));
+    const hint = {
+      seq: 2,
+      start: 8,
+      duration: 1,
+      url: `https://cdn.example/${id}/2.0.m4s`,
+      independent: false,
+      preload: true,
+    };
+    const segments = [
+      { seq: 0, start: 0, duration: 4, url: `https://cdn.example/${id}/0.m4s` },
+      ...parts,
+      hint,
+    ];
+    return { id, bitrate: 1_000_000, codecs: 'avc1', mimeType: 'video/mp4', segments };
+  }
+
+  function partTrack(overrides: Partial<ScheduleTrackInput> = {}): ScheduleTrackInput {
+    const rendition = overrides.rendition ?? partRendition();
+    return { ...track({ rendition, period: vodPeriod(rendition) }), ...overrides };
+  }
+
+  it('starts a rendition at its latest independent part, not mid-run', () => {
+    // The playhead starts at 6.5 s, inside part 1.002.
+    const result = schedule(
+      input({ currentTime: 6.5, liveWindow: { start: 0, end: 8 }, tracks: [partTrack()] }),
+    );
+    expect(result.requests.map((r) => r.seq)).toEqual([1]);
+  });
+
+  it('continues part by part once the run started, over media another rendition buffered', () => {
+    // A switch: the old rendition buffered to 7 s; the new one received part 1.000 only.
+    const result = schedule(
+      input({
+        currentTime: 6.5,
+        liveWindow: { start: 0, end: 8 },
+        tracks: [
+          partTrack({
+            ranges: [{ start: 0, end: 7 }],
+            appended: [{ renditionId: 'v-1', seq: 1 }],
+          }),
+        ],
+      }),
+    );
+    expect(result.requests.map((r) => r.seq)).toEqual([1.001]);
+  });
+
+  it('a part that follows one this rendition received is fetched as it comes', () => {
+    const result = schedule(
+      input({
+        currentTime: 6.5,
+        liveWindow: { start: 0, end: 8 },
+        tracks: [
+          partTrack({
+            ranges: [{ start: 0, end: 7 }],
+            appended: [
+              { renditionId: 'v-1', seq: 1.001 },
+              { renditionId: 'v-1', seq: 1.002 },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(result.requests.map((r) => r.seq)).toEqual([1.003]);
+  });
+
+  it('fetches the preload hint past the window end, and marks the request', () => {
+    const result = schedule(
+      input({
+        currentTime: 6.5,
+        liveWindow: { start: 0, end: 8 },
+        tracks: [
+          partTrack({
+            ranges: [{ start: 0, end: 8 }],
+            appended: [{ renditionId: 'v-1', seq: 1.003 }],
+          }),
+        ],
+      }),
+    );
+    expect(result.requests).toEqual([expect.objectContaining({ seq: 2, preload: true })]);
+  });
+
+  it('never fetches a part that is past the window end and not a hint', () => {
+    const rendition = partRendition();
+    const segments = (rendition.segments as readonly Segment[]).map(
+      ({ preload: _hint, ...entry }) => entry,
+    );
+    const result = schedule(
+      input({
+        currentTime: 6.5,
+        liveWindow: { start: 0, end: 8 },
+        tracks: [
+          partTrack({
+            rendition: { ...rendition, segments },
+            ranges: [{ start: 0, end: 8 }],
+            appended: [{ renditionId: 'v-1', seq: 1.003 }],
+          }),
+        ],
+      }),
+    );
+    expect(result.requests).toEqual([]);
   });
 });

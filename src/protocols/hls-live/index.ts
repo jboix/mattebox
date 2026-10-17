@@ -20,11 +20,12 @@ import { scheduled, tickAfter } from '../../kernel/effects.js';
 import { findRendition } from '../../kernel/presentation.js';
 import { activeRenditions } from '../../kernel/rendition-select.js';
 import type { MatteboxError } from '../../types/error.js';
-import type { Presentation, Rendition } from '../../types/ir.js';
+import type { Presentation, Rendition, Segment, SegmentAddressing } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
 import { RETRY_SECONDS } from '../adapter-shared.js';
+import type { MediaPlaylist, MediaPlaylistResult } from '../hls-cmaf/parse.js';
 import { parseMediaPlaylist, refreshFor } from '../hls-cmaf/parse.js';
 import { RELOAD_FAILED, readmitMessage, unavailableMessages } from '../hls-cmaf/unavailable.js';
 import { registerLiveNamespace } from '../live-shared.js';
@@ -43,6 +44,20 @@ export interface HlsLiveOptions {
    * the next load. Defaults to 15.
    */
   readonly unavailableRetrySeconds?: number;
+}
+
+/**
+ * What hls-ll adds to the reload loop: a parser that reads the parts and
+ * fills delta updates, and the URL of a blocking reload. hls-live runs
+ * without it and reloads on the target duration cadence.
+ */
+export interface LowLatencyReload {
+  /** Parses a reloaded playlist; `previous` is the rendition's segments now. */
+  parse(text: string, url: string, previous: SegmentAddressing): MediaPlaylistResult;
+  /** The URL of the blocking reload after `playlist`, or null when the server does not block. */
+  next(url: string, playlist: MediaPlaylist, skip: boolean): string | null;
+  /** The playlist's rendition reports: per playlist URL, the URL that loads it at once. */
+  reports(playlist: MediaPlaylist): Readonly<Record<string, string>>;
 }
 
 interface ReloadTarget {
@@ -83,6 +98,16 @@ interface HlsLiveSlice {
   readonly failures: Readonly<Record<string, number>>;
   /** Renditions that failed FAILURE_LIMIT times in a row and are not reloaded until their retry. */
   readonly abandoned: readonly string[];
+  /**
+   * Per rendition whose server holds requests (CAN-BLOCK-RELOAD), the URL of
+   * its next reload. Such a playlist reloads as soon as the previous answer
+   * lands, and the server answers when the next part exists.
+   */
+  readonly blocking: Readonly<Record<string, string>>;
+  /** Companions with a blocking reload in flight; the tick leaves them alone. */
+  readonly chained: readonly string[];
+  /** The latest rendition reports: per playlist URL, the URL that loads it at its last part. */
+  readonly reports: Readonly<Record<string, string>>;
 }
 
 const INITIAL: HlsLiveSlice = {
@@ -97,6 +122,9 @@ const INITIAL: HlsLiveSlice = {
   suspended: false,
   failures: {},
   abandoned: [],
+  blocking: {},
+  chained: [],
+  reports: {},
 };
 
 /**
@@ -138,6 +166,11 @@ function reload(target: { readonly renditionId: string; readonly url: string }):
     url: target.url,
     renditionId: target.renditionId,
   };
+}
+
+/** The URL a reload of `target` asks for: its blocking reload when it has one. */
+function urlFor(state: HlsLiveSlice, target: ReloadTarget): string {
+  return state.blocking[target.renditionId] ?? target.url;
 }
 
 function renditionOfToken(token: string): string | null {
@@ -228,8 +261,9 @@ function windowFact(
   rendition: Rendition,
   kernel: Readonly<KernelState>,
 ): Effect | null {
-  const segments = rendition.segments;
-  if (!Array.isArray(segments) || segments.length === 0) return null;
+  if (!Array.isArray(rendition.segments)) return null;
+  // A preload hint names a part that does not exist yet.
+  const segments = (rendition.segments as readonly Segment[]).filter((s) => s.preload !== true);
   const first = segments[0];
   const last = segments[segments.length - 1];
   if (first === undefined || last === undefined) return null;
@@ -295,8 +329,15 @@ function reloadFailed(
   const count = (state.failures[renditionId] ?? 0) + 1;
   const failures = { ...state.failures, [renditionId]: count };
   const isTarget = state.target !== null && renditionId === state.target.renditionId;
+  state = { ...state, chained: state.chained.filter((id) => id !== renditionId) };
   if (count < FAILURE_LIMIT) {
-    if (!isTarget) return [{ ...state, failures }, []];
+    if (!isTarget) {
+      // A blocking companion has no tick of its own to try it again.
+      if (state.blocking[renditionId] === undefined || state.tickPending) {
+        return [{ ...state, failures }, []];
+      }
+      return [{ ...state, failures, tickPending: true }, [tick(2)]];
+    }
     if (state.tickPending) return [{ ...state, failures, inflight: null }, []];
     return [{ ...state, failures, inflight: null, tickPending: true }, [tick(2)]];
   }
@@ -358,8 +399,8 @@ function retry(
   return [{ ...state, abandoned, failures }, message === null ? [] : [feed(message)]];
 }
 
-const createReduceHlsLive =
-  (retryMs: number): SliceReducer<HlsLiveSlice> =>
+export const createReduceHlsLive =
+  (retryMs: number, ll?: LowLatencyReload): SliceReducer<HlsLiveSlice> =>
   (slice, msg, kernel) => {
     const state = slice ?? INITIAL;
 
@@ -372,7 +413,11 @@ const createReduceHlsLive =
       if (state.inflight !== null) {
         effects.push({ kind: 'abort', token: refreshToken(state.inflight) });
       }
-      return [{ ...state, tickPending: false, inflight: null, suspended: true }, effects];
+      for (const id of state.chained) effects.push({ kind: 'abort', token: refreshToken(id) });
+      return [
+        { ...state, tickPending: false, inflight: null, chained: [], suspended: true },
+        effects,
+      ];
     }
 
     if (msg.type === 'RESUME') {
@@ -419,7 +464,9 @@ const createReduceHlsLive =
         // startup. Reload it now and hold the window until it lands. A reload
         // of that very rendition already in flight serves the same purpose.
         if (inflight !== target.renditionId) {
-          effects.push(reload(target));
+          // A rendition report names the new playlist's last part, which
+          // the server answers at once (RFC 8216bis §4.4.5.4).
+          effects.push(reload({ ...target, url: state.reports[target.url] ?? target.url }));
           inflight = target.renditionId;
         }
         awaitingTarget = true;
@@ -430,7 +477,8 @@ const createReduceHlsLive =
       // Only a dead loop (startup, or after ENDLIST) starts one.
       let tickPending = state.tickPending;
       if (!tickPending && inflight === null && target !== null) {
-        effects.push(tick(presentation.live?.updatePeriod ?? 4));
+        // A low-latency loop learns at once whether the server blocks.
+        effects.push(tick(ll === undefined ? (presentation.live?.updatePeriod ?? 4) : 0));
         tickPending = true;
       }
       return [{ ...state, target, companions, tickPending, inflight, awaitingTarget }, effects];
@@ -463,16 +511,31 @@ const createReduceHlsLive =
       // One target reload at a time: a second in flight would answer twice
       // and every answer schedules the next tick, forking the loop.
       if (inflight !== target.renditionId) {
-        effects.push(reload(target));
+        effects.push(reload({ ...target, url: urlFor(state, target) }));
         inflight = target.renditionId;
       }
+      // Behind a blocking server the other rungs wait for a switch, which
+      // loads them from the rendition reports.
+      const blockingTarget = state.blocking[target.renditionId] !== undefined;
+      const chained = [...state.chained];
       for (const companion of state.companions) {
-        if (companion.ladder && state.round % LADDER_EVERY !== 0) continue;
-        effects.push(reload(companion));
+        if (chained.includes(companion.renditionId)) continue;
+        if (companion.ladder && (blockingTarget || state.round % LADDER_EVERY !== 0)) continue;
+        effects.push(reload({ ...companion, url: urlFor(state, companion) }));
+        if (state.blocking[companion.renditionId] !== undefined)
+          chained.push(companion.renditionId);
       }
       // The target's answer schedules the next tick.
       return [
-        { ...state, target, awaitingTarget, round: state.round + 1, tickPending: false, inflight },
+        {
+          ...state,
+          target,
+          awaitingTarget,
+          round: state.round + 1,
+          tickPending: false,
+          inflight,
+          chained,
+        },
         effects,
       ];
     }
@@ -490,10 +553,35 @@ const createReduceHlsLive =
       const url = playlistUrlFor(kernel.presentation, renditionId, state.target);
       if (url === null) return [state, []];
       const text = new TextDecoder().decode(msg.bytes);
-      const media = parseMediaPlaylist(text, url);
+      const previous = findRendition(kernel.presentation, renditionId)?.rendition.segments ?? [];
+      const media =
+        ll === undefined ? parseMediaPlaylist(text, url) : ll.parse(text, url, previous);
       if (media.playlist === null) {
         return reloadFailed(state, kernel, renditionId, media.error, retryMs);
       }
+      const chained = state.chained.filter((id) => id !== renditionId);
+      if (ll !== undefined && (media.playlist.skipped ?? 0) > 0) {
+        // A delta update whose skipped segments this rendition never had:
+        // ask for the whole playlist, at once (RFC 8216bis §6.2.5.1).
+        const whole = reload({ renditionId, url: ll.next(url, media.playlist, false) ?? url });
+        return [{ ...state, chained: isTarget ? chained : [...chained, renditionId] }, [whole]];
+      }
+      let blocking = state.blocking;
+      let reports = state.reports;
+      if (ll !== undefined) {
+        const next = ll.next(url, media.playlist, true);
+        const updated: Record<string, string> = { ...blocking };
+        if (next === null) delete updated[renditionId];
+        else updated[renditionId] = next;
+        blocking = updated;
+        reports = { ...reports, ...ll.reports(media.playlist) };
+      }
+      const nextUrl = blocking[renditionId];
+      const chains =
+        nextUrl !== undefined &&
+        !media.playlist.endlist &&
+        !state.suspended &&
+        (isTarget || state.companions.some((c) => c.renditionId === renditionId && !c.ladder));
       const failures = { ...state.failures };
       delete failures[renditionId];
       // Merge, never re-parse: refreshFor rebases the new window onto the
@@ -511,10 +599,20 @@ const createReduceHlsLive =
         const refresh = refreshFor(kernel.presentation, id, media.playlist);
         if (refresh !== null) effects.push(feed(refresh));
       }
+      if (chains) effects.push(reload({ renditionId, url: nextUrl }));
       if (!isTarget) {
         // A companion, or the target of a moment ago: merged in, nothing
         // else. The window and the cadence belong to the target's reload.
-        return [{ ...state, failures }, effects];
+        return [
+          {
+            ...state,
+            failures,
+            blocking,
+            reports,
+            chained: chains ? [...chained, renditionId] : chained,
+          },
+          effects,
+        ];
       }
 
       const lastSegment = media.playlist.segments[media.playlist.segments.length - 1];
@@ -525,8 +623,12 @@ const createReduceHlsLive =
       // unchanged one. A switch's reload answers while the regular tick is
       // still pending: that tick carries on, this answer adds none. The
       // loop dies with ENDLIST.
+      // A blocking target reloads itself; the tick then serves only the
+      // companions whose server does not block.
+      const ticks =
+        !chains || state.companions.some((c) => !c.ladder && blocking[c.renditionId] === undefined);
       let tickPending = state.tickPending;
-      if (!media.playlist.endlist && !tickPending && !state.suspended) {
+      if (ticks && !media.playlist.endlist && !tickPending && !state.suspended) {
         effects.push(tick(changed ? cadence : cadence / 2));
         tickPending = true;
       }
@@ -534,9 +636,12 @@ const createReduceHlsLive =
         {
           ...state,
           failures,
+          blocking,
+          reports,
+          chained,
           lastEndSeq: endSeq,
           tickPending,
-          inflight: null,
+          inflight: chains ? renditionId : null,
           awaitingTarget: false,
         },
         effects,

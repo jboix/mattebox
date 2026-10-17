@@ -239,6 +239,7 @@ export function createTransport(options: TransportOptions): Transport {
       trackId: request.trackId,
       seq: request.seq,
       ...(request.renditionId !== undefined ? { renditionId: request.renditionId } : {}),
+      ...(request.preload === true ? { preload: true } : {}),
       ...(status !== undefined ? { status } : {}),
       error: {
         category: 'network',
@@ -339,6 +340,7 @@ export function createTransport(options: TransportOptions): Transport {
     )
       .then(async (response) => {
         if (state.timeoutId !== null) clearTimeout(state.timeoutId);
+        const wait = now() - startedAt;
         if (!response.ok) {
           notifyResponse({
             token,
@@ -414,6 +416,7 @@ export function createTransport(options: TransportOptions): Transport {
           bytes,
           rtt,
           size: bytes.byteLength,
+          ...(answer === null ? { wait } : {}),
           // Wall time at receipt: the live stages' clock input.
           wallClock: Date.now() / 1000,
         });

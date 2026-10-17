@@ -314,6 +314,20 @@ function samplesThroughput(state: KernelState, request: InflightRequest): boolea
   return lead === undefined ? request.renditionId === undefined : request.trackId === lead;
 }
 
+/**
+ * Seconds before the live edge that a jump to it lands. The edge often sits
+ * exactly on a segment boundary, and the segment that starts there may not
+ * start with a key frame; the scheduler then fetches the one before. A seek
+ * to that one's exact end, with media arriving a piece at a time, makes
+ * WebKit's GStreamer backend fail to decode (WebKitGTK and WPE); a target
+ * inside it does not.
+ */
+const EDGE_INSET = 0.05;
+
+function edgeStart(spanStart: number, edge: number): number {
+  return Math.max(spanStart, edge - EDGE_INSET);
+}
+
 /** Abort effects for every matching in-flight request, plus the state with them removed. */
 function abortInflight(
   state: KernelState,
@@ -505,7 +519,7 @@ function reduceCommand(
       const [next, aborts] = abortInflight(state);
       return [
         { ...next, scheduling: clearRepeat(next.scheduling) },
-        [...aborts, { kind: 'seekElement', to: state.live.edge }],
+        [...aborts, { kind: 'seekElement', to: edgeStart(state.live.span.start, state.live.edge) }],
       ];
     }
 
@@ -1000,9 +1014,13 @@ function reduceFact(
       // The throughput estimate follows the lead track: a 96 KB audio
       // segment beside a 2 MB video segment measures latency, not the link,
       // and would drag the estimate down to a fraction of what video sees.
+      // A preload hint waits at the server until its part exists, so only
+      // the time after the response headers measures the link.
+      const transferMs =
+        matched.preload === true && msg.wait !== undefined ? msg.rtt - msg.wait : msg.rtt;
       const sampleBps =
-        msg.rtt > 0 && msg.size >= cfg.ewmaMinSampleBytes && samplesThroughput(state, matched)
-          ? (msg.size * 8000) / msg.rtt
+        transferMs > 0 && msg.size >= cfg.ewmaMinSampleBytes && samplesThroughput(state, matched)
+          ? (msg.size * 8000) / transferMs
           : null;
       const stats =
         sampleBps === null
@@ -1279,6 +1297,12 @@ function reduceFact(
       const inflight = new Map(state.scheduling.inflight);
       for (const [token, request] of inflight) {
         if (request.trackId === msg.trackId && request.seq === msg.seq) inflight.delete(token);
+      }
+      // A server may drop a preload hint it announced (RFC 8216bis
+      // §4.4.5.3). The next playlist lists the part, or not, and drives
+      // scheduling again; there is nothing to report or recover.
+      if (msg.preload === true) {
+        return [{ ...state, scheduling: { ...state.scheduling, inflight } }, []];
       }
       // The manifest request has no rendition to exclude and no segment to
       // skip: the transport already retried per policy, so its failure is
@@ -1583,12 +1607,13 @@ function reduceFact(
       // behind). The playhead moves to the edge, the element seeks there, and
       // scheduling then fills the buffer at the edge, not at the span start.
       if (firstWindow && msg.edge > state.playback.currentTime + 1) {
+        const to = edgeStart(msg.start, msg.edge);
         const seeked: KernelState = {
           ...withLive,
-          playback: { ...withLive.playback, currentTime: msg.edge },
+          playback: { ...withLive.playback, currentTime: to },
         };
         const [scheduled, effects] = driveScheduling(seeked, hooks, cfg);
-        return [scheduled, [...spanEffects, { kind: 'seekElement', to: msg.edge }, ...effects]];
+        return [scheduled, [...spanEffects, { kind: 'seekElement', to }, ...effects]];
       }
       const [scheduled, effects] = driveScheduling(withLive, hooks, cfg);
       return [scheduled, [...spanEffects, ...effects]];

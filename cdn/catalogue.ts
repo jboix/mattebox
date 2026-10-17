@@ -11,6 +11,7 @@ import dashCmaf from '../src/protocols/dash-cmaf/index.js';
 import dashLive from '../src/protocols/dash-live/index.js';
 import hlsCmaf from '../src/protocols/hls-cmaf/index.js';
 import hlsLive from '../src/protocols/hls-live/index.js';
+import hlsLl from '../src/protocols/hls-ll/index.js';
 import abr from '../src/stages/abr/index.js';
 import abrCapSize from '../src/stages/abr-cap-size/index.js';
 import aes128 from '../src/stages/aes-128/index.js';
@@ -27,6 +28,7 @@ import emeCore from '../src/stages/eme-core/index.js';
 import emeFairplay from '../src/stages/eme-fairplay/index.js';
 import forcedSubtitles from '../src/stages/forced-subtitles/index.js';
 import hdr from '../src/stages/hdr/index.js';
+import liveCatchup from '../src/stages/live-catchup/index.js';
 import metaId3 from '../src/stages/meta-id3/index.js';
 import mp4Box from '../src/stages/mp4-box/index.js';
 import nalScan from '../src/stages/nal-scan/index.js';
@@ -44,6 +46,8 @@ import timedMetadata from '../src/stages/timed-metadata/index.js';
 import trickPlay from '../src/stages/trick-play/index.js';
 
 export const hlsFactories = { hlsCmaf, hlsLive, aes128 };
+/** Low-latency HLS. hls-cmaf and hls-live stay, so a page can build a line without parts. */
+export const hlsLlFactories = { hlsLl, hlsCmaf, hlsLive, aes128, liveCatchup };
 export const dashFactories = { dashCmaf, dashLive };
 export const baseFactories = {
   abr,

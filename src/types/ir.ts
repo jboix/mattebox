@@ -78,6 +78,19 @@ export interface Segment {
    * cues count from its DASH period's start rather than the presentation's.
    */
   readonly timeOffset?: number;
+  /**
+   * Whether the segment starts with a frame the decoder can start from. False
+   * on an LL-HLS part without INDEPENDENT=YES (RFC 8216bis §4.4.4.9): the
+   * kernel never starts a rendition there, after a switch or a seek. Absent
+   * means it may start there, as a full HLS segment does.
+   */
+  readonly independent?: boolean;
+  /**
+   * An LL-HLS preload hint (RFC 8216bis §4.4.5.3): the next part, requested
+   * before it exists, which the server answers once it does. It lies past
+   * the live window's end, and a failed request for it is no error.
+   */
+  readonly preload?: boolean;
 }
 
 /**

@@ -1035,8 +1035,9 @@ describe('suspend and resume', () => {
       end: 120,
       edge: 116,
     });
-    expect(rejoined.playback.currentTime).toBe(116);
-    expect(fx).toContainEqual({ kind: 'seekElement', to: 116 });
+    // Just inside the edge, so the first segment fetched holds the target.
+    expect(rejoined.playback.currentTime).toBeCloseTo(115.95);
+    expect(fx).toContainEqual({ kind: 'seekElement', to: rejoined.playback.currentTime });
   });
 });
 

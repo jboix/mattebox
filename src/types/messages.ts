@@ -160,6 +160,8 @@ export type Fact =
       readonly endlist?: boolean;
       /** Live refresh cadence in seconds. Applies while the playlist is not complete. */
       readonly updatePeriod?: number;
+      /** Seconds behind the playlist's end to hold playback. Applies while the playlist is not complete. */
+      readonly holdBack?: number;
       /** A wall-clock anchor on the presentation timeline. Applies while the playlist is not complete. */
       readonly dateAnchor?: { readonly wallClock: number; readonly presentationTime: number };
       /** The playlist's date ranges, replacing the rendition's. */
@@ -179,6 +181,12 @@ export type Fact =
       readonly bytes: ArrayBuffer;
       readonly rtt: number;
       readonly size: number;
+      /**
+       * Milliseconds from the request to the response headers. A server that
+       * holds a request until the resource exists (an LL-HLS preload hint)
+       * spends this time waiting, not sending, so throughput leaves it out.
+       */
+      readonly wait?: number;
       /** Wall clock at receipt, epoch seconds. Live edge arithmetic input; the reducer never reads a clock. */
       readonly wallClock?: number;
       /**
@@ -197,6 +205,8 @@ export type Fact =
       readonly status?: number;
       /** The rendition the failed request belonged to, when the transport knew it. */
       readonly renditionId?: string;
+      /** The request was for a preload hint, which a server may drop: no error and no recovery. */
+      readonly preload?: boolean;
       readonly error: MatteboxError;
     }
   | { readonly type: 'SOURCEBUFFER_CREATED'; readonly sbId: string; readonly codecs: string }

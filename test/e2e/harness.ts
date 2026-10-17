@@ -6,6 +6,7 @@
 // fetchImpl seam. The tests hold the engine directly: no window globals, no
 // serialisation boundary.
 
+import { userEvent } from 'vitest/browser';
 import packedAudio from '../../src/containers/packed-audio/index.js';
 import tsTransmux from '../../src/containers/ts-transmux/index.js';
 import type { Stage } from '../../src/index.js';
@@ -14,6 +15,7 @@ import dashCmaf from '../../src/protocols/dash-cmaf/index.js';
 import dashLive from '../../src/protocols/dash-live/index.js';
 import hlsCmaf from '../../src/protocols/hls-cmaf/index.js';
 import hlsLive from '../../src/protocols/hls-live/index.js';
+import hlsLl from '../../src/protocols/hls-ll/index.js';
 import abr from '../../src/stages/abr/index.js';
 import abrCapSize from '../../src/stages/abr-cap-size/index.js';
 import altAudio from '../../src/stages/alt-audio/index.js';
@@ -25,6 +27,7 @@ import contentSteering from '../../src/stages/content-steering/index.js';
 import emeCenc from '../../src/stages/eme-cenc/index.js';
 import emeCore from '../../src/stages/eme-core/index.js';
 import forcedSubtitles from '../../src/stages/forced-subtitles/index.js';
+import liveCatchup from '../../src/stages/live-catchup/index.js';
 import metaId3 from '../../src/stages/meta-id3/index.js';
 import mp4Box from '../../src/stages/mp4-box/index.js';
 import nalScan from '../../src/stages/nal-scan/index.js';
@@ -56,7 +59,9 @@ export type Source =
   | 'cmsd'
   | 'names'
   | 'periods'
-  | 'metadata';
+  | 'metadata'
+  | 'hls-ll'
+  | 'mux-ll';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
 export interface BootOptions {
@@ -69,6 +74,8 @@ export interface BootOptions {
   /** Load the legacy container family for a CMAF source too. */
   readonly ts?: boolean;
   readonly profile?: Profile;
+  /** Low-latency HLS: hls-ll in place of hls-cmaf and hls-live, plus live catch-up. The LL sources set it. */
+  readonly ll?: boolean;
   /** URLs containing this start 404ing after `failAfter` seconds. */
   readonly fail?: string;
   readonly failAfter?: number;
@@ -126,6 +133,10 @@ const sources: Record<Source, () => string> = {
   periods: () => `/streams/${flavor}-dash/manifest-periods.mpd`,
   // The TS stream with an ID3 stream in every segment and two date ranges.
   metadata: () => '/streams/ts/master-metadata.m3u8',
+  // The local LL-HLS origin: 1 s parts, blocking reloads, preload hints.
+  'hls-ll': () => `/ll/${flavor}/${Date.now()}/master.m3u8`,
+  // A public LL-HLS stream, H.264 High and AAC, so not on Playwright's Chromium.
+  'mux-ll': () => 'https://stream.mux.com/v69RSHhFelSm4701snP22dYz2jICy4E4FUyk02rW4gxRM.m3u8',
 };
 
 const live: Array<{ player: Player; stop: () => void }> = [];
@@ -176,12 +187,12 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
     return response;
   }
 
+  const ll = options.ll ?? (src === 'hls-ll' || src === 'mux-ll');
   const stages: Stage[] = [
-    hlsCmaf(),
+    ...(ll ? [hlsLl(), liveCatchup()] : [hlsCmaf(), hlsLive()]),
     dashCmaf(),
     textWebvtt(),
     textWebvttSegmented(),
-    hlsLive(),
     dashLive(),
     pdt(),
     recovery({ readmitAfterSeconds: 60 }),
@@ -281,6 +292,18 @@ export async function disposeAll(): Promise<void> {
  */
 export function start(player: Player): void {
   player.video.play().catch(() => undefined);
+}
+
+/**
+ * A real click, so the page counts as user-activated. WebKit pauses media
+ * that started without a user gesture when its playback rate changes.
+ */
+export async function gesture(): Promise<void> {
+  const button = document.createElement('button');
+  button.textContent = 'gesture';
+  document.body.appendChild(button);
+  await userEvent.click(button);
+  button.remove();
 }
 
 /** Starts playback and waits for the playhead to pass `seconds`. */

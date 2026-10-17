@@ -19,6 +19,7 @@ import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
 import { manifestFact, RETRY_SECONDS } from '../adapter-shared.js';
+import type { MediaPlaylistResult } from './parse.js';
 import { parse, parseMediaPlaylist, refreshFor } from './parse.js';
 import { LOAD_FAILED, readmitMessage, unavailableMessages } from './unavailable.js';
 
@@ -36,7 +37,7 @@ export interface HlsCmafOptions {
 }
 
 /** The playlist MIME types, RFC 8216 §4: the registered type and the three in common use. */
-const MANIFEST_TYPES: readonly string[] = [
+export const MANIFEST_TYPES: readonly string[] = [
   'application/vnd.apple.mpegurl',
   'application/x-mpegurl',
   'audio/mpegurl',
@@ -171,8 +172,11 @@ function retry(state: HlsSlice, kernel: Readonly<KernelState>, url: string): [Hl
   return [next, message === null ? [] : [feed(message)]];
 }
 
-const createReduceHls =
-  (retryMs: number): SliceReducer<HlsSlice> =>
+/** Parses a media playlist body. hls-ll passes one that reads the parts too. */
+export type MediaParser = (text: string, url: string) => MediaPlaylistResult;
+
+export const createReduceHls =
+  (retryMs: number, parseMedia: MediaParser = parseMediaPlaylist): SliceReducer<HlsSlice> =>
   (slice, msg, kernel) => {
     const state = slice ?? INITIAL;
 
@@ -191,7 +195,12 @@ const createReduceHls =
     }
 
     if (msg.type === 'SEGMENT_LOADED' && msg.trackId === 'manifest' && state.manifestUrl !== null) {
-      const fact = manifestFact(msg.bytes, state.manifestUrl, (text) => claims(state, text), parse);
+      const fact = manifestFact(
+        msg.bytes,
+        state.manifestUrl,
+        (text) => claims(state, text),
+        (text, url) => parse(text, url, parseMedia),
+      );
       return [state, fact === null ? [] : [feed(fact)]];
     }
 
@@ -207,7 +216,7 @@ const createReduceHls =
       const pending = { ...state.pending };
       delete pending[msg.trackId];
       next = { ...next, pending };
-      const media = parseMediaPlaylist(new TextDecoder().decode(msg.bytes), url);
+      const media = parseMedia(new TextDecoder().decode(msg.bytes), url);
       const playlist = media.playlist;
       // A complete playlist with no segment can never be played from, the
       // same as one that does not parse.

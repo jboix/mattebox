@@ -1496,6 +1496,7 @@ function renderEngineInfo(): void {
   const state = engine.stats.snapshot();
   const quality = video.getVideoPlaybackQuality?.();
   const live = (engine as { live?: { latency: number | null; atEdge: boolean } }).live;
+  const catchup = engine.catchup;
   const buffered: string[] = [];
   for (let i = 0; i < video.buffered.length; i += 1) {
     buffered.push(`${video.buffered.start(i).toFixed(1)}–${video.buffered.end(i).toFixed(1)}`);
@@ -1530,6 +1531,12 @@ function renderEngineInfo(): void {
       state.live !== null
         ? `window ${state.live.span.start.toFixed(1)}–${state.live.span.end.toFixed(1)} · edge ${state.live.edge.toFixed(1)}${live?.latency != null ? ` · ${live.latency.toFixed(1)}s behind` : ''}`
         : 'VOD',
+    ],
+    [
+      'catch-up',
+      catchup?.target != null && catchup.latency != null
+        ? `${catchup.latency.toFixed(2)}s, target ${catchup.target.toFixed(2)}s · rate ${catchup.rate.toFixed(3)}${catchup.active ? '' : ' · standing down'}`
+        : '—',
     ],
     [
       'frames',

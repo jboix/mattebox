@@ -55,6 +55,99 @@ goLiveButton.onclick = () => engine.live.seekToEdge();
 
 A seek before the window start is clamped to the window start.
 
+## Hold-back
+
+The edge sits behind the end of the window by the hold-back. Playback
+starts there.
+
+| Source                                        | Hold-back                     |
+| --------------------------------------------- | ----------------------------- |
+| HLS with `EXT-X-SERVER-CONTROL:HOLD-BACK`     | `HOLD-BACK`                   |
+| HLS without it                                | Three target durations        |
+| LL-HLS through `hls-ll`, while the parts play | `PART-HOLD-BACK`              |
+| DASH with `@suggestedPresentationDelay`       | `@suggestedPresentationDelay` |
+| DASH without it                               | 10 seconds                    |
+
+## Low-latency HLS
+
+The `hls-ll` stage plays LL-HLS (RFC 8216bis). It contains `hls-cmaf` and
+`hls-live`, so you load it in their place.
+
+```ts
+import hlsLl from 'mattebox/protocols/hls-ll';
+import liveCatchup from 'mattebox/stages/live-catchup';
+
+const engine = mattebox({ stages: [hlsLl(), liveCatchup()] });
+```
+
+The `hls-ll`, `dual-ll`, and `full` presets carry it.
+
+| Feature                  | Tags                                        | Behavior                                                                     |
+| ------------------------ | ------------------------------------------- | ---------------------------------------------------------------------------- |
+| Parts                    | `EXT-X-PART`, `EXT-X-PART-INF`              | The newest segments play from their parts, as each part appears              |
+| Preload hints            | `EXT-X-PRELOAD-HINT`                        | The next part is requested before it exists; the server answers when it does |
+| Blocking playlist reload | `CAN-BLOCK-RELOAD`, `_HLS_msn`, `_HLS_part` | Each playlist answer asks at once for the next part                          |
+| Delta updates            | `CAN-SKIP-UNTIL`, `EXT-X-SKIP`, `_HLS_skip` | Reloads ask for the newest part of the playlist only                         |
+| Rendition reports        | `EXT-X-RENDITION-REPORT`                    | A quality switch loads the new playlist at its last part, without waiting    |
+| Hold-back                | `PART-HOLD-BACK`                            | Playback starts and holds that far behind the end                            |
+
+- A rendition switch, a seek, and the start land on a part marked
+  `INDEPENDENT=YES`.
+- A playlist without parts plays its whole segments at `HOLD-BACK`.
+- A server that does not block gets its playlist reloaded on the target
+  duration, as `hls-live` does.
+- A segment keyed with `AES-128` plays whole, since the key covers the
+  whole segment.
+- A preload hint the server drops is no error.
+- ABR measures a preload hint from its response headers on, so the time
+  the server holds the request does not count as a slow link.
+
+## Live catch-up
+
+The `live-catchup` stage holds a target latency. Without it, a stream that
+stalls once stays that much further behind the edge.
+
+- Behind the target, playback speeds up, up to `maxRate`.
+- Closer than the target, playback slows down, down to `minRate`.
+- With less than `minBuffer` seconds buffered ahead, it does not speed up.
+- Past `maxLatency`, it seeks to the edge.
+- After you seek or resume past `maxLatency`, it stands down. It holds the
+  target again once playback is back near the edge, for example after
+  `engine.live.seekToEdge()`.
+- A rate your page sets wins. The stage leaves the rate alone until it is
+  1 again.
+
+| Option          | Default                | Meaning                                                  |
+| --------------- | ---------------------- | -------------------------------------------------------- |
+| `targetLatency` | The hold-back          | Seconds behind the live edge to hold                     |
+| `minRate`       | 0.96                   | The slowest rate                                         |
+| `maxRate`       | 1.04                   | The fastest rate                                         |
+| `tolerance`     | 0.2                    | Seconds of error before the rate changes                 |
+| `maxLatency`    | Three times the target | Seconds of latency past which it seeks to the edge       |
+| `minBuffer`     | 0.5                    | Seconds of buffer ahead below which it does not speed up |
+
+It adds `engine.catchup`.
+
+| Member         | Meaning                                                           |
+| -------------- | ----------------------------------------------------------------- |
+| `target`       | The latency it holds, in seconds, or null when nothing live plays |
+| `latency`      | Seconds from the moving edge to the playhead, or null             |
+| `rate`         | The rate it set last; 1 while it does not act                     |
+| `active`       | True while it holds the target                                    |
+| `setTarget(s)` | Sets the target; null returns to the hold-back                    |
+
+`engine.catchup.latency` counts the time since the window last moved, up
+to one refresh period. `engine.live.latency` counts to the window end the
+last playlist reported.
+
+| Event          | Payload                     |
+| -------------- | --------------------------- |
+| `catchup:rate` | `{ rate, latency, target }` |
+| `catchup:seek` | `{ latency, target }`       |
+
+A speed menu reads `video.playbackRate`, so it shows the catch-up rate.
+Compare with `engine.catchup.rate` to tell the two apart.
+
 ## The pdt stage
 
 Program date time in HLS and `availabilityStartTime` in DASH anchor the
