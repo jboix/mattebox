@@ -7,10 +7,18 @@
  * Only the media route applies: init data comes from the element's
  * `encrypted` event, since there is no manifest the engine has parsed.
  */
+import { fetchWithin } from '../kernel/transport.js';
 import emeCore, { type DrmApi, type EmeOptions } from '../stages/eme-core/index.js';
 import type { Listener, Stage, StageContext, Teardown, Unsubscribe } from '../types/stage.js';
 
-export type { DrmApi, EmeOptions } from '../stages/eme-core/index.js';
+export type {
+  DrmApi,
+  EmeOptions,
+  LicenseContext,
+  LicenseRequestDraft,
+  LicenseResponseInfo,
+  LicenseRetryOptions,
+} from '../stages/eme-core/index.js';
 
 /** An outgoing license or certificate request; a hook may rewrite both fields. */
 export interface EmeRequestDraft {
@@ -54,11 +62,17 @@ export function attachEme(
     request(url, init) {
       const draft: EmeRequestDraft = { url, headers: { ...init.headers } };
       requestHook?.(draft);
-      return fetch(draft.url, {
-        method: init.method ?? (init.body !== undefined ? 'POST' : 'GET'),
-        headers: draft.headers,
-        ...(init.body !== undefined ? { body: init.body as BodyInit } : {}),
-      });
+      return fetchWithin(
+        (url, request) => fetch(url, request),
+        draft.url,
+        {
+          method: init.method ?? (init.body !== undefined ? 'POST' : 'GET'),
+          headers: draft.headers,
+          ...(init.body !== undefined ? { body: init.body as BodyInit } : {}),
+        },
+        init.timeoutMs ?? null,
+        init.signal,
+      );
     },
     emit(event, payload) {
       for (const fn of [...(listeners.get(event) ?? [])]) fn(payload);

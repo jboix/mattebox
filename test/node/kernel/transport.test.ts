@@ -633,3 +633,47 @@ describe('HEAD requests', () => {
     });
   });
 });
+
+describe('transport.request', () => {
+  /** A fetch that answers when its signal aborts, and never otherwise. */
+  const hanging: FetchImpl = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () =>
+        reject(new DOMException('aborted', 'AbortError')),
+      );
+    });
+
+  it('rejects with a TimeoutError past the timeout and aborts the fetch', async () => {
+    const h = harness(hanging);
+    const result = h.transport.request('https://lic.example/', { timeoutMs: 500 }).catch((e) => e);
+    await vi.advanceTimersByTimeAsync(500);
+    expect((await result).name).toBe('TimeoutError');
+  });
+
+  it('applies the default timeout, and a request hook can change it', async () => {
+    const h = harness(hanging);
+    h.transport.addRequestHook((draft) => {
+      draft.timeoutMs = 100;
+    });
+    const result = h.transport.request('https://lic.example/', {}).catch((e) => e);
+    await vi.advanceTimersByTimeAsync(100);
+    expect((await result).name).toBe('TimeoutError');
+  });
+
+  it('rejects with the AbortError when the caller aborts', async () => {
+    const h = harness(hanging);
+    const controller = new AbortController();
+    const result = h.transport
+      .request('https://lic.example/', { signal: controller.signal, timeoutMs: null })
+      .catch((e) => e);
+    controller.abort();
+    expect((await result).name).toBe('AbortError');
+  });
+
+  it('a response in time clears the timer', async () => {
+    const h = harness(ok(8));
+    const response = await h.transport.request('https://lic.example/', { timeoutMs: 500 });
+    expect(response.status).toBe(200);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

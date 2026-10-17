@@ -34,6 +34,17 @@ export type MediaTimeProbe = (bytes: Uint8Array, meta: SegmentMeta) => number | 
  */
 export type ChunkSplitter = (bytes: Uint8Array) => number;
 
+/** A one-off request outside the segment pipeline: a license, a certificate, a steering manifest. */
+export interface OneOffRequestInit {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: ArrayBuffer | Uint8Array | string;
+  /** Aborts the request; the promise then rejects with an AbortError. */
+  signal?: AbortSignal;
+  /** Milliseconds until the response headers arrive; null waits forever. Absent: the transport default. */
+  timeoutMs?: number | null;
+}
+
 /** The mutable outgoing-request view request hooks receive; url, headers, and timeout are writable. */
 export interface TransportRequestDraftView {
   url: string;
@@ -138,14 +149,7 @@ export interface StageContext {
    * A one-off network request through the transport's request hooks and
    * fetchImpl, for license and steering fetches. Awaits the Response.
    */
-  request(
-    url: string,
-    init: {
-      method?: string;
-      headers?: Record<string, string>;
-      body?: ArrayBuffer | Uint8Array | string;
-    },
-  ): Promise<Response>;
+  request(url: string, init: OneOffRequestInit): Promise<Response>;
   /**
    * Registers the abr opinion consulted at arbitration step 5. One chooser
    * per composition; a second registration is a composition error. The

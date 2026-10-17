@@ -45,8 +45,13 @@ changes nothing there.
 | `licenseUrl`          | One server for every key system                                      |
 | `certificateUrl`      | The FairPlay certificate, when the `eme-fairplay` stage has none     |
 | `licenseUrls`         | A server per key system, keyed by name such as `com.widevine.alpha`  |
-| `requestFilter`       | Rewrites the license request body, for auth tokens or wrapping       |
-| `preferredKeySystems` | The order to try when the content offers several                     |
+| `requestFilter`       | Rewrites the license request body, URL and headers; may be async     |
+| `responseFilter`      | Rewrites the license response before the key system reads it         |
+| `getLicense`          | Gets the license itself, in place of the built-in request            |
+| `getCertificate`      | Gets the server certificate for a key system                         |
+| `onUnauthorized`      | Called once on a 401 or 403, so you can refresh a token              |
+| `licenseRetry`        | Retries and timeout of a license request                             |
+| `preferredKeySystems` | The order to try; key systems not listed come after the listed ones  |
 | `clearKeys`           | Key id to key, base64url, for ClearKey                               |
 | `releaseOnSuspend`    | Closes the key sessions on suspend and licenses them again on resume |
 
@@ -83,6 +88,77 @@ stay valid, so playback continues.
 License requests go through the transport, so the request hooks from
 [chapter 11](11-network-and-cdn.md) apply to them.
 
+## Tokens
+
+`requestFilter` and `responseFilter` can return a promise. The third
+argument of `requestFilter` holds the `url` and `headers` of this request,
+which you can change. When the server answers 401 or 403, `eme-core` calls
+`onUnauthorized` once and sends the request again.
+
+This Widevine example gets a bearer token from your token service and
+gets a new one when the license server rejects the old one.
+
+```ts
+let token = await fetchToken();
+
+emeCore({
+  licenseUrls: { 'com.widevine.alpha': 'https://license.example.com/widevine' },
+  requestFilter: async (body, keySystem, request) => {
+    request.headers.Authorization = `Bearer ${token}`;
+    return body;
+  },
+  onUnauthorized: async () => {
+    token = await fetchToken();
+  },
+});
+```
+
+A second 401 or 403 after the refresh fails with `DRM_LICENSE_FAILED`.
+
+## Your own license request
+
+`getLicense` replaces the built-in request. It gets the CDM message and
+returns the license bytes for `MediaKeySession.update`. Use it when your
+server needs a body or a transport that a filter cannot express.
+
+```ts
+emeCore({
+  getLicense: async (message, { keySystem, sessionId, initData, attempt }) => {
+    const response = await fetch('https://license.example.com/widevine', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: message,
+    });
+    if (!response.ok) throw Object.assign(new Error('license'), { status: response.status });
+    return new Uint8Array(await response.arrayBuffer());
+  },
+});
+```
+
+A rejection with a `status` follows the HTTP rules below. A rejection
+without one retries as a network error.
+
+## Retries
+
+`eme-core` sends a failed license request again with the defaults of the
+hls.js key-load policy.
+
+| `licenseRetry` field | Default    | Meaning                                               |
+| -------------------- | ---------- | ----------------------------------------------------- |
+| `errorRetries`       | 8          | Retries after a network error or a status outside 4xx |
+| `timeoutRetries`     | 1          | Retries after a timeout                               |
+| `timeoutMs`          | 20000      | Milliseconds to wait for the response headers         |
+| `delayMs`            | 1000       | Milliseconds before a retry                           |
+| `maxDelayMs`         | 20000      | The longest delay                                     |
+| `backoff`            | `'linear'` | `'exponential'` doubles the delay at each retry       |
+
+- A 4xx never retries. A 401 or 403 calls `onUnauthorized` first, as
+  described in "Tokens".
+- An error in your filter or in `getLicense` code that is not a request
+  failure does not retry.
+- After the last retry, the engine emits `DRM_LICENSE_FAILED` with the last
+  reason.
+
 ## License renewal
 
 `eme-core` renews a license when a key expires. It opens a new session with
@@ -93,6 +169,8 @@ once the new key is usable. Playback continues when the new key arrives.
   or the engine is suspended renews on the next `play` event.
 - A renewal message the CDM sends on its own, such as Widevine's
   `license-renewal`, goes to the same license server.
+- A renewal takes the same path as the first license: your filters,
+  `getLicense`, the retries and the token refresh apply.
 - A license that arrives already expired reports `DRM_KEY_EXPIRED`. The
   engine does not request it again.
 
@@ -128,6 +206,31 @@ A player that builds its stages from a preset can pass the certificate to
 engine.drm.setCertificateUrl('https://license.example.com/fairplay.cer');
 ```
 
+You can get the certificate yourself with `getCertificate` instead, for
+example when the request needs a token. It also sets a Widevine service
+certificate. Return null to leave a key system without one. A failed
+certificate fails that key system, and `eme-core` tries the next.
+
+```ts
+emeCore({
+  licenseUrls: { 'com.apple.fps': 'https://license.example.com/fairplay' },
+  getCertificate: async (keySystem) => {
+    if (keySystem !== 'com.apple.fps') return null;
+    const response = await fetch('https://license.example.com/fairplay.cer', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return new Uint8Array(await response.arrayBuffer());
+  },
+  requestFilter: async (spc, keySystem, request) => {
+    request.headers.Authorization = `Bearer ${token}`;
+    return spc;
+  },
+  onUnauthorized: async () => {
+    token = await fetchToken();
+  },
+});
+```
+
 Key servers differ in the license request body they accept.
 
 | `licenseBody`      | Sends                                                         |
@@ -149,6 +252,9 @@ test with.
 emeCore({ clearKeys: { nrQFDeRLSAKTLifXUIPiZg: 'ABEiM0RVZneImaq7zN3u_w' } });
 ```
 
+To use a ClearKey license server, name `org.w3.clearkey` in
+`preferredKeySystems` or `licenseUrls`, and leave out `clearKeys`.
+
 ## engine.drm and events
 
 ```ts
@@ -165,7 +271,7 @@ engine.drm.sessions;  // [{ keyId, status }]
 | `drm:released`  | Suspend closed the key sessions, with `sessions`      |
 | `error`         | With category `drm` when a step fails                 |
 
-A license failure is fatal. Output restrictions and expired keys carry their
+A license failure is fatal once the retries are spent. Output restrictions and expired keys carry their
 own codes. [Chapter 09](09-events-and-errors.md) lists them.
 
 ## DRM without the engine

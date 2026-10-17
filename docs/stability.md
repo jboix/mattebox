@@ -56,7 +56,6 @@ These APIs are expected to change. Each change ships in a minor release.
 
 | API                                              | Expected change                                                                    |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `eme-core` license options                       | An asynchronous license flow: a hook that can return the license request later     |
 | `engine.dispatch(command)`                       | It accepts every kernel command today; 1.0 keeps only the ones the guide documents |
 | `createReducer`, `initialState`, `resolveConfig` | They move to a separate entry point for trace replay and stage authors             |
 | The exported kernel types                        | The root entry point keeps the types the public API uses; the rest moves with them |

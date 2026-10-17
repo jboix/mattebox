@@ -1,5 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
 import { attachEme } from '../../src/eme/index.js';
+import type { EmeOptions } from '../../src/stages/eme-core/index.js';
 import type { Player } from './harness.js';
 import { boot, disposeAll, encryptedEvent, hasEme, play, sleep } from './harness.js';
 
@@ -102,4 +103,56 @@ it.skipIf(!hasEme)('53. attachEme licenses a key on an element without an engine
   }
   for (let i = 0; i < 20 && video.mediaKeys !== null; i += 1) await sleep(50);
   expect(video.mediaKeys).toBeNull();
+});
+
+/** The engine's eme-core against the fixture license server, with a token it refreshes. */
+function tokenProtected(id: string, fail = 0) {
+  let token = 'none';
+  const refreshes: number[] = [];
+  const eme: EmeOptions = {
+    preferredKeySystems: ['org.w3.clearkey'],
+    licenseUrls: { 'org.w3.clearkey': `/license/clearkey?id=${id}&fail=${fail}` },
+    licenseRetry: { delayMs: 50 },
+    requestFilter: async (body, _keySystem, request) => {
+      request.headers.Authorization = `Bearer ${token}`;
+      return body;
+    },
+    onUnauthorized: async ({ status }) => {
+      refreshes.push(status);
+      token = await (await fetch(`/license/token?id=${id}`, { method: 'POST' })).text();
+    },
+  };
+  return { eme, refreshes };
+}
+
+async function licenseCalls(id: string): Promise<number> {
+  const state = (await (await fetch(`/license/calls?id=${id}`)).json()) as { calls: number };
+  return state.calls;
+}
+
+it.skipIf(!hasEme)(
+  '59. a license server behind a rotating token: a 401 refreshes the token once',
+  async () => {
+    const id = `t${Date.now()}`;
+    const { eme, refreshes } = tokenProtected(id);
+    const player = await boot({ src: 'hls', drm: true, eme });
+    dispatchEncrypted(player);
+    await waitForUsable(player);
+    expect(player.engine.drm?.keySystem).toBe('org.w3.clearkey');
+    expect(player.engine.drm?.sessions.find((s) => s.keyId === KID)?.status).toBe('usable');
+    expect(refreshes).toEqual([401]);
+    expect(await licenseCalls(id)).toBe(2);
+    expect(player.engine.error?.code ?? null).toBeNull();
+  },
+);
+
+it.skipIf(!hasEme)('60. a license request retries a 503 and then succeeds', async () => {
+  const id = `r${Date.now()}`;
+  const { eme } = tokenProtected(id, 2);
+  const player = await boot({ src: 'hls', drm: true, eme });
+  dispatchEncrypted(player);
+  await waitForUsable(player);
+  expect(player.engine.drm?.sessions.find((s) => s.keyId === KID)?.status).toBe('usable');
+  // Two 503s, a 401, and the license.
+  expect(await licenseCalls(id)).toBe(4);
 });

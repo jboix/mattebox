@@ -18,7 +18,7 @@
 import type { ByteRange } from '../types/ir.js';
 import type { InflightRequest } from '../types/kernel.js';
 import type { Effect, Fact } from '../types/messages.js';
-import type { ChunkSplitter } from '../types/stage.js';
+import type { ChunkSplitter, OneOffRequestInit } from '../types/stage.js';
 import type { EffectRunner } from './effects.js';
 
 /** Retry policy as data, not code. */
@@ -105,14 +105,7 @@ export interface Transport {
    * segments, for license and steering fetches. Not correlated to a token
    * or the reducer; the caller awaits the Response directly.
    */
-  request(
-    url: string,
-    init: {
-      method?: string;
-      headers?: Record<string, string>;
-      body?: ArrayBuffer | Uint8Array | string;
-    },
-  ): Promise<Response>;
+  request(url: string, init: OneOffRequestInit): Promise<Response>;
   /** Tokens with live network activity or a pending retry. For tests and diagnostics. */
   pending(): readonly string[];
   /**
@@ -262,6 +255,49 @@ async function readChunks(
     }
   }
   return { rest: held.slice().buffer as ArrayBuffer, size, transfer: chunkedTransfer(timed) };
+}
+
+/**
+ * Fetches with a deadline for the response headers. Past `timeoutMs` the
+ * request aborts and the promise rejects with a TimeoutError; `signal`
+ * aborts it too, with an AbortError.
+ */
+export function fetchWithin(
+  fetchImpl: FetchImpl,
+  url: string,
+  init: RequestInit,
+  timeoutMs: number | null,
+  signal?: AbortSignal,
+): Promise<Response> {
+  if (timeoutMs === null && signal === undefined) return fetchImpl(url, init);
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  if (signal?.aborted === true) abort();
+  signal?.addEventListener('abort', abort);
+  let timedOut = false;
+  const timer =
+    timeoutMs === null
+      ? null
+      : setTimeout(() => {
+          timedOut = true;
+          abort();
+        }, timeoutMs);
+  const done = (): void => {
+    if (timer !== null) clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
+  };
+  return fetchImpl(url, { ...init, signal: controller.signal }).then(
+    (response) => {
+      done();
+      return response;
+    },
+    (error: unknown) => {
+      done();
+      throw timedOut
+        ? new DOMException(`${url}: no response in ${timeoutMs} ms`, 'TimeoutError')
+        : error;
+    },
+  );
 }
 
 interface LiveRequest {
@@ -655,7 +691,7 @@ export function createTransport(options: TransportOptions): Transport {
       const draft: TransportRequestDraft = {
         url,
         headers: { ...(init.headers ?? {}) },
-        timeoutMs: defaultTimeout,
+        timeoutMs: init.timeoutMs === undefined ? defaultTimeout : init.timeoutMs,
         token: `req:${url}`,
         attempt: 1,
       };
@@ -666,11 +702,17 @@ export function createTransport(options: TransportOptions): Transport {
           // A broken hook must not break the request.
         }
       }
-      return fetchImpl(draft.url, {
-        method: init.method ?? (init.body !== undefined ? 'POST' : 'GET'),
-        headers: draft.headers,
-        ...(init.body !== undefined ? { body: init.body as BodyInit } : {}),
-      });
+      return fetchWithin(
+        fetchImpl,
+        draft.url,
+        {
+          method: init.method ?? (init.body !== undefined ? 'POST' : 'GET'),
+          headers: draft.headers,
+          ...(init.body !== undefined ? { body: init.body as BodyInit } : {}),
+        },
+        draft.timeoutMs,
+        init.signal,
+      );
     },
     addRequestHook(hook) {
       requestHooks.add(hook);

@@ -26,6 +26,7 @@ import codecProbe from '../../src/stages/codec-probe/index.js';
 import codecSwitch from '../../src/stages/codec-switch/index.js';
 import contentSteering from '../../src/stages/content-steering/index.js';
 import emeCenc from '../../src/stages/eme-cenc/index.js';
+import type { EmeOptions } from '../../src/stages/eme-core/index.js';
 import emeCore from '../../src/stages/eme-core/index.js';
 import forcedSubtitles from '../../src/stages/forced-subtitles/index.js';
 import liveCatchup from '../../src/stages/live-catchup/index.js';
@@ -76,6 +77,8 @@ export interface BootOptions {
   readonly drm?: boolean;
   /** With `drm`: close the key sessions on suspend, and ask again on resume. */
   readonly releaseOnSuspend?: boolean;
+  /** With `drm`: eme-core options in place of the local ClearKey keys. */
+  readonly eme?: EmeOptions;
   /** Load the legacy container family for a CMAF source too. */
   readonly ts?: boolean;
   readonly profile?: Profile;
@@ -255,10 +258,12 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
   if (options.drm === true) {
     // ClearKey with a known KID -> KEY; the encrypted-event test drives it.
     stages.push(
-      emeCore({
-        clearKeys: { nrQFDeRLSAKTLifXUIPiZg: 'ABEiM0RVZneImaq7zN3u_w' },
-        ...(options.releaseOnSuspend === true ? { releaseOnSuspend: true } : {}),
-      }),
+      emeCore(
+        options.eme ?? {
+          clearKeys: { nrQFDeRLSAKTLifXUIPiZg: 'ABEiM0RVZneImaq7zN3u_w' },
+          ...(options.releaseOnSuspend === true ? { releaseOnSuspend: true } : {}),
+        },
+      ),
     );
     stages.push(emeCenc());
   }

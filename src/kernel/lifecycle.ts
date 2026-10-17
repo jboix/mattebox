@@ -9,7 +9,12 @@ import type { AttachOptions } from '../types/facade.js';
 import type { TimeRangesSnapshot } from '../types/ir.js';
 import type { KernelConfig, SliceReducer } from '../types/kernel.js';
 import type { Fact } from '../types/messages.js';
-import type { Stage, TransportRequestDraftView, TransportResponseView } from '../types/stage.js';
+import type {
+  OneOffRequestInit,
+  Stage,
+  TransportRequestDraftView,
+  TransportResponseView,
+} from '../types/stage.js';
 import type { KernelBus } from './bus.js';
 import type { HookRegistry } from './context.js';
 import { createStageContext } from './context.js';
@@ -31,14 +36,7 @@ export interface LifecycleDeps {
   /** Transport response-hook registration, passed to stage contexts. */
   readonly addResponseHook: (hook: (res: TransportResponseView) => void) => () => void;
   /** A one-off transport request, passed to stage contexts. */
-  readonly request: (
-    url: string,
-    init: {
-      method?: string;
-      headers?: Record<string, string>;
-      body?: ArrayBuffer | Uint8Array | string;
-    },
-  ) => Promise<Response>;
+  readonly request: (url: string, init: OneOffRequestInit) => Promise<Response>;
   /** WeakMap registration, owned by the package entry. */
   readonly register: (el: HTMLMediaElement) => void;
   readonly unregister: (el: HTMLMediaElement) => void;

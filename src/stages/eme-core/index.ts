@@ -20,6 +20,14 @@
  * ClearKey is built in — it is the only key system testable headlessly.
  * Widevine, PlayReady, and FairPlay arrive as handlers eme-cenc and
  * eme-fairplay register through drm-shared.
+ *
+ * A license request follows hls.js's key-load policy: a network error or
+ * an HTTP status outside 4xx retries up to 8 times, a timeout (20 s) once,
+ * each after 1 s. A 401 or 403 calls `onUnauthorized` once and sends the
+ * request again, so a page can refresh an expired token. `getLicense`
+ * replaces the built-in request, as `getLicense` does in videojs-contrib-eme:
+ * it takes the CDM message and returns the bytes for `MediaKeySession.update`
+ * (W3C EME §6.6.2), with the same retries.
  */
 import { bytesToBase64 } from '../../kernel/base64.js';
 import type { ProtectionScheme } from '../../types/ir.js';
@@ -37,8 +45,47 @@ export interface EmeOptions {
   readonly certificateUrl?: string;
   /** Per-key-system license URLs, overriding `licenseUrl`. */
   readonly licenseUrls?: Readonly<Record<string, string>>;
-  /** Rewrites the license request before it is sent (auth tokens, wrapping). */
-  readonly requestFilter?: (body: Uint8Array, keySystem: string) => Uint8Array;
+  /**
+   * Rewrites the license request before it is sent (auth tokens, wrapping).
+   * It may change `request.url` and `request.headers`, and may return a promise.
+   */
+  readonly requestFilter?: (
+    body: Uint8Array,
+    keySystem: string,
+    request: LicenseRequestDraft,
+  ) => Uint8Array | Promise<Uint8Array>;
+  /** Rewrites the license response before the key system reads it. It may return a promise. */
+  readonly responseFilter?: (
+    body: Uint8Array,
+    keySystem: string,
+    response: LicenseResponseInfo,
+  ) => Uint8Array | Promise<Uint8Array>;
+  /**
+   * Gets the license in place of the built-in request: from the CDM message
+   * to the bytes for `MediaKeySession.update`. A rejection with a `status`
+   * of 401 or 403 calls `onUnauthorized`; another 4xx fails; anything else
+   * retries as a network error does.
+   */
+  readonly getLicense?: (
+    message: Uint8Array,
+    context: LicenseContext,
+  ) => Promise<Uint8Array | ArrayBuffer>;
+  /**
+   * Gets the server certificate for a key system: FairPlay's application
+   * certificate, or a Widevine service certificate (W3C EME §6.5
+   * `setServerCertificate`). Null: none, or the FairPlay certificate URL.
+   */
+  readonly getCertificate?: (keySystem: string) => Promise<Uint8Array | ArrayBuffer | null>;
+  /**
+   * Called once when the license server answers 401 or 403, before the
+   * request goes again. Refresh the token your `requestFilter` adds here.
+   */
+  readonly onUnauthorized?: (context: {
+    readonly keySystem: string;
+    readonly status: number;
+  }) => void | Promise<void>;
+  /** Retries and timeout of a license request. */
+  readonly licenseRetry?: LicenseRetryOptions;
   /** For ClearKey tests: resolves a base64url key id to its base64url key. */
   readonly clearKeys?: Readonly<Record<string, string>>;
   /** Preference order among available key systems. */
@@ -50,6 +97,47 @@ export interface EmeOptions {
    * default: resuming then waits for a license round trip.
    */
   readonly releaseOnSuspend?: boolean;
+}
+
+/** The license request a `requestFilter` may rewrite. */
+export interface LicenseRequestDraft {
+  url: string;
+  headers: Record<string, string>;
+  /** 1 for the first request, then one more for each retry. */
+  readonly attempt: number;
+}
+
+/** The license response a `responseFilter` sees. */
+export interface LicenseResponseInfo {
+  readonly url: string;
+  readonly status: number;
+  readonly headers: Headers;
+}
+
+/** What `getLicense` gets with the CDM message. */
+export interface LicenseContext {
+  readonly keySystem: string;
+  readonly sessionId: string;
+  readonly initDataType: string;
+  readonly initData: Uint8Array;
+  /** 1 for the first request, then one more for each retry. */
+  readonly attempt: number;
+}
+
+/** The defaults are hls.js's key-load policy. */
+export interface LicenseRetryOptions {
+  /** Retries after a network error or a status outside 4xx. Default 8. */
+  readonly errorRetries?: number;
+  /** Retries after a timeout. Default 1. */
+  readonly timeoutRetries?: number;
+  /** Milliseconds to wait for the response headers. Default 20000. */
+  readonly timeoutMs?: number;
+  /** Milliseconds before a retry. Default 1000. */
+  readonly delayMs?: number;
+  /** The longest delay, for exponential backoff. Default 20000. */
+  readonly maxDelayMs?: number;
+  /** `linear` waits `delayMs` each time (the default); `exponential` doubles it each retry. */
+  readonly backoff?: 'linear' | 'exponential';
 }
 
 export interface DrmApi {
@@ -74,6 +162,36 @@ declare module '../../index.js' {
 
 const CLEARKEY = 'org.w3.clearkey';
 
+/** A license request that got no license from the network. */
+interface LicenseFailure {
+  readonly failure: 'license';
+  /** The HTTP status, or null when no response arrived. */
+  readonly status: number | null;
+  readonly timeout: boolean;
+  readonly cause: unknown;
+}
+
+function licenseFailure(status: number | null, timeout: boolean, cause: unknown): LicenseFailure {
+  return { failure: 'license', status, timeout, cause };
+}
+
+function isLicenseFailure(value: unknown): value is LicenseFailure {
+  return (value as LicenseFailure | null)?.failure === 'license';
+}
+
+function isTimeout(error: unknown): boolean {
+  return (error as { name?: string } | null)?.name === 'TimeoutError';
+}
+
+/** The bytes a response filter returned, as the ArrayBuffer a handler parses. */
+function bufferOf(bytes: Uint8Array): ArrayBuffer {
+  return bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+    ? (bytes.buffer as ArrayBuffer)
+    : (bytes.slice().buffer as ArrayBuffer);
+}
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** What a session was opened with, and its place in a renewal. */
 interface SessionRecord {
   readonly initDataType: string;
@@ -84,6 +202,20 @@ interface SessionRecord {
   usable: boolean;
   /** Whether a replacement session has been started for this one. */
   renewing?: boolean;
+}
+
+/**
+ * A ClearKey handler with a license server: the server answers the JSON
+ * request (W3C EME §9.1.3) with the JSON license.
+ */
+function remoteClearKeyHandler(): KeySystemHandler {
+  return {
+    keySystem: CLEARKEY,
+    systemIds: ['1077efec-c0b2-4d02-ace3-3c1e52e2fb4b'],
+    initDataTypes: ['cenc', 'keyids'],
+    buildLicenseRequest: (message) => message,
+    parseLicenseResponse: (response) => response,
+  };
 }
 
 /** A ClearKey handler: the license is a JSON the app answers from its keys. */
@@ -148,6 +280,16 @@ export default function emeCore(options: EmeOptions = {}): Stage {
       // Expired sessions waiting for playback before they renew.
       const pendingRenewals = new Set<MediaKeySession>();
       let disposed = false;
+      // Aborts the license and certificate requests in flight at teardown.
+      const aborter = new AbortController();
+      const retry = {
+        errorRetries: options.licenseRetry?.errorRetries ?? 8,
+        timeoutRetries: options.licenseRetry?.timeoutRetries ?? 1,
+        timeoutMs: options.licenseRetry?.timeoutMs ?? 20_000,
+        delayMs: options.licenseRetry?.delayMs ?? 1000,
+        maxDelayMs: options.licenseRetry?.maxDelayMs ?? 20_000,
+        exponential: options.licenseRetry?.backoff === 'exponential',
+      };
 
       const api: DrmApi = {
         get keySystem() {
@@ -178,26 +320,47 @@ export default function emeCore(options: EmeOptions = {}): Stage {
         });
       }
 
-      /** All handlers eme-core can use: ClearKey plus whatever registered. */
+      /**
+       * All handlers eme-core can use: whatever registered, plus ClearKey
+       * with the app's keys, or with a license server when the options name
+       * ClearKey.
+       */
       function allHandlers(): KeySystemHandler[] {
         const registered = keySystemHandlers();
         const clearKeys = options.clearKeys;
-        return clearKeys !== undefined
-          ? [clearKeyHandler(clearKeys), ...registered]
-          : [...registered];
+        if (clearKeys !== undefined) return [clearKeyHandler(clearKeys), ...registered];
+        const named =
+          options.preferredKeySystems?.includes(CLEARKEY) === true ||
+          licenseUrls?.[CLEARKEY] !== undefined;
+        return named ? [remoteClearKeyHandler(), ...registered] : [...registered];
+      }
+
+      /** The server certificate for a candidate, or null for none. */
+      async function certificateFor(
+        candidate: KeySystemHandler,
+      ): Promise<ArrayBuffer | Uint8Array | null> {
+        const provided = await options.getCertificate?.(candidate.keySystem);
+        if (provided !== undefined && provided !== null) return provided;
+        if (candidate.fairplay === undefined) return null;
+        const url = candidate.fairplay.certificateUrl ?? certificateUrl;
+        if (url === undefined) return null;
+        const response = await ctx.request(url, { signal: aborter.signal });
+        // An error page is not a certificate; the CDM would reject it with no reason.
+        if (!response.ok) throw new Error(`certificate ${url}: HTTP ${response.status}`);
+        return response.arrayBuffer();
       }
 
       /** Chooses and initializes a key system for the given systemIds. */
       async function ensureKeys(preferredSystemIds: readonly string[]): Promise<boolean> {
         if (mediaKeys !== null) return true;
-        const handlers = allHandlers();
-        const ordered = options.preferredKeySystems
-          ? [...handlers].sort(
-              (a, b) =>
-                (options.preferredKeySystems as readonly string[]).indexOf(a.keySystem) -
-                (options.preferredKeySystems as readonly string[]).indexOf(b.keySystem),
-            )
-          : handlers;
+        // Listed key systems go first, in list order; the rest keep their
+        // order after them, as dash.js ranks systems without a priority.
+        const preferred = options.preferredKeySystems ?? [];
+        const rank = (h: KeySystemHandler): number => {
+          const i = preferred.indexOf(h.keySystem);
+          return i === -1 ? preferred.length : i;
+        };
+        const ordered = allHandlers().sort((a, b) => rank(a) - rank(b));
         // Prefer a handler that serves one of the manifest's systemIds.
         const candidates =
           preferredSystemIds.length > 0
@@ -212,17 +375,14 @@ export default function emeCore(options: EmeOptions = {}): Stage {
             );
             const keys = await access.createMediaKeys();
             if (disposed) return false;
-            const certificate =
-              candidate.fairplay === undefined
-                ? undefined
-                : (candidate.fairplay.certificateUrl ?? certificateUrl);
-            if (certificate !== undefined) {
-              const response = await ctx.request(certificate, {});
-              // An error page is not a certificate; the CDM would reject it with no reason.
-              if (!response.ok) {
-                throw new Error(`certificate ${certificate}: HTTP ${response.status}`);
-              }
-              await keys.setServerCertificate(await response.arrayBuffer());
+            // A failed certificate fails this key system, and the next one
+            // is tried, as in hls.js.
+            const certificate = await certificateFor(candidate);
+            if (disposed) return false;
+            if (certificate !== null) {
+              await keys.setServerCertificate(
+                certificate instanceof Uint8Array ? new Uint8Array(certificate) : certificate,
+              );
             }
             await element.setMediaKeys(keys);
             mediaKeys = keys;
@@ -295,39 +455,123 @@ export default function emeCore(options: EmeOptions = {}): Stage {
         void session.close().catch(() => {});
       }
 
+      /** One license request: the page's `getLicense`, else a POST to the license URL. */
+      async function requestLicense(
+        session: MediaKeySession,
+        record: SessionRecord,
+        active: KeySystemHandler,
+        message: ArrayBuffer,
+        attempt: number,
+      ): Promise<ArrayBuffer | Uint8Array> {
+        const system = keySystem ?? '';
+        if (options.getLicense !== undefined) {
+          try {
+            return await options.getLicense(new Uint8Array(message), {
+              keySystem: system,
+              sessionId: session.sessionId,
+              initDataType: record.initDataType,
+              initData: new Uint8Array(record.initData),
+              attempt,
+            });
+          } catch (err) {
+            const status = (err as { status?: unknown } | null)?.status;
+            throw licenseFailure(typeof status === 'number' ? status : null, false, err);
+          }
+        }
+        const url = licenseUrls?.[system] ?? licenseUrl;
+        if (url === null || url === undefined) throw new Error('no license url');
+        const draft: LicenseRequestDraft = { url, headers: { ...active.licenseHeaders }, attempt };
+        let body: Uint8Array = new Uint8Array(active.buildLicenseRequest(message));
+        if (options.requestFilter !== undefined) {
+          body = await options.requestFilter(body, system, draft);
+        }
+        let response: Response;
+        let bytes: Uint8Array;
+        try {
+          response = await ctx.request(draft.url, {
+            method: 'POST',
+            headers: draft.headers,
+            body,
+            timeoutMs: retry.timeoutMs,
+            signal: aborter.signal,
+          });
+          if (!response.ok) {
+            throw licenseFailure(response.status, false, `status ${response.status}`);
+          }
+          bytes = new Uint8Array(await response.arrayBuffer());
+        } catch (err) {
+          throw isLicenseFailure(err) ? err : licenseFailure(null, isTimeout(err), err);
+        }
+        if (options.responseFilter !== undefined) {
+          bytes = await options.responseFilter(bytes, system, {
+            url: draft.url,
+            status: response.status,
+            headers: response.headers,
+          });
+        }
+        return active.parseLicenseResponse(bufferOf(bytes));
+      }
+
+      /**
+       * Gets a license with retries, or null when the session went away
+       * first. A failure past the retries throws.
+       */
+      async function fetchLicense(
+        session: MediaKeySession,
+        active: KeySystemHandler,
+        message: ArrayBuffer,
+      ): Promise<ArrayBuffer | Uint8Array | null> {
+        let errors = 0;
+        let timeouts = 0;
+        let refreshed = false;
+        for (let attempt = 1; ; attempt += 1) {
+          const record = open.get(session);
+          if (record === undefined || disposed) return null;
+          let failure: LicenseFailure;
+          try {
+            return await requestLicense(session, record, active, message, attempt);
+          } catch (err) {
+            // A filter, a parser, or a missing URL: retrying changes nothing.
+            if (!isLicenseFailure(err)) throw err;
+            failure = err;
+          }
+          if (disposed || !open.has(session)) return null;
+          const status = failure.status;
+          if ((status === 401 || status === 403) && !refreshed && options.onUnauthorized) {
+            refreshed = true;
+            await options.onUnauthorized({ keySystem: keySystem ?? '', status });
+            continue;
+          }
+          // hls.js: a 4xx never retries; a timeout and an error have their own counts.
+          const again = failure.timeout
+            ? timeouts++ < retry.timeoutRetries
+            : (status === null || status < 400 || status > 499) && errors++ < retry.errorRetries;
+          if (!again) throw failure.cause;
+          const factor = retry.exponential ? 2 ** (errors + timeouts - 1) : 1;
+          await wait(Math.min(retry.delayMs * factor, retry.maxDelayMs));
+        }
+      }
+
       async function onMessage(
         session: MediaKeySession,
         event: MediaKeyMessageEvent,
       ): Promise<void> {
-        if (handler === null) return;
+        const active = handler;
+        if (active === null) return;
         try {
-          let body = handler.buildLicenseRequest(event.message);
           // ClearKey and other local systems need no round trip.
-          if (handler.localLicense === true) {
+          if (active.localLicense === true) {
+            const body = active.buildLicenseRequest(event.message);
             await session.update(body instanceof Uint8Array ? new Uint8Array(body) : body);
             return;
           }
-          if (options.requestFilter !== undefined) {
-            body = options.requestFilter(new Uint8Array(body), keySystem ?? '');
-          }
-          const url = licenseUrls?.[keySystem ?? ''] ?? licenseUrl;
-          if (url === null || url === undefined) {
-            fail('DRM_LICENSE_FAILED', false, 'no license url');
-            return;
-          }
-          const response = await ctx.request(url, {
-            method: 'POST',
-            headers: { ...handler.licenseHeaders },
-            body,
-          });
-          if (!response.ok) {
-            fail('DRM_LICENSE_FAILED', true, `status ${response.status}`);
-            return;
-          }
-          const raw = handler.parseLicenseResponse(await response.arrayBuffer());
+          const raw = await fetchLicense(session, active, event.message);
+          if (raw === null || disposed || !open.has(session)) return;
           await session.update(raw instanceof Uint8Array ? new Uint8Array(raw) : raw);
         } catch (err) {
-          fail('DRM_LICENSE_FAILED', true, err);
+          // The retries are spent and no key will arrive: playback cannot
+          // continue, so the failure is fatal, as in hls.js.
+          fail('DRM_LICENSE_FAILED', false, err);
         }
       }
 
@@ -424,6 +668,7 @@ export default function emeCore(options: EmeOptions = {}): Stage {
 
       return () => {
         disposed = true;
+        aborter.abort();
         element.removeEventListener('encrypted', onEncrypted);
         element.removeEventListener('play', onPlay);
         offManifest();

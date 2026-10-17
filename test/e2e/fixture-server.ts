@@ -404,6 +404,63 @@ async function handleLl(url: URL, res: ServerResponse): Promise<boolean> {
   return true;
 }
 
+// ---- license server -------------------------------------------------------
+// A ClearKey license server behind a rotating bearer token. POST
+// /license/token issues a new token and voids the old one; POST
+// /license/clearkey answers the CDM's JSON request with the key, for the
+// current token only. `fail=N` answers 503 to the first N license requests.
+// State is per `id`, so each test has its own server.
+
+const LICENSE_KEYS: Record<string, string> = {
+  nrQFDeRLSAKTLifXUIPiZg: 'ABEiM0RVZneImaq7zN3u_w',
+};
+const licenseState = new Map<string, { token: number; failed: number; calls: number }>();
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk: string) => {
+      body += chunk;
+    });
+    req.on('end', () => resolve(body));
+    req.on('error', reject);
+  });
+}
+
+async function handleLicense(url: URL, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const id = url.searchParams.get('id') ?? '';
+  const state = licenseState.get(id) ?? { token: 0, failed: 0, calls: 0 };
+  licenseState.set(id, state);
+  if (url.pathname === '/license/token') {
+    state.token += 1;
+    text(res, 'text/plain', `token-${id}-${state.token}`);
+    return;
+  }
+  if (url.pathname === '/license/calls') {
+    text(res, 'application/json', JSON.stringify(state));
+    return;
+  }
+  state.calls += 1;
+  const body = await readBody(req);
+  if (state.failed < Number(url.searchParams.get('fail') ?? 0)) {
+    state.failed += 1;
+    res.writeHead(503);
+    res.end('busy');
+    return;
+  }
+  if (state.token === 0 || req.headers.authorization !== `Bearer token-${id}-${state.token}`) {
+    res.writeHead(401);
+    res.end('token expired');
+    return;
+  }
+  const kids = (JSON.parse(body) as { kids?: string[] }).kids ?? [];
+  const keys = kids
+    .filter((kid) => LICENSE_KEYS[kid] !== undefined)
+    .map((kid) => ({ kty: 'oct', kid, k: LICENSE_KEYS[kid] }));
+  text(res, 'application/json', JSON.stringify({ keys, type: 'temporary' }));
+}
+
 // ---- routing --------------------------------------------------------------
 
 function text(res: ServerResponse, contentType: string, body: string): void {
@@ -502,6 +559,10 @@ export function fixtureServer(): Plugin {
             },
             (error: unknown) => next(error),
           );
+          return;
+        }
+        if (url.pathname.startsWith('/license/')) {
+          handleLicense(url, req, res).catch((error: unknown) => next(error));
           return;
         }
         if (!handle(req, res)) next();

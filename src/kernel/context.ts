@@ -11,6 +11,7 @@ import type { AbrChooser, SwitchPolicy } from '../types/quality.js';
 import type {
   ChunkSplitter,
   MediaTimeProbe,
+  OneOffRequestInit,
   StageContext,
   Teardown,
   TransformStep,
@@ -49,14 +50,7 @@ export interface ContextDeps {
   /** Registers a transport response hook; returns the unsubscribe. */
   readonly addResponseHook: (hook: (res: TransportResponseView) => void) => () => void;
   /** A one-off request through the transport. */
-  readonly request: (
-    url: string,
-    init: {
-      method?: string;
-      headers?: Record<string, string>;
-      body?: ArrayBuffer | Uint8Array | string;
-    },
-  ) => Promise<Response>;
+  readonly request: (url: string, init: OneOffRequestInit) => Promise<Response>;
 }
 
 /**

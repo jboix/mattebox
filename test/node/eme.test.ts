@@ -169,3 +169,42 @@ describe('attachEme', () => {
     expect(statuses).toHaveLength(1);
   });
 });
+
+describe('attachEme license requests', () => {
+  it('times out a license request that gets no answer', async () => {
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal(
+      'fetch',
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          if (init.signal) signals.push(init.signal);
+          init.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
+        }),
+    );
+    registerKeySystem({
+      keySystem: 'com.example.attach-timeout',
+      systemIds: [],
+      initDataTypes: ['keyids'],
+      buildLicenseRequest: (m) => m,
+      parseLicenseResponse: (r) => r,
+    });
+    const element = fakeElement();
+    const attachment = attachEme(element as unknown as HTMLMediaElement, {
+      licenseUrl: 'https://license.example/',
+      preferredKeySystems: ['com.example.attach-timeout'],
+      licenseRetry: { timeoutMs: 20, timeoutRetries: 0 },
+    });
+    const errors: unknown[] = [];
+    attachment.on('error', (payload) => errors.push(payload));
+    element.dispatchEvent(encrypted());
+    await vi.waitFor(() => expect(errors).toHaveLength(1));
+    expect(signals[0]?.aborted).toBe(true);
+    expect(errors[0]).toMatchObject({
+      code: 'DRM_LICENSE_FAILED',
+      context: { message: expect.stringContaining('TimeoutError') },
+    });
+    attachment.detach();
+  });
+});
