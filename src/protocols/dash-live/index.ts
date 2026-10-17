@@ -7,7 +7,11 @@
  * breaks live playback, which is why the fetch is worth its round trip.
  * The schemes (ISO/IEC 23009-1 §5.8.5.7): `direct` carries the date in its
  * value, `http-head` in the Date header of a HEAD response, and
- * `http-xsdate` and `http-iso` in the body of a GET response.
+ * `http-xsdate` and `http-iso` in the body of a GET response. As in VHS,
+ * the MPD's first UTCTiming is the only one asked; without one, or when it
+ * fails, the Date header of the MPD response stands in, else the client
+ * clock counts as right. The clock syncs again when a reload brings a
+ * changed MPD.
  */
 import { scheduled, tickAfter } from '../../kernel/effects.js';
 import type { Presentation } from '../../types/ir.js';
@@ -45,6 +49,10 @@ interface DashLiveSlice {
   readonly suspended: boolean;
   /** Consecutive MPD reloads that failed or did not parse. A good reload clears it. */
   readonly failures: number;
+  /** The MPD response's Date header minus the client clock, the fallback skew. */
+  readonly mpdSkew: number | null;
+  /** A hash of the last MPD text, to see a reload change it. */
+  readonly mpdHash: number | null;
 }
 
 /**
@@ -66,7 +74,49 @@ const INITIAL: DashLiveSlice = {
   lastWallClock: null,
   suspended: false,
   failures: 0,
+  mpdSkew: null,
+  mpdHash: null,
 };
+
+/** FNV-1a over the bytes: tells one MPD text from the next. */
+function hashOf(bytes: ArrayBuffer): number {
+  let hash = 0x811c9dc5;
+  for (const byte of new Uint8Array(bytes)) hash = Math.imul(hash ^ byte, 0x01000193);
+  return hash >>> 0;
+}
+
+/**
+ * Starts a clock sync against the presentation's time server: a direct
+ * date at once, a request for the others, and the MPD's own date without
+ * a server or when the direct date does not parse.
+ */
+function syncClock(
+  state: DashLiveSlice,
+  server: { readonly scheme: string; readonly value: string } | undefined,
+): [DashLiveSlice, Effect[]] {
+  if (server === undefined) return [{ ...state, skew: state.mpdSkew ?? state.skew }, []];
+  if (server.scheme.includes(':direct:')) {
+    // The value is the server's date when it wrote the MPD, which the
+    // client received at the newest wall clock it saw.
+    const date = Date.parse(server.value);
+    if (Number.isFinite(date) && state.lastWallClock !== null) {
+      return [{ ...state, skew: date / 1000 - state.lastWallClock }, []];
+    }
+    return [{ ...state, skew: state.mpdSkew ?? state.skew }, []];
+  }
+  const head = server.scheme.includes(':http-head:');
+  return [
+    { ...state, utcPending: true },
+    [
+      {
+        kind: 'fetch',
+        token: UTC_TOKEN,
+        url: server.value,
+        ...(head ? { method: 'HEAD' as const } : {}),
+      },
+    ],
+  ];
+}
 
 /** The window arithmetic; null when it cannot move or is not worth a fact. */
 function windowUpdate(
@@ -159,6 +209,18 @@ export const createReduceDashLive =
     ) {
       state = { ...state, lastWallClock: msg.wallClock };
     }
+    // The MPD response's date, the fallback time source.
+    if (
+      msg.type === 'SEGMENT_LOADED' &&
+      (msg.trackId === 'manifest' || msg.trackId === MPD_TOKEN) &&
+      msg.serverDate !== undefined &&
+      msg.wallClock !== undefined
+    ) {
+      state = { ...state, mpdSkew: msg.serverDate - msg.wallClock };
+    }
+    if (msg.type === 'SEGMENT_LOADED' && msg.trackId === 'manifest') {
+      state = { ...state, mpdHash: hashOf(msg.bytes) };
+    }
 
     if (msg.type === 'LOAD') return [{ ...INITIAL, manifestUrl: msg.url }, []];
     if (msg.type === 'UNLOAD' || msg.type === 'DETACH') return [INITIAL, []];
@@ -190,25 +252,10 @@ export const createReduceDashLive =
       if (!drivesWindow(msg.presentation)) return [state, []];
       const effects: Effect[] = [];
       let next = state;
-      const server = msg.presentation.live.timeServer;
-      if (server !== undefined && state.skew === null && !state.utcPending) {
-        if (server.scheme.includes(':direct:')) {
-          // The value is the server's date when it wrote the MPD, which the
-          // client received at the newest wall clock it saw.
-          const date = Date.parse(server.value);
-          if (Number.isFinite(date) && state.lastWallClock !== null) {
-            next = { ...next, skew: date / 1000 - state.lastWallClock };
-          }
-        } else {
-          const head = server.scheme.includes(':http-head:');
-          effects.push({
-            kind: 'fetch',
-            token: UTC_TOKEN,
-            url: server.value,
-            ...(head ? { method: 'HEAD' as const } : {}),
-          });
-          next = { ...next, utcPending: true };
-        }
+      if (state.skew === null && !state.utcPending) {
+        const [synced, sync] = syncClock(state, msg.presentation.live.timeServer);
+        next = synced;
+        effects.push(...sync);
       }
       if (!next.tickPending) {
         effects.push(tick(msg.presentation.live.updatePeriod ?? 4));
@@ -256,7 +303,7 @@ export const createReduceDashLive =
 
     // No time server answer: the skew stays unknown and counts as zero.
     if (msg.type === 'SEGMENT_FAILED' && msg.trackId === UTC_TOKEN) {
-      return [{ ...state, utcPending: false }, []];
+      return [{ ...state, skew: state.mpdSkew ?? state.skew, utcPending: false }, []];
     }
 
     if (msg.type === 'SEGMENT_FAILED' && msg.trackId === MPD_TOKEN) {
@@ -269,7 +316,7 @@ export const createReduceDashLive =
           ? msg.serverDate * 1000
           : Date.parse(new TextDecoder().decode(msg.bytes).trim());
       if (!Number.isFinite(serverTime) || msg.wallClock === undefined) {
-        return [{ ...state, utcPending: false }, []];
+        return [{ ...state, skew: state.mpdSkew ?? state.skew, utcPending: false }, []];
       }
       return [{ ...state, skew: serverTime / 1000 - msg.wallClock, utcPending: false }, []];
     }
@@ -281,7 +328,14 @@ export const createReduceDashLive =
         return reloadFailed(state, kernel.presentation, result.error.code);
       }
       const effects: Effect[] = [];
-      let next: DashLiveSlice = { ...state, failures: 0 };
+      const hash = hashOf(msg.bytes);
+      let next: DashLiveSlice = { ...state, failures: 0, mpdHash: hash };
+      // A changed MPD syncs the clock again, as VHS does on a refresh.
+      if (state.mpdHash !== null && hash !== state.mpdHash && !state.utcPending) {
+        const [synced, sync] = syncClock(next, result.presentation.live?.timeServer);
+        next = synced;
+        effects.push(...sync);
+      }
       effects.push(feed({ type: 'MANIFEST_LOADED', presentation: result.presentation }));
       if (result.presentation.isLive && result.presentation.live !== undefined) {
         const window = windowUpdate(next, result.presentation.live);

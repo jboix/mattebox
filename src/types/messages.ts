@@ -162,6 +162,8 @@ export type Fact =
       readonly updatePeriod?: number;
       /** Seconds behind the playlist's end to hold playback. Applies while the playlist is not complete. */
       readonly holdBack?: number;
+      /** The playlist plays from parts: a low-latency stream. Applies while the playlist is not complete. */
+      readonly lowLatency?: boolean;
       /** A wall-clock anchor on the presentation timeline. Applies while the playlist is not complete. */
       readonly dateAnchor?: { readonly wallClock: number; readonly presentationTime: number };
       /** The playlist's date ranges, replacing the rendition's. */
@@ -205,8 +207,10 @@ export type Fact =
        */
       readonly transfer?: { readonly bytes: number; readonly ms: number };
       /**
-       * The response's Date header in epoch seconds, on a HEAD request: a
-       * time server's answer (DASH UTCTiming `http-head`).
+       * The response's Date header in epoch seconds, on a HEAD request and
+       * on a manifest, playlist, or init segment, when the header is
+       * readable: a time server's answer (DASH UTCTiming `http-head`), or
+       * the time an MPD left the server.
        */
       readonly serverDate?: number;
       /** Wall clock at receipt, epoch seconds. Live edge arithmetic input; the reducer never reads a clock. */

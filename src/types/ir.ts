@@ -393,6 +393,11 @@ export interface LiveInfo {
   readonly timeShiftDepth?: number;
   /** Distance behind the availability end to hold playback, in seconds. */
   readonly holdBack?: number;
+  /**
+   * A low-latency stream: LL-HLS playing from parts, or DASH with chunked
+   * segments. Catch-up acts on these by default, as dash.js and hls.js do.
+   */
+  readonly lowLatency?: boolean;
   /** The playback rates catching up may use (DASH ServiceDescription PlaybackRate). */
   readonly playbackRate?: { readonly min: number; readonly max: number };
   /** Seconds of latency past which playback should jump to the edge (DASH ServiceDescription Latency@max). */

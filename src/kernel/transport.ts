@@ -191,15 +191,48 @@ interface Streamed {
   /** The bytes after the last complete chunk. */
   readonly rest: ArrayBuffer;
   readonly size: number;
-  readonly transfer: { readonly bytes: number; readonly ms: number };
+  /** The throughput sample, or null when the chunks did not measure one. */
+  readonly transfer: { readonly bytes: number; readonly ms: number } | null;
+}
+
+/** One run of complete chunks: its bytes, and when its first and last bytes arrived. */
+interface Timed {
+  readonly bytes: number;
+  readonly start: number;
+  readonly end: number;
 }
 
 /**
- * Reads a body as it arrives and hands on each run of complete chunks.
- * The encoder pauses between chunks and not inside one, so the time
- * between two reads while a chunk is incomplete is time the network spent
- * sending. The transfer sample counts that time and the bytes those reads
- * brought, and leaves out the pauses.
+ * The throughput of chunked delivery, by moof timing, the default of the
+ * reference low-latency player: each chunk's bytes over the time from its
+ * first bytes to its end, so the encoder's pauses between chunks do not
+ * count. The last chunk is left out, chunks that took under a millisecond
+ * join the next ones, and at least two must remain. The sample is their
+ * mean, as bytes and milliseconds; null without enough chunks, and the
+ * segment then measures its whole time, as that player falls back to.
+ */
+export function chunkedTransfer(
+  chunks: readonly Timed[],
+): { readonly bytes: number; readonly ms: number } | null {
+  const rates: number[] = [];
+  let bytes = 0;
+  let pending = { bytes: 0, ms: 0 };
+  for (const chunk of chunks.slice(0, -1)) {
+    pending = { bytes: pending.bytes + chunk.bytes, ms: pending.ms + chunk.end - chunk.start };
+    if (pending.ms <= 1) continue;
+    rates.push(pending.bytes / pending.ms);
+    bytes += pending.bytes;
+    pending = { bytes: 0, ms: 0 };
+  }
+  if (rates.length < 2) return null;
+  const mean = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
+  return { bytes, ms: bytes / mean };
+}
+
+/**
+ * Reads a body as it arrives and hands on each run of complete chunks,
+ * timing each from the read that brought its first bytes to the read that
+ * completed it.
  */
 async function readChunks(
   body: ReadableStream<Uint8Array>,
@@ -210,27 +243,25 @@ async function readChunks(
   const reader = body.getReader();
   let held: Uint8Array = new Uint8Array(0);
   let size = 0;
-  let bytes = 0;
-  let ms = 0;
-  let last = now();
+  let began = 0;
+  const timed: Timed[] = [];
   for (;;) {
     const read = await reader.read();
     if (read.done) break;
     const at = now();
-    if (held.byteLength > 0) {
-      ms += at - last;
-      bytes += read.value.byteLength;
-    }
-    last = at;
+    if (held.byteLength === 0) began = at;
     size += read.value.byteLength;
     held = join(held, read.value);
     const ready = split(held);
     if (ready > 0) {
       onChunk(held.slice(0, ready).buffer as ArrayBuffer);
+      timed.push({ bytes: ready, start: began, end: at });
       held = held.slice(ready);
+      // The rest of this read begins the next chunk.
+      began = at;
     }
   }
-  return { rest: held.slice().buffer as ArrayBuffer, size, transfer: { bytes, ms } };
+  return { rest: held.slice().buffer as ArrayBuffer, size, transfer: chunkedTransfer(timed) };
 }
 
 interface LiveRequest {
@@ -501,11 +532,14 @@ export function createTransport(options: TransportOptions): Transport {
         }
         // A preload hint waits at the server until its part exists, so
         // only the time after the response headers measures the link.
-        let transfer = streamed?.transfer;
+        let transfer = streamed?.transfer ?? undefined;
         if (transfer === undefined && request.preload === true && answer === null) {
           transfer = { bytes: size, ms: rtt - wait };
         }
-        const date = head ? Date.parse(response.headers.get('date') ?? '') : Number.NaN;
+        // A HEAD request asks for the date, and a manifest's date stands in
+        // for a time server; media segments skip the parse.
+        const date =
+          head || request.seq < 0 ? Date.parse(response.headers.get('date') ?? '') : Number.NaN;
         sink.absorb({
           type: 'SEGMENT_LOADED',
           trackId: request.trackId,

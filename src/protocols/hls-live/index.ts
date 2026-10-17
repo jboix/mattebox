@@ -20,7 +20,13 @@ import { scheduled, tickAfter } from '../../kernel/effects.js';
 import { findRendition } from '../../kernel/presentation.js';
 import { activeRenditions } from '../../kernel/rendition-select.js';
 import type { MatteboxError } from '../../types/error.js';
-import type { Presentation, Rendition, Segment, SegmentAddressing } from '../../types/ir.js';
+import type {
+  DateRange,
+  Presentation,
+  Rendition,
+  Segment,
+  SegmentAddressing,
+} from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
 import type { Stage } from '../../types/stage.js';
@@ -53,7 +59,12 @@ export interface HlsLiveOptions {
  */
 export interface LowLatencyReload {
   /** Parses a reloaded playlist; `previous` is the rendition's segments now. */
-  parse(text: string, url: string, previous: SegmentAddressing): MediaPlaylistResult;
+  parse(
+    text: string,
+    url: string,
+    previous: SegmentAddressing,
+    previousRanges: readonly DateRange[],
+  ): MediaPlaylistResult;
   /** The URL of the blocking reload after `playlist`, or null when the server does not block. */
   next(url: string, playlist: MediaPlaylist, skip: boolean): string | null;
   /** The playlist's rendition reports: per playlist URL, the URL that loads it at once. */
@@ -211,6 +222,22 @@ function companionTargets(
     add(rendition, contentType === 'video');
   }
   return out;
+}
+
+/**
+ * The URL that loads a playlist from a rendition report: the report for
+ * that URL, else the last report whose URL begins it, as hls.js matches
+ * them, so a playlist URL with extra query parameters still finds its
+ * report. The playlist URL itself without either.
+ */
+function reportFor(reports: Readonly<Record<string, string>>, url: string): string {
+  const exact = reports[url];
+  if (exact !== undefined) return exact;
+  let found: string | undefined;
+  for (const [reported, reload] of Object.entries(reports)) {
+    if (url.startsWith(reported)) found = reload;
+  }
+  return found ?? url;
 }
 
 /** Loops a message back into the bus through a zero-delay schedule effect. */
@@ -466,7 +493,7 @@ export const createReduceHlsLive =
         if (inflight !== target.renditionId) {
           // A rendition report names the new playlist's last part, which
           // the server answers at once (RFC 8216bis §4.4.5.4).
-          effects.push(reload({ ...target, url: state.reports[target.url] ?? target.url }));
+          effects.push(reload({ ...target, url: reportFor(state.reports, target.url) }));
           inflight = target.renditionId;
         }
         awaitingTarget = true;
@@ -553,9 +580,11 @@ export const createReduceHlsLive =
       const url = playlistUrlFor(kernel.presentation, renditionId, state.target);
       if (url === null) return [state, []];
       const text = new TextDecoder().decode(msg.bytes);
-      const previous = findRendition(kernel.presentation, renditionId)?.rendition.segments ?? [];
+      const site = findRendition(kernel.presentation, renditionId);
       const media =
-        ll === undefined ? parseMediaPlaylist(text, url) : ll.parse(text, url, previous);
+        ll === undefined
+          ? parseMediaPlaylist(text, url)
+          : ll.parse(text, url, site?.rendition.segments ?? [], site?.rendition.dateRanges ?? []);
       if (media.playlist === null) {
         return reloadFailed(state, kernel, renditionId, media.error, retryMs);
       }

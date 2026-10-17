@@ -161,10 +161,10 @@ interface TemplateInfo {
   readonly duration: number | null;
   readonly presentationTimeOffset: number;
   readonly timelineElement: Element | null;
-  /** @availabilityTimeOffset in seconds, 0 when absent or INF. */
-  readonly availabilityOffset: number;
-  /** False when @availabilityTimeComplete says a segment arrives as it is written. */
-  readonly availabilityComplete: boolean;
+  /** @availabilityTimeOffset in seconds, Infinity for INF, null when absent. */
+  readonly availabilityOffset: number | null;
+  /** @availabilityTimeComplete as written, null when absent. */
+  readonly availabilityComplete: string | null;
 }
 
 /**
@@ -416,6 +416,23 @@ function tileGridOf(
   return null;
 }
 
+/** @availabilityTimeOffset in seconds; `INF` is Infinity: every segment that has started. */
+function availabilityOffsetOf(element: Element): number | null {
+  return attr(element, 'availabilityTimeOffset') === 'INF'
+    ? Number.POSITIVE_INFINITY
+    : numberAttr(element, 'availabilityTimeOffset');
+}
+
+/**
+ * Where a low-latency read takes the availability of a segment when its
+ * SegmentTemplate says nothing: the MPD's first BaseURL, as dash.js does.
+ * Null for a plain read.
+ */
+interface Availability {
+  readonly offset: number | null;
+  readonly complete: string | null;
+}
+
 /** Merges SegmentTemplate attributes down Period, AdaptationSet, Representation. */
 function mergeTemplates(levels: readonly Element[]): TemplateInfo | null {
   let media: string | null = null;
@@ -439,7 +456,7 @@ function mergeTemplates(levels: readonly Element[]): TemplateInfo | null {
     duration = numberAttr(template, 'duration') ?? duration;
     pto = numberAttr(template, 'presentationTimeOffset') ?? pto;
     timelineElement = children(template, 'SegmentTimeline')[0] ?? timelineElement;
-    ato = numberAttr(template, 'availabilityTimeOffset') ?? ato;
+    ato = availabilityOffsetOf(template) ?? ato;
     complete = attr(template, 'availabilityTimeComplete') ?? complete;
   }
   if (!found) return null;
@@ -451,8 +468,8 @@ function mergeTemplates(levels: readonly Element[]): TemplateInfo | null {
     duration,
     presentationTimeOffset: pto ?? 0,
     timelineElement,
-    availabilityOffset: ato !== null && ato > 0 ? ato : 0,
-    availabilityComplete: complete !== 'false',
+    availabilityOffset: ato,
+    availabilityComplete: complete,
   };
 }
 
@@ -649,7 +666,7 @@ function parsePeriod(
   index: number,
   mpdBase: string,
   isLive: boolean,
-  lowLatency: boolean,
+  availability: Availability | null,
 ): ParsedPeriod | { readonly error: MatteboxError } {
   const matching = new Map<string, { asId: string | null; follows: string[] }>();
   const periodStart = span.start;
@@ -834,13 +851,9 @@ function parsePeriod(
         // A segment requested before it is complete arrives at the
         // encoder's pace. Only a low-latency composition reads it as chunks
         // and measures the network apart from that pace, so only that one
-        // requests early.
-        ...(lowLatency && isLive && template.availabilityOffset > 0
-          ? {
-              availabilityOffset: template.availabilityOffset,
-              ...(!template.availabilityComplete ? { chunked: true } : {}),
-            }
-          : {}),
+        // requests early. The SegmentTemplate's value wins over the MPD's
+        // BaseURL, as in dash.js; nothing adds them up.
+        ...earlyAvailability(isLive ? availability : null, template),
       };
 
       const init: SegmentRef | null =
@@ -942,24 +955,54 @@ function parsePeriod(
 }
 
 /** parse an MPD document into a Presentation. Never throws. */
+function earlyAvailability(
+  availability: Availability | null,
+  template: TemplateInfo,
+): { availabilityOffset?: number; chunked?: true } {
+  if (availability === null) return {};
+  const offset = template.availabilityOffset ?? availability.offset;
+  if (offset === null || !(offset > 0)) return {};
+  const complete = template.availabilityComplete ?? availability.complete;
+  return { availabilityOffset: offset, ...(complete === 'false' ? { chunked: true } : {}) };
+}
+
 /** The UTCTiming schemes the dash-live stage can ask (ISO/IEC 23009-1 §5.8.5.7). */
 const UTC_SCHEME = /^urn:mpeg:dash:utc:(http-xsdate|http-iso|http-head|direct):201[24]$/;
 
 /**
- * The first UTCTiming whose scheme the engine supports; the MPD lists them
- * in order of preference. A time server URL is resolved like any other.
+ * The MPD's first UTCTiming, as VHS reads it: the others are never tried.
+ * A scheme the engine cannot ask (NTP) counts as none, and dash-live then
+ * takes the time from the MPD response. A time server URL is resolved
+ * like any other.
  */
 function timeServerOf(
   mpd: Element,
   baseUrl: string,
 ): { readonly scheme: string; readonly value: string } | null {
-  for (const timing of children(mpd, 'UTCTiming')) {
-    const scheme = attr(timing, 'schemeIdUri') ?? '';
-    const value = attr(timing, 'value') ?? '';
-    if (!UTC_SCHEME.test(scheme) || value === '') continue;
-    return { scheme, value: scheme.includes(':direct:') ? value : resolve(value, baseUrl) };
-  }
-  return null;
+  const timing = children(mpd, 'UTCTiming')[0];
+  if (timing === undefined) return null;
+  const scheme = attr(timing, 'schemeIdUri') ?? '';
+  const value = attr(timing, 'value') ?? '';
+  if (!UTC_SCHEME.test(scheme) || value === '') return null;
+  return { scheme, value: scheme.includes(':direct:') ? value : resolve(value, baseUrl) };
+}
+
+/** The DVB low-latency scope (ETSI TS 103 285 §10.20.2). */
+const DVB_LOW_LATENCY = 'urn:dvb:dash:lowlatency:scope:2019';
+
+/**
+ * The ServiceDescription that applies, as dash.js picks it: the last one
+ * scoped to DVB low latency, else the last one without a Scope. One with
+ * another Scope is for another client.
+ */
+function serviceElementOf(mpd: Element): Element | undefined {
+  const services = children(mpd, 'ServiceDescription');
+  const scoped = services.filter((service) =>
+    children(service, 'Scope').some((scope) => attr(scope, 'schemeIdUri') === DVB_LOW_LATENCY),
+  );
+  if (scoped.length > 0) return scoped[scoped.length - 1];
+  const open = services.filter((service) => children(service, 'Scope').length === 0);
+  return open[open.length - 1];
 }
 
 /**
@@ -971,7 +1014,7 @@ function serviceOf(mpd: Element): {
   readonly max?: number;
   readonly rate?: { readonly min: number; readonly max: number };
 } {
-  const service = children(mpd, 'ServiceDescription')[0];
+  const service = serviceElementOf(mpd);
   if (service === undefined) return {};
   const latency = children(service, 'Latency')[0];
   const rates = children(service, 'PlaybackRate')[0];
@@ -989,9 +1032,11 @@ function serviceOf(mpd: Element): {
 }
 
 /**
- * `lowLatency` reads what a low-latency MPD adds: the ServiceDescription
- * target replaces `@suggestedPresentationDelay` as the hold-back, and
- * segments with an `@availabilityTimeOffset` are requested early.
+ * `lowLatency` reads what a low-latency MPD adds: segments with an
+ * `@availabilityTimeOffset` are requested early, and the hold-back is
+ * dash.js's live delay: the ServiceDescription target, else
+ * `@suggestedPresentationDelay`, else four `@maxSegmentDuration`, else four
+ * `@minBufferTime`.
  */
 export function parse(text: string, baseUrl: string, lowLatency = false): ParseResult {
   let doc: Document;
@@ -1012,6 +1057,13 @@ export function parse(text: string, baseUrl: string, lowLatency = false): ParseR
   const isLive = attr(mpd, 'type') === 'dynamic';
   const mpdDuration = parseDuration(attr(mpd, 'mediaPresentationDuration'));
   const mpdBase = applyBaseUrl(mpd, baseUrl);
+  const firstBase = children(mpd, 'BaseURL')[0];
+  const availability: Availability | null = lowLatency
+    ? {
+        offset: firstBase === undefined ? null : availabilityOffsetOf(firstBase),
+        complete: firstBase === undefined ? null : attr(firstBase, 'availabilityTimeComplete'),
+      }
+    : null;
 
   // Live delivery metadata, normalized for the dash-live stage. The parser
   // only records; wall-clock arithmetic happens in the stage, from facts.
@@ -1021,7 +1073,13 @@ export function parse(text: string, baseUrl: string, lowLatency = false): ParseR
     const updatePeriod = parseDuration(attr(mpd, 'minimumUpdatePeriod'));
     const timeShiftDepth = parseDuration(attr(mpd, 'timeShiftBufferDepth'));
     const service = lowLatency ? serviceOf(mpd) : {};
-    const holdBack = service.target ?? parseDuration(attr(mpd, 'suggestedPresentationDelay'));
+    const suggested = parseDuration(attr(mpd, 'suggestedPresentationDelay'));
+    let holdBack = service.target ?? suggested;
+    if (lowLatency && holdBack === null) {
+      const longest = parseDuration(attr(mpd, 'maxSegmentDuration'));
+      const minBuffer = parseDuration(attr(mpd, 'minBufferTime'));
+      holdBack = longest !== null ? 4 * longest : minBuffer !== null ? 4 * minBuffer : null;
+    }
     const timing = timeServerOf(mpd, baseUrl);
     live = {
       ...(Number.isFinite(availabilityStart)
@@ -1087,7 +1145,7 @@ export function parse(text: string, baseUrl: string, lowLatency = false): ParseR
       i,
       mpdBase,
       isLive,
-      lowLatency,
+      availability,
     );
     if ('error' in result) return { presentation: null, error: result.error };
     parsed.push(result);
@@ -1119,6 +1177,16 @@ export function parse(text: string, baseUrl: string, lowLatency = false): ParseR
     };
   }
 
+  // dash.js turns on its low-latency mode for chunked segments
+  // (@availabilityTimeComplete="false").
+  const chunked = tracks.some((track) =>
+    track.renditions.some(
+      (rendition) =>
+        !Array.isArray(rendition.segments) &&
+        (rendition.segments as IndexedSegments).chunked === true,
+    ),
+  );
+  if (live !== undefined && chunked) live = { ...live, lowLatency: true };
   return {
     presentation: {
       id: baseUrl,

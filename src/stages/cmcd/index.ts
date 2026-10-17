@@ -13,6 +13,7 @@
 import { bytesToHex } from '../../kernel/base64.js';
 import { findRendition } from '../../kernel/presentation.js';
 import { segmentAt } from '../../kernel/timeline.js';
+import type { Segment } from '../../types/ir.js';
 import type { Stage } from '../../types/stage.js';
 
 export interface CmcdOptions {
@@ -118,13 +119,20 @@ export default function cmcd(options: CmcdOptions = {}): Stage {
 
         // The next segment of the same rendition: its path (nor) when it is
         // another object, its byte range (nrr) when it is a range request.
+        // In a list, the next entry, so an LL-HLS part names the part after
+        // it, as hls.js does; a preload hint is no next object.
         const request = state.scheduling.inflight.get(req.token);
         if (request !== undefined && request.seq >= 0 && request.renditionId !== undefined) {
           const site = findRendition(state.presentation, request.renditionId);
-          const next =
-            site === null
-              ? null
-              : segmentAt(site.rendition.segments, request.seq + 1, site.period.start);
+          let next: Segment | null = null;
+          if (site !== null && Array.isArray(site.rendition.segments)) {
+            const list = site.rendition.segments as readonly Segment[];
+            const at = list.findIndex((segment) => segment.seq === request.seq);
+            const after = at < 0 ? undefined : list[at + 1];
+            next = after !== undefined && after.preload !== true ? after : null;
+          } else if (site !== null) {
+            next = segmentAt(site.rendition.segments, request.seq + 1, site.period.start);
+          }
           if (next !== null) {
             if (next.url !== request.url)
               keys.nor = encodeURIComponent(relativePath(request.url, next.url));

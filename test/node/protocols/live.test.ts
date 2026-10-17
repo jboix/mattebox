@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { createReducer, initialState } from '../../../src/kernel/reducer.js';
 import dashLive from '../../../src/protocols/dash-live/index.js';
@@ -1028,6 +1029,101 @@ describe('dash-live', () => {
       wallClock: AST + 30,
     });
     expect(windowAt(afterSkew, AST + 31)?.span.end).toBe(41);
+  });
+
+  function skewOf(state: KernelState): number | null {
+    return (state as unknown as Record<string, { skew: number | null }>)['dash-live']?.skew ?? null;
+  }
+
+  /** The MPD answer at AST + 30 whose Date header says AST + 40, then MANIFEST_LOADED. */
+  function bootWithMpdDate(timeServer?: { scheme: string; value: string }) {
+    let state = initialState();
+    [state] = reduce(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = reduce(state, { type: 'LOAD', url: 'https://live.example/live.mpd' });
+    [state] = reduce(state, {
+      type: 'SEGMENT_LOADED',
+      trackId: 'manifest',
+      seq: -1,
+      bytes: bytes('<MPD/>'),
+      rtt: 5,
+      size: 6,
+      serverDate: AST + 40,
+      wallClock: AST + 30,
+    });
+    const presentation = dynamicPresentation();
+    const { timeServer: _none, ...live } = presentation.live as NonNullable<Presentation['live']>;
+    const [next, fx] = reduce(state, {
+      type: 'MANIFEST_LOADED',
+      presentation: {
+        ...presentation,
+        live: timeServer === undefined ? live : { ...live, timeServer },
+      },
+    });
+    return settle(reduce, next, fx);
+  }
+
+  it('without UTCTiming, takes the clock from the Date header of the MPD response, as VHS does', () => {
+    // No adapter claims the stand-in MPD bytes, so the slice holds the answer.
+    const { state } = bootWithMpdDate();
+    expect(skewOf(state)).toBe(10);
+  });
+
+  it('a time server that fails leaves the Date header of the MPD response', () => {
+    const { state } = bootWithMpdDate({
+      scheme: 'urn:mpeg:dash:utc:http-xsdate:2014',
+      value: 'https://time.example/now',
+    });
+    const [failed] = reduce(state, {
+      type: 'SEGMENT_FAILED',
+      trackId: 'dash:live:utc',
+      seq: -1,
+      error: { category: 'network', code: 'NETWORK_FAILED', fatal: false, recoverable: true },
+    });
+    expect(skewOf(failed)).toBe(10);
+  });
+
+  it('a reload that changes the MPD asks the time server again', () => {
+    const { state } = bootDash();
+    const [answered] = reduce(state, {
+      type: 'SEGMENT_LOADED',
+      trackId: 'dash:live:utc',
+      seq: 0,
+      bytes: bytes(new Date((AST + 40) * 1000).toISOString()),
+      rtt: 5,
+      size: 30,
+      wallClock: AST + 30,
+    });
+    const mpd = (n: number) =>
+      `<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic" availabilityStartTime="${new Date(AST * 1000).toISOString()}" publishTime="${n}"><UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-xsdate:2014" value="https://time.example/now"/><Period id="p0" start="PT0S"><AdaptationSet contentType="video" mimeType="video/mp4"><SegmentTemplate media="$Number$.m4s" duration="4" startNumber="1"/><Representation id="0" bandwidth="150000" codecs="avc1.42c00d"/></AdaptationSet></Period></MPD>`;
+    const reload = (s: KernelState, text: string) =>
+      reduce(s, {
+        type: 'SEGMENT_LOADED',
+        trackId: 'dash:live:mpd',
+        seq: -1,
+        bytes: bytes(text),
+        rtt: 5,
+        size: text.length,
+        wallClock: AST + 34,
+      });
+    const utc = (effects: readonly Effect[]) =>
+      effects.filter((effect) => effect.kind === 'fetch' && effect.token === 'dash:live:utc');
+    const answer = (state: KernelState) =>
+      reduce(state, {
+        type: 'SEGMENT_LOADED',
+        trackId: 'dash:live:utc',
+        seq: 0,
+        bytes: bytes(new Date((AST + 44) * 1000).toISOString()),
+        rtt: 5,
+        size: 30,
+        wallClock: AST + 34,
+      })[0];
+    // The first reload records the MPD; the boot here carried no text.
+    const [first] = reload(answered, mpd(1));
+    const [changed, changedFx] = reload(first, mpd(2));
+    expect(utc(changedFx)).toHaveLength(1);
+    // The same MPD again: no new request.
+    const [, sameFx] = reload(answer(changed), mpd(2));
+    expect(utc(sameFx)).toEqual([]);
   });
 
   it('the window slides on wall-clock facts and quantizes small movement', () => {

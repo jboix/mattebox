@@ -873,8 +873,57 @@ describe('low-latency signalling', () => {
     expect(indexed(rendition).availabilityOffset).toBeUndefined();
   });
 
-  it('the first supported UTCTiming wins, its URL resolved', () => {
-    expect(parse(MPD, BASE).presentation?.live?.timeServer).toEqual({
+  const live = (body: string, head = '') =>
+    `<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic" availabilityStartTime="2026-01-01T00:00:00Z" ${head}>${body}<Period id="p0" start="PT0S"><AdaptationSet contentType="video" mimeType="video/mp4"><SegmentTemplate media="$Number$.m4s" duration="4" startNumber="0" TEMPLATE/><Representation id="v" bandwidth="1" codecs="avc1.64001e"/></AdaptationSet></Period></MPD>`;
+  const segmentsOf = (text: string) =>
+    indexed(
+      parse(text, BASE, true).presentation?.periods[0]?.tracks[0]?.renditions[0] as Rendition,
+    );
+
+  it('takes the availability from the MPD BaseURL when the SegmentTemplate has none, as dash.js does', () => {
+    const text = live(
+      '<BaseURL availabilityTimeOffset="2" availabilityTimeComplete="false">https://cdn.example/</BaseURL>',
+    ).replace(' TEMPLATE', '');
+    expect(segmentsOf(text)).toMatchObject({ availabilityOffset: 2, chunked: true });
+    const own = live('<BaseURL availabilityTimeOffset="2">https://cdn.example/</BaseURL>').replace(
+      'TEMPLATE',
+      'availabilityTimeOffset="1"',
+    );
+    expect(segmentsOf(own).availabilityOffset).toBe(1);
+  });
+
+  it('reads INF as every segment that has started', () => {
+    const text = live('').replace('TEMPLATE', 'availabilityTimeOffset="INF"');
+    expect(segmentsOf(text).availabilityOffset).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('picks the ServiceDescription dash.js picks: DVB low-latency scope first, then the last unscoped one', () => {
+    const service = (target: number, scope = '') =>
+      `<ServiceDescription id="${target}">${scope}<Latency referenceId="0" target="${target}"/></ServiceDescription>`;
+    const dvb = '<Scope schemeIdUri="urn:dvb:dash:lowlatency:scope:2019"/>';
+    const other = '<Scope schemeIdUri="urn:example:other"/>';
+    const holdBack = (body: string) =>
+      parse(live(body).replace(' TEMPLATE', ''), BASE, true).presentation?.live?.holdBack;
+    expect(holdBack(service(2000) + service(3000))).toBe(3);
+    expect(holdBack(service(2000, dvb) + service(3000))).toBe(2);
+    expect(holdBack(service(5000, other))).toBeUndefined();
+  });
+
+  it('falls back to four segment durations, then four buffer times, without a target or delay', () => {
+    const holdBack = (head: string) =>
+      parse(live('', head).replace(' TEMPLATE', ''), BASE, true).presentation?.live?.holdBack;
+    expect(holdBack('maxSegmentDuration="PT2S" minBufferTime="PT1S"')).toBe(8);
+    expect(holdBack('minBufferTime="PT1S"')).toBe(4);
+    expect(holdBack('suggestedPresentationDelay="PT6S" maxSegmentDuration="PT2S"')).toBe(6);
+  });
+
+  it('only the first UTCTiming counts, as in VHS, and an NTP one counts as none', () => {
+    expect(parse(MPD, BASE).presentation?.live?.timeServer).toBeUndefined();
+    const headFirst = MPD.replace(
+      '<UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-ntp:2014" value="ntp.example"/>',
+      '',
+    );
+    expect(parse(headFirst, BASE).presentation?.live?.timeServer).toEqual({
       scheme: 'urn:mpeg:dash:utc:http-head:2014',
       value: 'https://cdn.example/time',
     });

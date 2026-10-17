@@ -58,6 +58,8 @@ export interface MediaPlaylist {
    * play. Absent: three target durations, the RFC's minimum.
    */
   readonly holdBack?: number;
+  /** The playlist plays from parts (LL-HLS), set by the low-latency parser. */
+  readonly lowLatency?: boolean;
   /** The EXT-X-SERVER-CONTROL attributes as written. */
   readonly serverControl?: Readonly<Record<string, string>>;
   /**
@@ -66,6 +68,11 @@ export interface MediaPlaylist {
    * The first listed segment's number counts them.
    */
   readonly skipped?: number;
+  /**
+   * EXT-X-SKIP RECENTLY-REMOVED-DATERANGES of a delta update: the IDs of
+   * date ranges the server removed since the skipped ones were listed.
+   */
+  readonly removedDateRanges?: readonly string[];
 }
 
 /** Epoch seconds from an ISO 8601 date, or null. */
@@ -262,6 +269,7 @@ export function parseMediaLines(lines: readonly Line[], baseUrl: string): MediaP
   let seq = 0;
   let serverControl: Readonly<Record<string, string>> | null = null;
   let skipped = 0;
+  let removedDateRanges: string[] = [];
 
   for (const line of lines) {
     if (line.kind === 'tag') {
@@ -334,6 +342,10 @@ export function parseMediaLines(lines: readonly Line[], baseUrl: string): MediaP
           // first listed one keeps its media sequence number.
           skipped = Number(line.attributes['SKIPPED-SEGMENTS']) || 0;
           seq += skipped;
+          // A tab-separated list of IDs (RFC 8216bis §4.4.5.2).
+          removedDateRanges = (line.attributes['RECENTLY-REMOVED-DATERANGES'] ?? '')
+            .split('\t')
+            .filter((id) => id !== '');
           break;
         default:
           break;
@@ -391,6 +403,7 @@ export function parseMediaLines(lines: readonly Line[], baseUrl: string): MediaP
         ? { holdBack: Number(serverControl?.['HOLD-BACK']) }
         : {}),
       ...(skipped > 0 ? { skipped } : {}),
+      ...(removedDateRanges.length > 0 ? { removedDateRanges } : {}),
     },
     error: null,
   };
@@ -646,6 +659,7 @@ export function parse(
                 ...(media.playlist.holdBack !== undefined
                   ? { holdBack: media.playlist.holdBack }
                   : {}),
+                ...(media.playlist.lowLatency === true ? { lowLatency: true } : {}),
                 ...(media.playlist.dateAnchor !== undefined
                   ? { dateAnchor: media.playlist.dateAnchor }
                   : {}),
@@ -1014,6 +1028,7 @@ export function refreshFor(
     ...(!playlist.endlist && playlist.holdBack !== undefined
       ? { holdBack: playlist.holdBack }
       : {}),
+    ...(!playlist.endlist ? { lowLatency: playlist.lowLatency === true } : {}),
     ...(playlist.dateAnchor !== undefined
       ? {
           dateAnchor: {

@@ -13,7 +13,7 @@
  * the same number across reloads.
  */
 import { resolveUrl as resolve } from '../../kernel/url.js';
-import type { ByteRange, Segment, SegmentAddressing } from '../../types/ir.js';
+import type { ByteRange, DateRange, Segment, SegmentAddressing } from '../../types/ir.js';
 import { manifestError } from '../adapter-shared.js';
 import type { Line, TagLine } from '../hls-cmaf/lexer.js';
 import { lex } from '../hls-cmaf/lexer.js';
@@ -86,11 +86,17 @@ function discontinuitySequenceOf(lines: readonly Line[]): number {
   return 0;
 }
 
+/**
+ * A delta update request (RFC 8216bis §6.2.5.1): `v2` also skips the date
+ * ranges the client has, `YES` the segments only.
+ */
+export type SkipRequest = 'YES' | 'v2' | null;
+
 /** The URL with the delivery directives (RFC 8216bis §6.2.5) in their defined order. */
-export function withDirectives(url: string, position: NextPosition, skip: boolean): string {
+export function withDirectives(url: string, position: NextPosition, skip: SkipRequest): string {
   const params = [`_HLS_msn=${position.msn}`];
   if (position.part !== undefined) params.push(`_HLS_part=${position.part}`);
-  if (skip) params.push('_HLS_skip=YES');
+  if (skip !== null) params.push(`_HLS_skip=${skip}`);
   return `${url}${url.includes('?') ? '&' : '?'}${params.join('&')}`;
 }
 
@@ -99,11 +105,16 @@ export function withDirectives(url: string, position: NextPosition, skip: boolea
  * segments, with the listed ones moved onto the same timeline. Null when
  * the previous segments do not hold every skipped one: the caller then
  * reloads the whole playlist.
+ *
+ * The date ranges are the previous ones without those the server removed,
+ * merged by ID with the listed ones, as hls.js merges them: a `v2` delta
+ * leaves out the date ranges the client has.
  */
 function fillSkipped(
   playlist: MediaPlaylist,
   skipped: number,
   previous: SegmentAddressing,
+  previousRanges: readonly DateRange[],
 ): MediaPlaylist | null {
   if (!Array.isArray(previous)) return null;
   const first = playlist.mediaSequence;
@@ -128,18 +139,29 @@ function fillSkipped(
           },
         }
       : {}),
-    ...(playlist.dateRanges !== undefined
-      ? {
-          dateRanges: playlist.dateRanges.map((r) => ({
-            ...r,
-            start: r.start + shift,
-            ...(r.end !== undefined ? { end: r.end + shift } : {}),
-            ...(r.plannedEnd !== undefined ? { plannedEnd: r.plannedEnd + shift } : {}),
-          })),
-        }
-      : {}),
+    ...mergedRanges(playlist, previousRanges, shift),
     skipped: 0,
   };
+}
+
+/** The delta's date ranges moved by `shift`, over the previous ones it keeps. */
+function mergedRanges(
+  playlist: MediaPlaylist,
+  previousRanges: readonly DateRange[],
+  shift: number,
+): { dateRanges?: readonly DateRange[] } {
+  const removed = new Set(playlist.removedDateRanges ?? []);
+  const byId = new Map<string, DateRange>();
+  for (const range of previousRanges) if (!removed.has(range.id)) byId.set(range.id, range);
+  for (const r of playlist.dateRanges ?? []) {
+    byId.set(r.id, {
+      ...r,
+      start: r.start + shift,
+      ...(r.end !== undefined ? { end: r.end + shift } : {}),
+      ...(r.plannedEnd !== undefined ? { plannedEnd: r.plannedEnd + shift } : {}),
+    });
+  }
+  return byId.size > 0 ? { dateRanges: [...byId.values()] } : {};
 }
 
 /** The IR entries of one segment's parts, from `start` on. */
@@ -176,6 +198,7 @@ export function parseLowLatency(
   text: string,
   baseUrl: string,
   previous: SegmentAddressing = [],
+  previousRanges: readonly DateRange[] = [],
 ): MediaPlaylistResult {
   if (!text.trimStart().startsWith('#EXTM3U')) {
     return { playlist: null, error: manifestError('missing #EXTM3U') };
@@ -186,7 +209,7 @@ export function parseLowLatency(
   let playlist: MediaPlaylist = base.playlist;
   const skipped = playlist.skipped ?? 0;
   if (skipped > 0) {
-    const filled = fillSkipped(playlist, skipped, previous);
+    const filled = fillSkipped(playlist, skipped, previous, previousRanges);
     if (filled === null) return base;
     playlist = filled;
   }
@@ -240,7 +263,7 @@ export function parseLowLatency(
         reports[resolve(uri, baseUrl)] = withDirectives(
           resolve(uri, baseUrl),
           { msn: last, ...(Number.isFinite(part) ? { part } : {}) },
-          false,
+          null,
         );
         break;
       }
@@ -319,6 +342,7 @@ export function parseLowLatency(
     ...playlist,
     segments,
     ...(holdBack !== undefined ? { holdBack } : {}),
+    ...(hasParts ? { lowLatency: true } : {}),
     partTarget,
     next: partTarget > 0 ? { msn, part: usable.length } : { msn },
     reports,
@@ -331,14 +355,19 @@ export function parseLowLatency(
  * part or segment, with a delta update when the server offers one and
  * `skip` allows it. Null when the server does not hold requests
  * (CAN-BLOCK-RELOAD absent): the playlist then reloads on the target
- * duration cadence.
+ * duration cadence. Like hls.js, it asks for `v2` when the server can skip
+ * date ranges (CAN-SKIP-DATERANGES=YES), else `YES`.
  */
 export function nextReload(url: string, playlist: MediaPlaylist, skip: boolean): string | null {
   const control = playlist.serverControl;
   if (control?.['CAN-BLOCK-RELOAD'] !== 'YES' || playlist.endlist) return null;
   const next = (playlist as Partial<LowLatencyPlaylist>).next;
   if (next === undefined) return null;
-  return withDirectives(url, next, skip && Number(control['CAN-SKIP-UNTIL']) > 0);
+  let request: SkipRequest = null;
+  if (skip && Number(control['CAN-SKIP-UNTIL']) > 0) {
+    request = control['CAN-SKIP-DATERANGES'] === 'YES' ? 'v2' : 'YES';
+  }
+  return withDirectives(url, next, request);
 }
 
 /** The rendition reports of a parsed playlist. */

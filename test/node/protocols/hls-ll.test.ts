@@ -174,7 +174,7 @@ describe('the low-latency parser', () => {
     // A server that does not block: the loop keeps its cadence.
     const polled = ll(llPlaylist({ msn: 10, segments: 3, control: 'PART-HOLD-BACK=3.0' }));
     expect(nextReload(URL, polled, true)).toBeNull();
-    expect(withDirectives(`${URL}?token=a`, { msn: 4 }, false)).toBe(`${URL}?token=a&_HLS_msn=4`);
+    expect(withDirectives(`${URL}?token=a`, { msn: 4 }, null)).toBe(`${URL}?token=a&_HLS_msn=4`);
   });
 
   it('rendition reports become URLs that load the other playlists at their last part', () => {
@@ -201,6 +201,31 @@ describe('the low-latency parser', () => {
     expect(delta.segments.map((s) => s.seq)).toEqual([11, 12, 13, 14, 15, 16, 17, 17.001, 17.002]);
     // Segment 14 continues where segment 13 of the previous window ended.
     expect(delta.segments.find((s) => s.seq === 14)?.start).toBe(116);
+  });
+
+  it('asks for v2 when the server can skip date ranges, as hls.js does', () => {
+    const playlist = ll(
+      llPlaylist({
+        msn: 10,
+        segments: 3,
+        trailing: 2,
+        control:
+          'CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=3.0,CAN-SKIP-UNTIL=24.0,CAN-SKIP-DATERANGES=YES',
+      }),
+    );
+    expect(nextReload(URL, playlist, true)).toBe(`${URL}?_HLS_msn=13&_HLS_part=2&_HLS_skip=v2`);
+  });
+
+  it('a v2 delta keeps the date ranges it skipped, less the ones the server removed', () => {
+    const previous = ll(llPlaylist({ msn: 10, segments: 6 })).segments;
+    const kept = { id: 'kept', start: 41, startDate: 0, attributes: {} };
+    const gone = { id: 'gone', start: 42, startDate: 0, attributes: {} };
+    const text = llPlaylist({ msn: 11, segments: 3, skipped: 3 }).replace(
+      '#EXT-X-SKIP:SKIPPED-SEGMENTS=3',
+      '#EXT-X-SKIP:SKIPPED-SEGMENTS=3,RECENTLY-REMOVED-DATERANGES="gone"',
+    );
+    const delta = parseLowLatency(text, URL, previous, [kept, gone]).playlist;
+    expect(delta?.dateRanges?.map((range) => range.id)).toEqual(['kept']);
   });
 
   it('a delta update the previous window cannot fill keeps its skip count', () => {

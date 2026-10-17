@@ -5,6 +5,7 @@ import { createEffectRunner } from '../../../src/kernel/effects.js';
 import type { FetchImpl, RetryPolicy } from '../../../src/kernel/transport.js';
 import {
   backoffDelayMs,
+  chunkedTransfer,
   createTransport,
   DEFAULT_RETRY_POLICY,
 } from '../../../src/kernel/transport.js';
@@ -527,6 +528,28 @@ function timedBody(pieces: ReadonlyArray<readonly [number, Uint8Array]>): FetchI
     );
 }
 
+describe('chunkedTransfer, the dash.js moof timing', () => {
+  it('leaves out the last chunk and needs two more', () => {
+    expect(
+      chunkedTransfer([
+        { bytes: 1000, start: 0, end: 10 },
+        { bytes: 1000, start: 20, end: 30 },
+      ]),
+    ).toBeNull();
+  });
+
+  it('joins chunks under a millisecond with the next ones', () => {
+    const sample = chunkedTransfer([
+      { bytes: 500, start: 0, end: 0 },
+      { bytes: 500, start: 10, end: 20 },
+      { bytes: 1000, start: 30, end: 40 },
+      { bytes: 1000, start: 50, end: 60 },
+    ]);
+    // 1000 bytes in 10 ms twice: 100 bytes per ms.
+    expect(sample).toEqual({ bytes: 2000, ms: 20 });
+  });
+});
+
 describe('chunked segments', () => {
   const first = concat(box('moof', 100), box('mdat', 20_000));
   const second = concat(box('moof', 100), box('mdat', 20_000));
@@ -553,20 +576,35 @@ describe('chunked segments', () => {
     });
   });
 
-  it('measures throughput inside chunks only, never across the pauses between them', async () => {
+  it('measures throughput inside chunks, never across the pauses between them', async () => {
+    const third = concat(box('moof', 100), box('mdat', 20_000));
     const facts = chunkedHarness(
       timedBody([
         [1000, first.subarray(0, 10_000)],
         [1100, first.subarray(10_000)],
-        [2000, second],
+        [2000, second.subarray(0, 10_000)],
+        [2050, second.subarray(10_000)],
+        [3000, third],
       ]),
     );
     await vi.runAllTimersAsync();
-    // The second read finished the first chunk 100 ms after the first read
-    // began it. The second chunk came in one read, so nothing measured it.
-    expect(facts[2]).toMatchObject({
-      transfer: { bytes: first.byteLength - 10_000, ms: 100 },
-    });
+    // 20.1 kB in 100 ms and in 50 ms, the last chunk left out: the mean
+    // of 201 and 402 bytes per ms.
+    const { transfer } = facts[3] as { transfer: { bytes: number; ms: number } };
+    expect(transfer.bytes).toBe(2 * first.byteLength);
+    expect(transfer.bytes / transfer.ms).toBeCloseTo((201 + 402) / 2);
+  });
+
+  it('chunks that each arrive in one read measure nothing, and the segment counts its whole time', async () => {
+    const facts = chunkedHarness(
+      timedBody([
+        [1000, first],
+        [2000, second],
+        [3000, first],
+      ]),
+    );
+    await vi.runAllTimersAsync();
+    expect(facts.at(-1)).not.toHaveProperty('transfer');
   });
 
   it('keeps an incomplete tail for the segment fact', async () => {

@@ -192,6 +192,17 @@ describe('cmcd stage', () => {
                       byteRange: { start: 100, end: 199 },
                     },
                   ]),
+                  rendition('parts', [
+                    { seq: 5, start: 20, duration: 1, url: 'https://cdn.example/p/5.0.m4s' },
+                    { seq: 5.001, start: 21, duration: 1, url: 'https://cdn.example/p/5.1.m4s' },
+                    {
+                      seq: 5.002,
+                      start: 22,
+                      duration: 1,
+                      url: 'https://cdn.example/p/5.2.m4s',
+                      preload: true,
+                    },
+                  ]),
                 ],
               },
             ],
@@ -231,6 +242,26 @@ describe('cmcd stage', () => {
               renditionId: 'ranges',
             },
           ],
+          [
+            't4',
+            {
+              token: 't4',
+              trackId: 'v',
+              seq: 5,
+              url: 'https://cdn.example/p/5.0.m4s',
+              renditionId: 'parts',
+            },
+          ],
+          [
+            't5',
+            {
+              token: 't5',
+              trackId: 'v',
+              seq: 5.001,
+              url: 'https://cdn.example/p/5.1.m4s',
+              renditionId: 'parts',
+            },
+          ],
         ]),
       },
     };
@@ -258,6 +289,9 @@ describe('cmcd stage', () => {
     expect(ranged).not.toContain('nor=');
     // The last segment has no next one.
     expect(send('t3', 'https://cdn.example/f.mp4')).not.toMatch(/nor=|nrr=/);
+    // A part names the part after it, and a preload hint is no next object.
+    expect(send('t4', 'https://cdn.example/p/5.0.m4s')).toContain('nor="5.1.m4s"');
+    expect(send('t5', 'https://cdn.example/p/5.1.m4s')).not.toContain('nor=');
   });
 
   it('generates a UUID session id without randomUUID, as on a plain-HTTP page', () => {

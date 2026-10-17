@@ -57,6 +57,7 @@ export function applyRefresh(
       ...presentation.live,
       ...(refresh.updatePeriod !== undefined ? { updatePeriod: refresh.updatePeriod } : {}),
       ...(refresh.holdBack !== undefined ? { holdBack: refresh.holdBack } : {}),
+      ...(refresh.lowLatency !== undefined ? { lowLatency: refresh.lowLatency } : {}),
       ...(refresh.dateAnchor !== undefined ? { dateAnchor: refresh.dateAnchor } : {}),
     },
     periods,

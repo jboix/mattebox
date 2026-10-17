@@ -28,7 +28,7 @@ listed and then stops.
 Both refresh every active track, so audio and subtitles don't run dry while
 the video keeps going.
 
-`dash-live` reads the first `UTCTiming` element whose scheme it supports.
+`dash-live` reads the first `UTCTiming` element, as VHS does.
 
 | Scheme                    | Where the server time comes from                    |
 | ------------------------- | --------------------------------------------------- |
@@ -36,9 +36,12 @@ the video keeps going.
 | `http-head`               | The `Date` header of a HEAD request to `value`      |
 | `http-xsdate`, `http-iso` | The body of a GET request to `value`                |
 
-A cross-origin `http-head` server must expose `Date` with
-`Access-Control-Expose-Headers`. Without a time server, the client clock
-counts as right.
+- Without a `UTCTiming` element, or when its server fails, the `Date`
+  header of the MPD response gives the time. Without that, the client
+  clock counts as right.
+- A cross-origin server must expose `Date` with
+  `Access-Control-Expose-Headers`.
+- The clock syncs again when a reload brings a changed MPD.
 
 Both loops stop on `engine.suspend()` and start again on `engine.resume()`.
 The resume reloads every active playlist (or the MPD) before any segment is
@@ -130,17 +133,20 @@ const engine = mattebox({ stages: [dashLl(), liveCatchup()] });
 
 The `dash-ll`, `dual-ll`, and `full` presets carry it.
 
-| Feature          | MPD signal                                         | Behavior                                                |
-| ---------------- | -------------------------------------------------- | ------------------------------------------------------- |
-| Early requests   | `SegmentTemplate@availabilityTimeOffset`           | A segment is requested that many seconds before it ends |
-| Chunked segments | `SegmentTemplate@availabilityTimeComplete="false"` | Each `moof` and `mdat` pair appends as it arrives       |
-| Target latency   | `ServiceDescription` `Latency@target`              | Playback starts and holds that far behind the end       |
-| Catch-up bounds  | `ServiceDescription` `PlaybackRate`, `Latency@max` | `live-catchup` uses them where you set no option        |
+| Feature          | MPD signal                                                                  | Behavior                                                                                                                                                  |
+| ---------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Early requests   | `@availabilityTimeOffset` on SegmentTemplate, else on the first MPD BaseURL | A segment is requested that many seconds before it ends; `INF` means once it starts                                                                       |
+| Chunked segments | `@availabilityTimeComplete="false"`, from the same element                  | Each `moof` and `mdat` pair appends as it arrives                                                                                                         |
+| Target latency   | `ServiceDescription` `Latency@target`                                       | Playback starts and holds that far behind the end. Without it, `@suggestedPresentationDelay`, else four `@maxSegmentDuration`, else four `@minBufferTime` |
+| Catch-up bounds  | `ServiceDescription` `PlaybackRate`, `Latency@max`                          | `live-catchup` uses them where you set no option                                                                                                          |
 
-- ABR measures a chunked segment only while a chunk arrives. The pauses
-  between chunks are the encoder's, not the link's.
-- A chunk that arrives in one read gives no measurement, and the estimate
-  holds.
+- The ServiceDescription is the last one scoped to DVB low latency, else
+  the last one without a Scope.
+- ABR measures a chunked segment chunk by chunk, from each chunk's first
+  bytes to its end, as dash.js does. The pauses between chunks are the
+  encoder's, not the link's.
+- Without at least three chunks that took a measurable time, the segment
+  counts its whole download time.
 - An MPD without these signals plays as `dash-cmaf` and `dash-live` play
   it.
 - The `dash` presets do not request early, since they read each segment
@@ -149,26 +155,32 @@ The `dash-ll`, `dual-ll`, and `full` presets carry it.
 ## Live catch-up
 
 The `live-catchup` stage holds a target latency. Without it, a stream that
-stalls once stays that much further behind the edge.
+stalls once stays that much further behind the edge. It works as dash.js's
+default catch-up.
 
-- Behind the target, playback speeds up, up to `maxRate`.
-- Closer than the target, playback slows down, down to `minRate`.
-- With less than `minBuffer` seconds buffered ahead, it does not speed up.
-- Past `maxLatency`, it seeks to the edge.
-- After you seek or resume past `maxLatency`, it stands down. It holds the
-  target again once playback is back near the edge, for example after
-  `engine.live.seekToEdge()`.
-- A rate your page sets wins. The stage leaves the rate alone until it is
-  1 again.
+- It acts on low-latency streams: LL-HLS playing from parts, and DASH with
+  chunked segments. Set `enabled: true` to hold every live stream, or
+  `false` for none.
+- Behind the target, playback speeds up, towards `maxRate`.
+- Closer than the target, playback slows down, towards `minRate`.
+- The rate follows the drift on a curve: one second off reaches nearly the
+  bound.
+- After a stall, the rate stays at 1 until half the target is buffered.
+- More than `maxDrift` seconds behind the target, it seeks to the edge.
+- After you seek or resume, it holds the latency you moved to.
+  `engine.live.seekToEdge()` brings back the target.
+- It writes the rate while the stream is live, over a rate your page set.
+- Before the page's first user interaction it changes no rate, and only
+  seeks. WebKit pauses a video that started without a gesture when its
+  rate changes.
 
-| Option          | Default                                     | Meaning                                                  |
-| --------------- | ------------------------------------------- | -------------------------------------------------------- |
-| `targetLatency` | The hold-back                               | Seconds behind the live edge to hold                     |
-| `minRate`       | The manifest's, else 0.96                   | The slowest rate                                         |
-| `maxRate`       | The manifest's, else 1.04                   | The fastest rate                                         |
-| `tolerance`     | 0.2                                         | Seconds of error before the rate changes                 |
-| `maxLatency`    | The manifest's, else three times the target | Seconds of latency past which it seeks to the edge       |
-| `minBuffer`     | 0.5                                         | Seconds of buffer ahead below which it does not speed up |
+| Option          | Default                     | Meaning                                                   |
+| --------------- | --------------------------- | --------------------------------------------------------- |
+| `enabled`       | Low-latency streams only    | `true` holds every live stream, `false` none              |
+| `targetLatency` | The hold-back               | Seconds behind the live edge to hold                      |
+| `minRate`       | The manifest's, else 0.5    | The slowest rate, at least 0.5                            |
+| `maxRate`       | The manifest's, else 1.5    | The fastest rate, at most 2                               |
+| `maxDrift`      | From `Latency@max`, else 12 | Seconds behind the target past which it seeks to the edge |
 
 It adds `engine.catchup`.
 
@@ -177,12 +189,12 @@ It adds `engine.catchup`.
 | `target`       | The latency it holds, in seconds, or null when nothing live plays |
 | `latency`      | Seconds from the moving edge to the playhead, or null             |
 | `rate`         | The rate it set last; 1 while it does not act                     |
-| `active`       | True while it holds the target                                    |
+| `active`       | True while it holds the target, not a latency you moved to        |
 | `setTarget(s)` | Sets the target; null returns to the hold-back                    |
 
-`engine.catchup.latency` counts the time since the window last moved, up
-to one refresh period. `engine.live.latency` counts to the window end the
-last playlist reported.
+`engine.catchup.latency` adds the time since the window last moved, as
+hls.js does. `engine.live.latency` counts to the window end the last
+playlist reported.
 
 | Event          | Payload                     |
 | -------------- | --------------------------- |
@@ -190,7 +202,7 @@ last playlist reported.
 | `catchup:seek` | `{ latency, target }`       |
 
 A speed menu reads `video.playbackRate`, so it shows the catch-up rate.
-Compare with `engine.catchup.rate` to tell the two apart.
+Hide the menu while `engine.catchup.active` is true.
 
 ## The pdt stage
 
