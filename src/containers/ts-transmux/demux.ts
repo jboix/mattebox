@@ -15,6 +15,8 @@ export { looksLikeTransportStream };
 import { concat } from '../fmp4/writer.js';
 export const STREAM_TYPE = {
   h264: 0x1b,
+  /** ISO/IEC 13818-1 Table 2-34: HEVC video stream. */
+  h265: 0x24,
   aacAdts: 0x0f,
   mp3a: 0x03,
   mp3b: 0x04,
@@ -54,7 +56,7 @@ interface PesAccumulator {
 }
 
 function kindOf(streamType: number): ElementaryKind | null {
-  if (streamType === STREAM_TYPE.h264) return 'video';
+  if (streamType === STREAM_TYPE.h264 || streamType === STREAM_TYPE.h265) return 'video';
   if (
     streamType === STREAM_TYPE.aacAdts ||
     streamType === STREAM_TYPE.mp3a ||

@@ -50,6 +50,7 @@ export type Source =
   | 'dash-live'
   | 'steer'
   | 'ts'
+  | 'ts-hevc'
   | 'aac'
   | 'bare'
   | 'forced'
@@ -108,6 +109,8 @@ export const flavor: 'h264' | 'vp9' = MediaSource.isTypeSupported('video/mp4; co
 
 /** True where the browser build decodes the H.264 Main profile the TS corpus uses. */
 export const decodesH264 = MediaSource.isTypeSupported('video/mp4; codecs="avc1.4d401e"');
+/** Playwright's Chromium and Firefox on Linux have no HEVC decoder; Safari and Edge on Windows do. */
+export const decodesHevc = MediaSource.isTypeSupported('video/mp4; codecs="hvc1.1.6.L60.90"');
 
 /** True where the browser build ships Encrypted Media Extensions. Playwright's WebKit on Linux does not. */
 export const hasEme = 'requestMediaKeySystemAccess' in navigator;
@@ -121,6 +124,7 @@ const sources: Record<Source, () => string> = {
   // The legacy families: a muxed MPEG-TS stream and a packed-audio stream,
   // both H.264/AAC and playable only where ts-transmux is loaded.
   ts: () => '/streams/ts/master.m3u8',
+  'ts-hevc': () => '/streams/ts-hevc/master.m3u8',
   aac: () => '/streams/aac/master.m3u8',
   // A media playlist alone: no master, so no CODECS for the SourceBuffer.
   bare: () => `/streams/${flavor}/low.m3u8`,
@@ -244,7 +248,13 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
   // The legacy container family loads for the TS and packed-audio sources.
   // It sniffs per segment, so it passes CMAF fMP4 straight through, but it is
   // gated here to keep the CMAF tests measuring the CMAF append path.
-  if (src === 'ts' || src === 'aac' || src === 'metadata' || options.ts === true) {
+  if (
+    src === 'ts' ||
+    src === 'ts-hevc' ||
+    src === 'aac' ||
+    src === 'metadata' ||
+    options.ts === true
+  ) {
     stages.push(tsTransmux(), packedAudio(), metaId3());
   }
   if (src === 'metadata') stages.push(timedMetadata());

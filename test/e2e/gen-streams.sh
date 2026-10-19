@@ -173,6 +173,28 @@ ll_flavor() { # flavor vcodec extra...
     "$dir/stream.mp4"
 }
 
+# A muxed MPEG-TS HLS stream in HEVC: stream type 0x24 in the .ts segments. Only a
+# browser with an HEVC decoder plays it (Safari, Edge or Chrome with
+# hardware decode); the E2E test skips elsewhere.
+ts_hevc_flavor() {
+  local dir="$OUT/ts-hevc"
+  mkdir -p "$dir"
+  ffmpeg -y -loglevel error -f lavfi -i "testsrc2=size=320x180:rate=30" \
+    -f lavfi -i "sine=frequency=440:sample_rate=44100" -t $DURATION \
+    -c:v libx265 -pix_fmt yuv420p -b:v 300k \
+    -x265-params "log-level=error:keyint=120:min-keyint=120:bframes=2" \
+    -c:a aac -b:a 96k \
+    -f hls -hls_time 4 -hls_playlist_type vod -hls_segment_type mpegts \
+    -hls_segment_filename "$dir/seg-%03d.ts" "$dir/media.m3u8"
+  # 320x180 Main is level 2 (L60).
+  cat > "$dir/master.m3u8" <<EOF
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=320x180,CODECS="hvc1.1.6.L60.90,mp4a.40.2"
+media.m3u8
+EOF
+}
+
 if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
    [ -f "$OUT/h264-dash/manifest.mpd" ] && [ -f "$OUT/vp9-dash/manifest.mpd" ] &&
    [ -f "$OUT/ts/master.m3u8" ] && [ -f "$OUT/aac/master.m3u8" ]; then
@@ -185,6 +207,7 @@ if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
   [ -f "$OUT/h264-ll/stream.mp4" ] || ll_flavor h264 libx264 -profile:v baseline
   [ -f "$OUT/vp9-ll/stream.mp4" ] || ll_flavor vp9 libvpx-vp9 -deadline realtime -cpu-used 8
   [ -f "$OUT/ts/master-metadata.m3u8" ] || node "$ROOT/test/e2e/inject-id3.mjs" "$OUT/ts"
+  [ -f "$OUT/ts-hevc/master.m3u8" ] || ts_hevc_flavor
   for flavor in h264 vp9; do
     [ -f "$OUT/$flavor-dash/manifest-ttml.mpd" ] || node "$ROOT/test/e2e/gen-ttml.mjs" "$OUT/$flavor-dash"
     [ -f "$OUT/$flavor-dash/manifest-list.mpd" ] || node "$ROOT/test/e2e/gen-segmentlist.mjs" "$OUT/$flavor-dash"
@@ -376,6 +399,7 @@ node "$ROOT/test/e2e/gen-segmentlist.mjs" "$OUT/vp9-dash"
 node "$ROOT/test/e2e/gen-multiperiod.mjs" "$OUT/vp9-dash"
 
 ts_flavor
+ts_hevc_flavor
 node "$ROOT/test/e2e/inject-id3.mjs" "$OUT/ts"
 aac_flavor
 images_flavor

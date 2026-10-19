@@ -25,7 +25,7 @@ import {
   writeMediaSegment,
 } from '../fmp4/writer.js';
 import { ccTriplesFromSei } from '../sei.js';
-import { demux, unrollTimestamps } from './demux.js';
+import { demux, STREAM_TYPE, unrollTimestamps } from './demux.js';
 import {
   type AccessUnit,
   accessUnitFromNals,
@@ -35,6 +35,13 @@ import {
   spsDimensions,
   toAccessUnit,
 } from './h264.js';
+import {
+  HEVC_NAL_TYPE,
+  hevcAccessUnitFromNals,
+  hevcDecoderConfiguration,
+  hevcNalType,
+  hevcSpsInfo,
+} from './h265.js';
 
 const VIDEO_TIMESCALE = 90000;
 const VIDEO_TRACK_ID = 1;
@@ -51,13 +58,14 @@ const DEFAULT_FRAME_DURATION = 3000;
 export type TransmuxTracks = 'all' | 'video' | 'audio';
 
 /**
- * The H.264 sequence and picture parameter sets of a rendition. A segment
- * cut mid-GOP carries none of its own; it borrows the last ones its
+ * The parameter sets of a rendition: SPS and PPS, and the VPS for HEVC. A
+ * segment cut mid-GOP carries none of its own; it borrows the last ones its
  * rendition had, which the caller keeps between segments.
  */
 export interface ParameterSets {
   readonly sps: Uint8Array;
   readonly pps: Uint8Array;
+  readonly vps?: Uint8Array;
 }
 
 export interface TransmuxResult {
@@ -114,10 +122,33 @@ interface VideoResult {
 }
 
 interface FramedUnit {
-  readonly unit: AccessUnit;
+  readonly unit: AccessUnit & { readonly vps?: Uint8Array | null };
   readonly pts: number | null;
   readonly dts: number | null;
 }
+
+/** How one video codec's NAL units read: their type, the delimiter, and the access unit. */
+interface NalSyntax {
+  readonly type: (nal: Uint8Array) => number;
+  readonly delimiter: number;
+  readonly unit: (nals: readonly Uint8Array[]) => FramedUnit['unit'];
+  /** The SEI NAL header length, for the caption reader. */
+  readonly seiHeader: number;
+}
+
+const AVC: NalSyntax = {
+  type: nalType,
+  delimiter: NAL_TYPE.accessUnitDelimiter,
+  unit: accessUnitFromNals,
+  seiHeader: 1,
+};
+
+const HEVC: NalSyntax = {
+  type: hevcNalType,
+  delimiter: HEVC_NAL_TYPE.accessUnitDelimiter,
+  unit: hevcAccessUnitFromNals,
+  seiHeader: 2,
+};
 
 /**
  * Reframes video access units. Access units do not align with PES packet
@@ -128,7 +159,10 @@ interface FramedUnit {
  * no delimiters falls back to one unit per PES, which is correct when the muxer
  * did align them.
  */
-function frameAccessUnits(packets: ReturnType<typeof demux>['video']): FramedUnit[] {
+function frameAccessUnits(
+  packets: ReturnType<typeof demux>['video'],
+  syntax: NalSyntax,
+): FramedUnit[] {
   let total = 0;
   for (const p of packets) total += p.data.byteLength;
   const es = new Uint8Array(total);
@@ -141,9 +175,13 @@ function frameAccessUnits(packets: ReturnType<typeof demux>['video']): FramedUni
   }
 
   const nals = splitNalUnits(es);
-  const hasAud = nals.some((n) => nalType(n) === NAL_TYPE.accessUnitDelimiter);
+  const hasAud = nals.some((n) => syntax.type(n) === syntax.delimiter);
   if (!hasAud) {
-    return packets.map((p) => ({ unit: toAccessUnit(p.data), pts: p.pts, dts: p.dts }));
+    return packets.map((p) => ({
+      unit: syntax === AVC ? toAccessUnit(p.data) : syntax.unit(splitNalUnits(p.data)),
+      pts: p.pts,
+      dts: p.dts,
+    }));
   }
 
   const framed: FramedUnit[] = [];
@@ -160,11 +198,11 @@ function frameAccessUnits(packets: ReturnType<typeof demux>['video']): FramedUni
       boundaryIndex += 1;
     }
     const b = boundaries[boundaryIndex] as (typeof boundaries)[number];
-    framed.push({ unit: accessUnitFromNals(group), pts: b.pts, dts: b.dts });
+    framed.push({ unit: syntax.unit(group), pts: b.pts, dts: b.dts });
     group = [];
   };
   for (const nal of nals) {
-    if (nalType(nal) === NAL_TYPE.accessUnitDelimiter && group.length > 0) flush();
+    if (syntax.type(nal) === syntax.delimiter && group.length > 0) flush();
     if (group.length === 0) groupOffset = nal.byteOffset - es.byteOffset;
     group.push(nal);
   }
@@ -179,11 +217,15 @@ function buildVideo(
   carried: ParameterSets | null,
 ): VideoResult | null {
   if (packets.length === 0) return null;
-  const framed = frameAccessUnits(packets);
+  const hevc = packets[0]?.streamType === STREAM_TYPE.h265;
+  const syntax = hevc ? HEVC : AVC;
+  const framed = frameAccessUnits(packets, syntax);
   const units = framed.map((f) => f.unit);
+  let vps: Uint8Array | null = null;
   let sps: Uint8Array | null = null;
   let pps: Uint8Array | null = null;
   for (const unit of units) {
+    if (unit.vps != null) vps = unit.vps;
     if (unit.sps !== null) sps = unit.sps;
     if (unit.pps !== null) pps = unit.pps;
   }
@@ -193,7 +235,8 @@ function buildVideo(
   // Without either there is no honest init segment and the segment drops.
   sps = sps ?? carried?.sps ?? null;
   pps = pps ?? carried?.pps ?? null;
-  if (sps === null || pps === null) return null;
+  vps = vps ?? carried?.vps ?? null;
+  if (sps === null || pps === null || (hevc && vps === null)) return null;
 
   const dts = unrollTimestamps(framed.map((f) => f.dts));
   const pts = unrollTimestamps(framed.map((f) => f.pts));
@@ -206,7 +249,7 @@ function buildVideo(
     for (let i = 0; i < units.length; i += 1) {
       const unit = units[i] as (typeof units)[number];
       if (unit.sei.length === 0) continue;
-      const triples = unit.sei.flatMap((nal) => ccTriplesFromSei(nal));
+      const triples = unit.sei.flatMap((nal) => ccTriplesFromSei(nal, syntax.seiHeader));
       if (triples.length === 0) continue;
       const time = presentationStart + ((pts[i] as number) - firstPts) / VIDEO_TIMESCALE;
       captions.push({ time, triples });
@@ -230,7 +273,7 @@ function buildVideo(
       isKeyframe: (units[i] as (typeof units)[number]).isKeyframe,
     });
   }
-  const { width, height } = spsDimensions(sps);
+  const { width, height } = hevc ? hevcSpsInfo(sps) : spsDimensions(sps);
   const config: VideoTrackConfig = {
     id: VIDEO_TRACK_ID,
     kind: 'video',
@@ -239,12 +282,13 @@ function buildVideo(
     pps,
     width,
     height,
+    ...(vps !== null ? { hvcC: hevcDecoderConfiguration(vps, sps, pps) } : {}),
   };
   return {
     config,
     fragment: { trackId: VIDEO_TRACK_ID, baseMediaDecodeTime: base, samples },
     captions,
-    parameterSets: { sps, pps },
+    parameterSets: vps !== null ? { sps, pps, vps } : { sps, pps },
   };
 }
 

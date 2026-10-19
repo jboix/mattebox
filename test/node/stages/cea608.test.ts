@@ -173,6 +173,13 @@ describe('SEI caption extraction', () => {
     ]);
   });
 
+  it('reads the same message from an HEVC prefix SEI, behind its two-byte header', () => {
+    const avc = seiNal([[0, 0x20, 0x21]]);
+    // H.265 §7.3.1.2: type 39 (prefix SEI) in bits 1 to 6, then layer and temporal id 1.
+    const hevc = new Uint8Array([39 << 1, 0x01, ...avc.subarray(1)]);
+    expect(ccTriplesFromSei(hevc, 2)).toEqual([{ type: 0, a: 0x20, b: 0x21 }]);
+  });
+
   it('returns nothing for a SEI with no caption user data', () => {
     // payloadType 5 (unregistered), not the caption message.
     const nal = new Uint8Array([0x06, 0x05, 0x02, 0xaa, 0xbb, 0x80]);

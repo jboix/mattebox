@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { boot, decodesH264, disposeAll, play, until } from './harness.js';
+import { boot, decodesH264, decodesHevc, disposeAll, play, until } from './harness.js';
 
 // Stage 17: the legacy MPEG-TS family. The playground's oldest wound was
 // Apple's bipbop stream turning into an infinite refetch loop, which Stage 11
@@ -49,5 +49,15 @@ describe.skipIf(!decodesH264)('muxed MPEG-TS', () => {
       15_000,
     );
     expect(player.video.currentTime).toBeGreaterThan(30);
+  });
+});
+
+describe.skipIf(!decodesHevc)('HEVC in MPEG-TS', () => {
+  it('61. a muxed HEVC .ts stream plays: stream type 0x24 becomes hvc1', async () => {
+    const player = await boot({ src: 'ts-hevc' });
+    await play(player, 2, 15_000);
+    expect(player.engine.error?.code ?? null).toBeNull();
+    expect(player.video.videoWidth).toBe(320);
+    expect(player.video.readyState).toBeGreaterThanOrEqual(3);
   });
 });

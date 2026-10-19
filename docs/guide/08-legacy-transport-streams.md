@@ -14,10 +14,10 @@ stages.
 
 ## Container stages
 
-| Stage          | Handles                                                                  |
-| -------------- | ------------------------------------------------------------------------ |
-| `ts-transmux`  | Demuxes MPEG-TS into H.264 and AAC and rewraps them as fMP4, in a Worker |
-| `packed-audio` | Wraps raw AAC frames, with or without a leading ID3 tag, as fMP4         |
+| Stage          | Handles                                                                          |
+| -------------- | -------------------------------------------------------------------------------- |
+| `ts-transmux`  | Demuxes MPEG-TS into H.264 or HEVC and AAC and rewraps them as fMP4, in a Worker |
+| `packed-audio` | Wraps raw AAC frames, with or without a leading ID3 tag, as fMP4                 |
 
 ```ts
 import packedAudio from 'mattebox/containers/packed-audio';
@@ -28,6 +28,18 @@ const engine = mattebox({ stages: [hlsCmaf(), tsTransmux(), packedAudio()] });
 
 Both check each segment and pass CMAF through untouched, so they can stay
 loaded when you have a mix of both.
+
+## HEVC
+
+`ts-transmux` reads HEVC video, stream type 0x24, and writes it as an
+`hvc1` track. The VPS, SPS and PPS go into the track's `hvcC` box.
+
+- The browser must decode HEVC through MSE. Safari does, and so do Edge
+  and Chrome with hardware decoding.
+- The variant's `CODECS` names the HEVC string, such as `hvc1.1.6.L93.90`.
+  Without it, load `codec-probe` so the buffer opens with the string read
+  from the transmuxed init segment.
+- CEA-608 captions in the HEVC SEI are read as in H.264.
 
 ## Muxed variants beside an audio group
 
@@ -42,7 +54,7 @@ audio and the video buffer declares both codecs.
 
 ## Segments cut mid-GOP
 
-A segment that starts mid-GOP carries no H.264 SPS or PPS. `ts-transmux`
+A segment that starts mid-GOP carries no parameter sets (the SPS and PPS, and the VPS for HEVC). `ts-transmux`
 keeps the last ones each rendition had and uses them for such a segment, so
 it plays on from the segment before. A rendition's first segment without
 them still has nothing to describe the stream, and the segment fails.

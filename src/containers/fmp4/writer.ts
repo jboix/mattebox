@@ -11,7 +11,7 @@
  * container utility, not a stage, so neither imports the other.
  */
 
-/** An AVC video track, configured from the SPS/PPS the demux extracted. */
+/** An AVC or HEVC video track, configured from the parameter sets the demux extracted. */
 export interface VideoTrackConfig {
   readonly id: number;
   readonly kind: 'video';
@@ -22,6 +22,12 @@ export interface VideoTrackConfig {
   readonly pps: Uint8Array;
   readonly width: number;
   readonly height: number;
+  /**
+   * The HEVCDecoderConfigurationRecord, for an HEVC track: the sample entry
+   * is then `hvc1` with this as its hvcC (ISO/IEC 14496-15 §8.4.1), and
+   * `sps` and `pps` are unused.
+   */
+  readonly hvcC?: Uint8Array;
 }
 
 /** An AAC audio track, configured from an ADTS header or an AudioSpecificConfig. */
@@ -160,9 +166,10 @@ function avcC(config: VideoTrackConfig): Uint8Array {
   );
 }
 
+/** A visual sample entry (ISO/IEC 14496-12 §12.1.3): `avc1` with avcC, or `hvc1` with hvcC. */
 function avc1(config: VideoTrackConfig): Uint8Array {
   return box(
-    'avc1',
+    config.hvcC !== undefined ? 'hvc1' : 'avc1',
     u8(0, 0, 0, 0, 0, 0),
     u16(1),
     u16(0),
@@ -179,7 +186,7 @@ function avc1(config: VideoTrackConfig): Uint8Array {
     new Uint8Array(32),
     u16(0x18),
     u16(0xffff),
-    avcC(config),
+    config.hvcC !== undefined ? box('hvcC', config.hvcC) : avcC(config),
   );
 }
 
