@@ -58,6 +58,7 @@ export type Source =
   | 'captions-undeclared'
   | 'captions-708'
   | 'ttml'
+  | 'ttml-image'
   | 'dash-list'
   | 'cmsd'
   | 'names'
@@ -137,6 +138,7 @@ const sources: Record<Source, () => string> = {
   'captions-708': () => '/streams/h264/master-captions-708.m3u8',
   // The DASH flavor with a TTML sidecar (English) and an stpp track (German).
   ttml: () => `/streams/${flavor}-dash/manifest-ttml.mpd`,
+  'ttml-image': () => `/streams/${flavor}-dash/manifest-ttml-image.mpd`,
   // The DASH flavor with each SegmentTemplate rewritten as a SegmentList.
   'dash-list': () => `/streams/${flavor}-dash/manifest-list.mpd`,
   // The HLS flavor through a route that adds CMSD-Dynamic to every response.
@@ -259,7 +261,7 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
   }
   if (src === 'metadata') stages.push(timedMetadata());
   if (src === 'captions-708') stages.push(textCea708());
-  if (src === 'ttml') stages.push(textTtml());
+  if (src === 'ttml' || src === 'ttml-image') stages.push(textTtml());
   if (src === 'cmsd') stages.push(cmsd());
   if (src === 'names') stages.push(renditionNames());
   if (src === 'forced') stages.push(forcedSubtitles());

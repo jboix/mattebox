@@ -151,6 +151,7 @@ function parsers(): Map<string, ParserFn> {
   textTtml().install({
     element: { textTracks: new EventTarget() },
     registerSink() {},
+    registerNamespace() {},
     registerParser: (format: string, parse: ParserFn) => map.set(format, parse),
     getState: () => ({ presentation: null, tracks: { active: new Map() } }),
     on: () => () => undefined,
@@ -242,5 +243,77 @@ describe('the text-ttml stage', () => {
     expect(brief(parse(relative, META))).toEqual([[21, 22, 'rel']]);
     const open = fragment(tt('<div><p begin="1s">open</p></div>'), 100_000, 4000);
     expect(brief(parse(open, META))).toEqual([[21, 24, 'open']]);
+  });
+});
+
+describe('IMSC1 Image Profile', () => {
+  const SMPTE = 'xmlns:smpte="http://www.smpte-ra.org/schemas/2052-1/2010/smpte"';
+  const head = `<metadata><smpte:image xml:id="i1" imagetype="PNG" encoding="Base64">
+      iVBORw0K
+      GgoAAAAN</smpte:image></metadata>
+    <layout>
+      <region xml:id="pct" tts:origin="10% 80%" tts:extent="80% 15%"/>
+      <region xml:id="px" tts:origin="160px 432px" tts:extent="960px 108px"/>
+    </layout>`;
+
+  it('turns a div with an embedded smpte:backgroundImage into an image cue on its region', () => {
+    const cues = parseTtml(
+      tt(`<div region="pct" begin="1s" end="3s" smpte:backgroundImage="#i1"/>`, head, SMPTE),
+    );
+    expect(cues).toEqual([
+      {
+        start: 1,
+        end: 3,
+        text: '',
+        payload: {
+          image: 'data:image/png;base64,iVBORw0KGgoAAAAN',
+          left: 10,
+          top: 80,
+          width: 80,
+          height: 15,
+        },
+      },
+    ]);
+  });
+
+  it('sizes a pixel region against the root extent', () => {
+    const [cue] = parseTtml(
+      tt(
+        `<div region="px" begin="0s" end="1s" smpte:backgroundImage="#i1"/>`,
+        head,
+        `${SMPTE} tts:extent="1920px 1080px"`,
+      ),
+    );
+    expect(cue?.payload).toMatchObject({ left: 8.333333333333332, top: 40, width: 50, height: 10 });
+  });
+
+  it('resolves an image file against the document URL, and reads an IMSC 1.1 image child', () => {
+    const cues = parseTtml(
+      tt(
+        `<div region="pct" begin="0s" end="1s" smpte:backgroundImage="img/a.png"/>
+         <div region="pct" begin="1s" end="2s"><image src="b.png"/></div>`,
+        head,
+        SMPTE,
+      ),
+      'https://cdn.example/subs/doc.ttml',
+    );
+    expect(cues.map((c) => (c.payload as { image: string }).image)).toEqual([
+      'https://cdn.example/subs/img/a.png',
+      'https://cdn.example/subs/b.png',
+    ]);
+  });
+
+  it('a region without a size fills the video, and an unknown id shows nothing', () => {
+    const cues = parseTtml(
+      tt(
+        `<div begin="0s" end="1s" smpte:backgroundImage="#i1"/>
+         <div begin="1s" end="2s" smpte:backgroundImage="#missing"><p>text</p></div>`,
+        head,
+        SMPTE,
+      ),
+    );
+    expect(cues[0]?.payload).toMatchObject({ left: 0, top: 0, width: 100, height: 100 });
+    // The div without its image still flows its text.
+    expect(brief(cues.slice(1))).toEqual([[1, 2, 'text']]);
   });
 });

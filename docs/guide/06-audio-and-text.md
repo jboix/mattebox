@@ -181,7 +181,27 @@ A TTML track is a text track like a WebVTT one: select it with
 - Colors and fonts do not show: a `VTTCue` carries them only through page
   CSS. Each cue's `payload` property holds its resolved styles, for a
   player that draws captions itself.
-- The IMSC1 Image Profile is not supported.
+
+### Image subtitles
+
+`text-ttml` also reads the IMSC1 Image Profile: PNG subtitles, embedded in
+the document or as files beside it. The browser cannot draw an image on a
+text track. Give the stage a container over the video, and it draws the
+images of the showing track there.
+
+```ts
+// The container covers the video, at the same size.
+overlay.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%';
+video.parentElement.append(overlay);
+engine.ttml.showImages(overlay);
+```
+
+- Each image fills its region, in percent of the container.
+- `engine.ttml.showImages(null)` stops drawing.
+- An image cue has no text. Its `payload` holds `image` (a data URL or the
+  file's URL) and `left`, `top`, `width` and `height` in percent, for a
+  player that draws subtitles itself.
+- Images inside stpp samples as sub-samples (ISO/IEC 14496-30) are not read.
 
 Each subtitle format has a parser of its own, chosen by the track's format.
 A track whose format no stage reads is listed but not selectable.

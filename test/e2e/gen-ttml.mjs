@@ -225,3 +225,72 @@ const sets = `		<AdaptationSet id="10" contentType="text" mimeType="application/
 		</AdaptationSet>
 	</Period>`;
 writeFileSync(join(dir, 'manifest-ttml.mpd'), mpd.replace('\t</Period>', sets));
+
+// IMSC1 Image Profile (W3C IMSC1 §6): subs-image.ttml with two PNG
+// subtitles, Italian. The first, from 1 s to 3 s, is embedded as an
+// smpte:image; the second, from 5 s to 7 s, is the file subs-image-1.png.
+// Both fill the region at origin 10% 80%, extent 80% 15%.
+const { deflateSync } = await import('node:zlib');
+const crcTable = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+const crc32 = (bytes) => {
+  let c = 0xffffffff;
+  for (const b of bytes) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+};
+const chunk = (type, data) => [
+  ...u32(data.length),
+  ...ascii(type),
+  ...data,
+  ...u32(crc32([...ascii(type), ...data])),
+];
+/** A solid RGB PNG, width by height. */
+const png = (width, height, [r, g, b]) => {
+  const rows = [];
+  for (let y = 0; y < height; y += 1) {
+    rows.push(0);
+    for (let x = 0; x < width; x += 1) rows.push(r, g, b);
+  }
+  return Uint8Array.from([
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
+    ...chunk('IHDR', [...u32(width), ...u32(height), 8, 2, 0, 0, 0]),
+    ...chunk('IDAT', [...deflateSync(Uint8Array.from(rows))]),
+    ...chunk('IEND', []),
+  ]);
+};
+const embedded = Buffer.from(png(32, 6, [255, 0, 0])).toString('base64');
+writeFileSync(join(dir, 'subs-image-1.png'), png(32, 6, [0, 0, 255]));
+writeFileSync(
+  join(dir, 'subs-image.ttml'),
+  `<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"
+    xmlns:ttp="http://www.w3.org/ns/ttml#parameter"
+    xmlns:smpte="http://www.smpte-ra.org/schemas/2052-1/2010/smpte"
+    ttp:profile="http://www.w3.org/ns/ttml/profile/imsc1/image" xml:lang="it">
+  <head>
+    <metadata><smpte:image xml:id="img0" imagetype="PNG" encoding="Base64">${embedded}</smpte:image></metadata>
+    <layout><region xml:id="r" tts:origin="10% 80%" tts:extent="80% 15%"/></layout>
+  </head>
+  <body>
+    <div region="r" begin="00:00:01.000" end="00:00:03.000" smpte:backgroundImage="#img0"/>
+    <div region="r" begin="00:00:05.000" end="00:00:07.000" smpte:backgroundImage="subs-image-1.png"/>
+  </body>
+</tt>
+`,
+);
+const imageSet = `		<AdaptationSet id="13" contentType="text" mimeType="application/ttml+xml" lang="it">
+			<Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>
+			<Representation id="ttml-image" bandwidth="1000"><BaseURL>subs-image.ttml</BaseURL></Representation>
+		</AdaptationSet>
+	</Period>`;
+writeFileSync(join(dir, 'manifest-ttml-image.mpd'), mpd.replace('\t</Period>', imageSet));

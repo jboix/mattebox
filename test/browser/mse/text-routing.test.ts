@@ -35,6 +35,7 @@ function compose(tracks: readonly Track[]) {
     element,
     registerSink: (_type: string, factory: SinkFactory) => sinks.push(factory),
     registerParser() {},
+    registerNamespace() {},
     getState: () =>
       ({
         presentation: {

@@ -15,6 +15,9 @@
  * not: a VTTCue carries them only through page CSS, which the engine does
  * not write. Each cue's `payload` holds its resolved styles, for a player
  * that draws captions itself.
+ *
+ * Image subtitles (the IMSC1 Image Profile) become cues without text. They
+ * show in the container a page passes to `engine.ttml.showImages`.
  */
 import { timedSamples, trackTimescales } from '../../containers/mp4-box/index.js';
 import { findRendition } from '../../kernel/presentation.js';
@@ -23,7 +26,23 @@ import { segmentAt } from '../../kernel/timeline.js';
 import type { CueDescriptor } from '../../types/messages.js';
 import type { SegmentMeta } from '../../types/sink.js';
 import type { Stage } from '../../types/stage.js';
+import { showImages } from './images.js';
 import { parseTtml } from './parse.js';
+
+export interface TtmlApi {
+  /**
+   * Shows image subtitles in `container`, an element the page places over
+   * the video with the same size; null stops. A browser cannot draw an
+   * image on a text track itself.
+   */
+  showImages(container: HTMLElement | null): void;
+}
+
+declare module '../../index.js' {
+  interface MatteboxNamespaces {
+    ttml: TtmlApi;
+  }
+}
 
 const TTML = 'application/ttml+xml';
 
@@ -32,7 +51,11 @@ function finish(cues: readonly CueDescriptor[], shift: number, end: number): Cue
   return cues.map((cue) => {
     const start = cue.start + shift;
     const stop = Math.min(cue.end + shift, end);
-    return { ...cue, id: `${start.toFixed(3)}|${stop.toFixed(3)}|${cue.text}`, start, end: stop };
+    // An image cue has no text; its image tells it apart.
+    const image = (cue.payload as { image?: string } | undefined)?.image;
+    const key =
+      cue.text !== '' || image === undefined ? cue.text : `${image.length}:${image.slice(-24)}`;
+    return { ...cue, id: `${start.toFixed(3)}|${stop.toFixed(3)}|${key}`, start, end: stop };
   });
 }
 
@@ -70,18 +93,32 @@ export default function textTtml(): Stage {
        */
       function parseDocument(data: Uint8Array, meta: SegmentMeta): readonly CueDescriptor[] {
         const site = findRendition(ctx.getState().presentation, meta.renditionId);
-        const offset =
-          site === null
-            ? undefined
-            : segmentAt(site.rendition.segments, meta.seq, site.period.start)?.timeOffset;
+        const segment =
+          site === null ? null : segmentAt(site.rendition.segments, meta.seq, site.period.start);
+        const offset = segment?.timeOffset;
         return finish(
-          parseTtml(new TextDecoder().decode(data)),
+          parseTtml(new TextDecoder().decode(data), segment?.url),
           offset ?? 0,
           meta.start + meta.duration,
         );
       }
 
-      return joinTextSink(ctx, { [TTML]: parseDocument, 'application/mp4;stpp': parseStpp });
+      let stopImages: (() => void) | null = null;
+      ctx.registerNamespace('ttml', {
+        showImages(container) {
+          stopImages?.();
+          stopImages = container === null ? null : showImages(ctx.element, container);
+        },
+      } satisfies TtmlApi);
+
+      const leave = joinTextSink(ctx, {
+        [TTML]: parseDocument,
+        'application/mp4;stpp': parseStpp,
+      });
+      return () => {
+        stopImages?.();
+        leave();
+      };
     },
   };
 }

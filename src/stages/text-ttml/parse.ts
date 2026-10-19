@@ -5,6 +5,14 @@
  * styles a cue can show, and the region a `p` is flowed into. Anything else
  * is ignored, so a richer document still shows its text.
  *
+ * The Image Profile (IMSC1 §6) puts a PNG on a `div`: its
+ * `smpte:backgroundImage` names an `smpte:image` in the head's metadata
+ * (SMPTE ST 2052-1 §5.5.2), base64 encoded, or a file. IMSC 1.1 also allows
+ * an `image` child with `src` (TTML2 §8.1.11). Such a div becomes a cue with
+ * no text; its payload's `image` holds the PNG as a data URL or the file's
+ * URL, and `left`, `top`, `width` and `height` the region it fills, in
+ * percent of the video.
+ *
  * Times come back in document time; `Infinity` marks an end the document
  * leaves open, for the caller to close at its segment's end.
  */
@@ -14,6 +22,7 @@ import type { CueDescriptor } from '../../types/messages.js';
 const TTP = 'http://www.w3.org/ns/ttml#parameter';
 const TTS = 'http://www.w3.org/ns/ttml#styling';
 const XML = 'http://www.w3.org/XML/1998/namespace';
+const SMPTE = 'http://www.smpte-ra.org/schemas/2052-1/2010/smpte';
 
 /** The styles kept: what a cue shows, and what the raw form carries for a page. */
 const STYLES = [
@@ -148,8 +157,11 @@ function settingsFor(style: Style, root: readonly number[], cells: readonly numb
   return out.join(' ');
 }
 
-/** The cues of a TTML document. Throws a RangeError for bytes that are not XML. */
-export function parseTtml(xml: string): CueDescriptor[] {
+/**
+ * The cues of a TTML document. Throws a RangeError for bytes that are not
+ * XML. `base` resolves an image file's relative URL.
+ */
+export function parseTtml(xml: string, base?: string): CueDescriptor[] {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   const tt = doc.documentElement;
   if (tt === null || tt.localName !== 'tt' || doc.getElementsByTagName('parsererror').length > 0) {
@@ -173,6 +185,29 @@ export function parseTtml(xml: string): CueDescriptor[] {
   }
   for (const layout of head === undefined ? [] : childElements(head, 'layout')) {
     for (const region of childElements(layout, 'region')) regions.set(idOf(region), region);
+  }
+  // SMPTE ST 2052-1 §5.5.2: embedded images, by xml:id, as data URLs.
+  const images = new Map<string, string>();
+  for (const metadata of head === undefined ? [] : childElements(head, 'metadata')) {
+    for (const image of childElements(metadata, 'image')) {
+      const type = (image.getAttribute('imagetype') ?? image.getAttribute('imageType') ?? 'PNG')
+        .trim()
+        .toLowerCase();
+      const data = (image.textContent ?? '').replace(/\s+/g, '');
+      images.set(idOf(image), `data:image/${type};base64,${data}`);
+    }
+  }
+
+  /** An image reference as a URL: `#id` for an embedded image, else a file. */
+  function imageUrl(reference: string): string | null {
+    const ref = reference.trim();
+    if (ref.startsWith('#')) return images.get(ref.slice(1)) ?? null;
+    if (ref === '') return null;
+    try {
+      return base === undefined ? ref : new URL(ref, base).href;
+    } catch {
+      return null;
+    }
   }
 
   function idOf(element: Element): string {
@@ -288,9 +323,45 @@ export function parseTtml(xml: string): CueDescriptor[] {
       cuesOf(element, placed, interval_);
       return;
     }
+    const image = element.localName === 'div' ? imageOf(element) : null;
+    if (image !== null) {
+      cues.push({
+        start: interval_[0],
+        end: interval_[1],
+        text: '',
+        payload: imageBox(image, placed),
+      });
+      return;
+    }
     for (const child of childElements(element)) {
       if (child.localName === 'div' || child.localName === 'p') walk(child, style, own, interval_);
     }
+  }
+
+  /**
+   * An image cue's payload: the image, and its region as percents of the
+   * video (`left`, `top`, `width`, `height`). A region the document does not
+   * size fills the video.
+   */
+  function imageBox(image: string, style: Style): Record<string, string | number> {
+    const origin = (style.origin ?? '').split(/\s+/);
+    const extent = (style.extent ?? '').split(/\s+/);
+    return {
+      image,
+      left: percent(origin[0], 0, root, cells) ?? 0,
+      top: percent(origin[1], 1, root, cells) ?? 0,
+      width: percent(extent[0], 0, root, cells) ?? 100,
+      height: percent(extent[1], 1, root, cells) ?? 100,
+    };
+  }
+
+  /** A div's image: `smpte:backgroundImage` (IMSC 1.0), else an `image` child (IMSC 1.1). */
+  function imageOf(div: Element): string | null {
+    const background = attrNS(div, SMPTE, 'smpte', 'backgroundImage');
+    if (background !== null) return imageUrl(background);
+    const child = childElements(div, 'image')[0];
+    const src = child?.getAttribute('src');
+    return src === null || src === undefined ? null : imageUrl(src);
   }
 
   function pick(style: Style): Style {

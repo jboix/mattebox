@@ -75,8 +75,8 @@
   <text x="44" y="1352" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#111114">full</text>
   <text x="44" y="1376" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">main · + accessories</text>
   <rect x="290" y="1326" width="610" height="54" fill="#f0f0f3"/>
-  <rect x="290" y="1326" width="549.9" height="54" fill="#e8930c"/>
-  <text x="1056" y="1362" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="30" font-weight="700" fill="#111114">90.1 KB</text>
+  <rect x="290" y="1326" width="554.5" height="54" fill="#e8930c"/>
+  <text x="1056" y="1362" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="30" font-weight="700" fill="#111114">90.9 KB</text>
   <line x1="290" y1="1428" x2="900" y2="1428" stroke="#d4d4d9" stroke-width="2"/>
   <line x1="290.0" y1="1428" x2="290.0" y2="1436" stroke="#d4d4d9" stroke-width="2"/>
   <text x="290.0" y="1460" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#6b6b74">0</text>

@@ -209,7 +209,7 @@ if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
   [ -f "$OUT/ts/master-metadata.m3u8" ] || node "$ROOT/test/e2e/inject-id3.mjs" "$OUT/ts"
   [ -f "$OUT/ts-hevc/master.m3u8" ] || ts_hevc_flavor
   for flavor in h264 vp9; do
-    [ -f "$OUT/$flavor-dash/manifest-ttml.mpd" ] || node "$ROOT/test/e2e/gen-ttml.mjs" "$OUT/$flavor-dash"
+    [ -f "$OUT/$flavor-dash/manifest-ttml-image.mpd" ] || node "$ROOT/test/e2e/gen-ttml.mjs" "$OUT/$flavor-dash"
     [ -f "$OUT/$flavor-dash/manifest-list.mpd" ] || node "$ROOT/test/e2e/gen-segmentlist.mjs" "$OUT/$flavor-dash"
     [ -f "$OUT/$flavor-dash/manifest-periods.mpd" ] || node "$ROOT/test/e2e/gen-multiperiod.mjs" "$OUT/$flavor-dash"
   done

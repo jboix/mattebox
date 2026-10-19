@@ -248,3 +248,42 @@ it('48. WebVTT in fMP4 plays through text-webvtt, one cue per vttc span', async 
   expect(nativeText(player.video, 'as-12')?.mode).toBe('showing');
   expect(player.engine.error?.code ?? null).toBeNull();
 });
+
+// IMSC1 Image Profile beside the DASH corpus (gen-ttml.mjs): an embedded red
+// PNG from 1 s to 3 s and the file subs-image-1.png from 5 s to 7 s, both in
+// the region at 10% 80%, 80% by 15%.
+it('62. IMSC1 image subtitles show in the container the page passes', async () => {
+  const player = await boot({ src: 'ttml-image' });
+  const container = document.createElement('div');
+  container.style.position = 'relative';
+  document.body.appendChild(container);
+  try {
+    player.engine.ttml?.showImages(container);
+    await play(player, 0.2, 15_000);
+    player.engine.tracks.select('as-13');
+    await until(() => container.querySelector('img') !== null, 'the embedded image', 15_000);
+    const first = container.querySelector('img') as HTMLImageElement;
+    expect(first.src.startsWith('data:image/png;base64,')).toBe(true);
+    expect([first.style.left, first.style.top, first.style.width, first.style.height]).toEqual([
+      '10%',
+      '80%',
+      '80%',
+      '15%',
+    ]);
+    // The cue has no text, so the browser draws nothing of its own.
+    const cue = nativeText(player.video, 'as-13')?.activeCues?.[0] as VTTCue;
+    expect(cue.text).toBe('');
+    player.engine.dispatch({ type: 'SEEK', to: 5.5 });
+    await until(
+      () => container.querySelector('img')?.src.endsWith('/subs-image-1.png') === true,
+      'the image file',
+      15_000,
+    );
+    await until(() => player.video.currentTime > 7.2, 'the end of the second image', 15_000);
+    expect(container.querySelector('img')).toBeNull();
+    player.engine.ttml?.showImages(null);
+    expect(player.engine.error?.code ?? null).toBeNull();
+  } finally {
+    container.remove();
+  }
+});
