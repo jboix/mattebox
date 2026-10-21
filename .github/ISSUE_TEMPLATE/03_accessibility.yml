@@ -1,0 +1,33 @@
+name: ♿ Accessibility barrier
+description: A track, a caption or a label from the engine that keeps a player from being accessible
+title: "♿ <TITLE>"
+labels: ["accessibility"]
+body:
+  - type: textarea
+    id: barrier
+    attributes:
+      label: What stopped you?
+      description: What you tried to do, where, and what got in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >
+        The Mattebox version, the browser or TV device with its OS or firmware version, and any assistive technology (screen reader, zoom, caption settings) with its version. If a stream is involved, state the protocol (HLS or DASH) and the stages loaded.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What would work for you?
+      description: Optional. How you expected it to work, or what would help.
+  - type: checkboxes
+    id: coc
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/jboix/mattebox/blob/main/docs/CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow Mattebox's Code of Conduct
+          required: true

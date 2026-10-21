@@ -116,7 +116,8 @@ segments, `-drm` for protected content.
 
 See the [contributing guide](docs/CONTRIBUTING.md). Participation is governed
 by the [Code of Conduct](docs/CODE_OF_CONDUCT.md). Vulnerabilities go through
-[SECURITY.md](docs/SECURITY.md).
+[SECURITY.md](docs/SECURITY.md). Barriers for people with disabilities go
+through the [accessibility statement](docs/ACCESSIBILITY.md).
 
 The node and Chromium test tiers cover 93% of the lines in `src/` (2026-10-16).
 CI fails below 91%.
