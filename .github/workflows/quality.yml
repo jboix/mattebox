@@ -64,8 +64,11 @@ jobs:
       - name: Report Coverage
         if: github.event_name == 'pull_request'
         uses: davelosert/vitest-coverage-report-action@8f86cfb56ed6d5613ea8cdc5259f207fbfd51ece # v2
-      - name: Browser tests in Firefox and WebKit
-        run: pnpm exec vitest run --project=browser --browser=firefox --browser=webkit
+      # Vitest takes one --browser per run.
+      - name: Browser tests in Firefox
+        run: pnpm exec vitest run --project=browser --browser=firefox
+      - name: Browser tests in WebKit
+        run: pnpm exec vitest run --project=browser --browser=webkit
 
   commitlint:
     if: github.event_name == 'pull_request'
