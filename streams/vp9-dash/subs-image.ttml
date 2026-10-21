@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"
+    xmlns:ttp="http://www.w3.org/ns/ttml#parameter"
+    xmlns:smpte="http://www.smpte-ra.org/schemas/2052-1/2010/smpte"
+    ttp:profile="http://www.w3.org/ns/ttml/profile/imsc1/image" xml:lang="it">
+  <head>
+    <metadata><smpte:image xml:id="img0" imagetype="PNG" encoding="Base64">iVBORw0KGgoAAAANSUhEUgAAACAAAAAGCAIAAAAt7QuIAAAAFklEQVR4nGP4z8BAU0Rb00ctGBQWAAA0DL9B3jrwFQAAAABJRU5ErkJggg==</smpte:image></metadata>
+    <layout><region xml:id="r" tts:origin="10% 80%" tts:extent="80% 15%"/></layout>
+  </head>
+  <body>
+    <div region="r" begin="00:00:01.000" end="00:00:03.000" smpte:backgroundImage="#img0"/>
+    <div region="r" begin="00:00:05.000" end="00:00:07.000" smpte:backgroundImage="subs-image-1.png"/>
+  </body>
+</tt>
