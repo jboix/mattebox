@@ -45,7 +45,7 @@ function exclusion(
  * `source` excludes. A failed audio group takes the variants that require
  * it, so arbitration moves to a variant on a working group and alt-audio
  * follows. A CONSTRAIN when playback can go on; a fatal MANIFEST_FAILED
- * when a video track has no rendition left, or when the active audio track
+ * when the active video track has no rendition left, or when the active audio track
  * has none and no variant names an audio group to move to.
  */
 export function unavailableMessages(
@@ -59,12 +59,18 @@ export function unavailableMessages(
   const { excluded, own } = exclusion(presentation, kernel, source, ids);
   const grouped = presentation.couplings.some((c) => c.requires.audio !== undefined);
   const activeAudio = kernel.tracks.active.get('audio');
+  // The video track that plays, as for audio: another version of the
+  // picture (a sign-language one) can be gone while this one plays on.
+  // Before a track is active, any video track counts.
+  const activeVideo = kernel.tracks.active.get('video');
   const gone = presentation.periods.some((period) =>
     period.tracks.some(
       (track) =>
         track.renditions.length > 0 &&
         track.renditions.every((r) => excluded.has(r.id)) &&
-        ((track.contentType === 'video' && !isTrick(track)) ||
+        ((track.contentType === 'video' &&
+          !isTrick(track) &&
+          (activeVideo === undefined || track.id === activeVideo)) ||
           (track.id === activeAudio && !grouped)),
     ),
   );

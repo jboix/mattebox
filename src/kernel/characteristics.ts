@@ -5,7 +5,7 @@
  * tag outside these stays a plain string in `characteristics`, for the page
  * to filter on.
  */
-import type { Track } from '../types/ir.js';
+import type { Track, VideoKind } from '../types/ir.js';
 
 function has(track: Track, tag: string): boolean {
   return track.characteristics?.includes(tag) === true;
@@ -36,4 +36,22 @@ export function isSdh(track: Track): boolean {
 /** The language the content was made in, not a translation. */
 export function isOriginal(track: Track): boolean {
   return has(track, 'public.original-content');
+}
+
+/**
+ * The kind of a video track from its standard roles, as HTML's rules for
+ * media containers map them to VideoTrack.kind: sign and commentary stand
+ * alone, caption and subtitle with main are a picture with the text in it,
+ * and alternate is another version.
+ */
+export function videoKind(track: Track): VideoKind {
+  const roles = track.roles ?? (track.role !== undefined ? [track.role] : []);
+  const main = roles.includes('main');
+  if (roles.includes('sign')) return 'sign';
+  if (roles.includes('commentary') && !main) return 'commentary';
+  if (roles.includes('caption') && main) return 'captions';
+  if (roles.includes('subtitle') && main) return 'subtitles';
+  if (main) return 'main';
+  if (roles.includes('alternate')) return 'alternative';
+  return '';
 }

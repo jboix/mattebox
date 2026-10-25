@@ -53,6 +53,33 @@ import { isAudioDescription } from 'mattebox';
 const described = engine.tracks.available.find(isAudioDescription);
 ```
 
+## Video tracks
+
+A manifest can carry several versions of the picture, such as a camera angle
+or a sign-language version. Each version is a video track, and its bitrates
+are its renditions. `engine.quality` lists the renditions of the active video
+track only, so a quality menu and a video track menu stay apart.
+
+| Source | One video track per                                                    |
+| ------ | ---------------------------------------------------------------------- |
+| HLS    | `EXT-X-MEDIA` `TYPE=VIDEO` member, across the groups the variants name |
+| DASH   | video `AdaptationSet`                                                  |
+
+`videoKind(track)` names the version in the terms of HTML's `VideoTrack.kind`.
+
+| Kind          | HLS                           | DASH `Role`            |
+| ------------- | ----------------------------- | ---------------------- |
+| `main`        | `DEFAULT=YES`                 | `main`                 |
+| `alternative` | any other `TYPE=VIDEO` member | `alternate`            |
+| `sign`        | none                          | `sign`                 |
+| `captions`    | none                          | `main` with `caption`  |
+| `subtitles`   | none                          | `main` with `subtitle` |
+| `commentary`  | none                          | `commentary`           |
+| empty         | no `TYPE=VIDEO` member        | no `Role`              |
+
+Playback starts on a `main` track, or one without a kind, before any other
+version.
+
 A switch through `select` takes effect from the segment under the playhead:
 the previous track is flushed from there and the new one refills it. A group
 switch that follows a video rendition change lets the previous group play out

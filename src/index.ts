@@ -37,6 +37,7 @@ export {
   isEnhancedSpeech,
   isOriginal,
   isSdh,
+  videoKind,
 } from './kernel/characteristics.js';
 // Diagnosability is a project goal: the trace tooling is public API. A
 // production trace replays into a fresh reducer as a regression test.

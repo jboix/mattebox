@@ -25,7 +25,7 @@ import type { Command, Effect, Fact, Message, Serializable } from '../types/mess
 import type { MediaTimeProbe } from '../types/stage.js';
 import { tickAfter } from './effects.js';
 import { cueFormat, normalizeMimeType, typeString } from './mime.js';
-import { findRendition, findTrackSite, isTrick } from './presentation.js';
+import { findRendition, findTrackSite, isMainPicture, isTrick } from './presentation.js';
 import { applyRefresh } from './refresh.js';
 import type { AbrChooser, SwitchPolicy } from './rendition-select.js';
 import {
@@ -916,17 +916,21 @@ function loadPresentation(
   const phase = state.lifecycle.phase === 'loading' ? 'ready' : state.lifecycle.phase;
   // Default activation: the first video and audio track the browser can
   // decode, so a manifest alone yields a playable composition without a
-  // SELECT_TRACK.
+  // SELECT_TRACK. For video, the main picture goes first: a sign-language
+  // or alternate version plays only when it is the one version there is.
   const active = new Map(state.tracks.active);
-  for (const period of presentation.periods) {
-    for (const track of period.tracks) {
-      if (
-        (track.contentType === 'video' || track.contentType === 'audio') &&
-        !isTrick(track) &&
-        !active.has(track.contentType) &&
-        track.renditions.some((r) => !undecodableIds.has(r.id))
-      ) {
-        active.set(track.contentType, track.id);
+  for (const mainOnly of [true, false]) {
+    for (const period of presentation.periods) {
+      for (const track of period.tracks) {
+        if (
+          (track.contentType === 'video' || track.contentType === 'audio') &&
+          !isTrick(track) &&
+          !active.has(track.contentType) &&
+          !(mainOnly && track.contentType === 'video' && !isMainPicture(track)) &&
+          track.renditions.some((r) => !undecodableIds.has(r.id))
+        ) {
+          active.set(track.contentType, track.id);
+        }
       }
     }
   }

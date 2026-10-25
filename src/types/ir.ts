@@ -323,6 +323,21 @@ export interface Track {
 }
 
 /**
+ * The kind of a video track, in the names of HTML's VideoTrack.kind: the main
+ * picture, another version of it such as a camera angle, a version with a
+ * sign-language interpreter, one with captions or subtitles in the picture,
+ * or one with commentary. Empty when the manifest says nothing.
+ */
+export type VideoKind =
+  | 'main'
+  | 'alternative'
+  | 'sign'
+  | 'captions'
+  | 'subtitles'
+  | 'commentary'
+  | '';
+
+/**
  * One HLS variant expressed as data: selecting `renditionId` requires the
  * named companion tracks. DASH usually leaves the table empty because any
  * composition is valid. Encoding this as data is what keeps `abr` from

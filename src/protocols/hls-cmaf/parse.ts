@@ -420,8 +420,46 @@ interface MediaEntry {
 function mediaContentType(type: string): 'audio' | 'text' | null {
   if (type === 'AUDIO') return 'audio';
   if (type === 'SUBTITLES') return 'text';
-  // CLOSED-CAPTIONS have no URI (in-band); VIDEO alternates are rare.
+  // CLOSED-CAPTIONS have no URI (in-band); VIDEO renditions are read with
+  // the variants, by `videoMembers`.
   return null;
+}
+
+/**
+ * RFC 8216bis §4.4.6.1: the VIDEO renditions of one group are versions of
+ * the picture, such as camera angles or a sign-language version. A member
+ * without URI is the variant's own playlist. The member that plays first
+ * is the DEFAULT=YES one, or else the one without URI.
+ */
+interface VideoMember {
+  /** The member's attributes as one string, without the per-group ones: the same version in every group. */
+  readonly key: string;
+  readonly entry: MediaEntry;
+  readonly main: boolean;
+}
+
+function videoMembers(entries: readonly MediaEntry[], groupId: string): VideoMember[] {
+  const members = entries.filter((e) => e.type === 'VIDEO' && e.groupId === groupId);
+  const declared = members.some((e) => e.attributes.DEFAULT === 'YES');
+  return members.map((entry) => ({
+    key: attributeKey(entry.attributes, PER_GROUP),
+    entry,
+    main: declared ? entry.attributes.DEFAULT === 'YES' : entry.uri === null,
+  }));
+}
+
+/** What a VIDEO rendition says about its version, as the AUDIO and SUBTITLES ones do. */
+function videoTrackFields({
+  entry,
+  main,
+}: VideoMember): Pick<Track, 'name' | 'lang' | 'role' | 'characteristics'> {
+  const characteristics = characteristicsOf(entry);
+  return {
+    name: entry.name,
+    ...(entry.attributes.LANGUAGE !== undefined ? { lang: entry.attributes.LANGUAGE } : {}),
+    role: main ? 'main' : 'alternate',
+    ...(characteristics.length > 0 ? { characteristics } : {}),
+  };
 }
 
 /** The attributes as one string, in name order, leaving out the names `skip` matches. */
@@ -744,6 +782,10 @@ export function parse(
   const audioOnlyVariants: typeof variants = [];
   const couplings: Coupling[] = [];
   const declared = new Map<string, Readonly<Record<string, string>>>();
+  // The versions of the picture other than the main one, by member key, in
+  // the order the manifest lists them.
+  const alternateVideos = new Map<string, { member: VideoMember; renditions: Rendition[] }>();
+  let mainVideo: VideoMember | undefined;
   for (const variant of variants) {
     const bandwidth = Number(variant.attributes.BANDWIDTH) || 0;
     const [width, height] = dimensions(variant.attributes.RESOLUTION) ?? [];
@@ -790,7 +832,7 @@ export function parse(
     declared.set(id, variant.attributes);
     const average = Number(variant.attributes['AVERAGE-BANDWIDTH']);
     const supplemental = variant.attributes['SUPPLEMENTAL-CODECS'];
-    renditions.push({
+    const base: Rendition = {
       id,
       bitrate: bandwidth,
       codecs,
@@ -804,12 +846,35 @@ export function parse(
       ...(height !== undefined ? { height } : {}),
       ...(Number.isFinite(frameRate) ? { frameRate } : {}),
       ...(videoRange !== undefined ? { videoRange } : {}),
-    });
+    };
     const requires: Record<string, string> = {};
     if (variant.attributes.AUDIO !== undefined) requires.audio = variant.attributes.AUDIO;
     if (variant.attributes.SUBTITLES !== undefined) requires.text = variant.attributes.SUBTITLES;
-    if (Object.keys(requires).length > 0) {
-      couplings.push({ renditionId: id, requires });
+    // The variant at this bandwidth, once for every version of the picture
+    // its VIDEO group lists: the main one keeps the variant's id, so a
+    // presentation without VIDEO renditions reads as before.
+    const members = videoMembers(mediaEntries, variant.attributes.VIDEO ?? '');
+    const versions = members.length > 0 ? members : [null];
+    for (const member of versions) {
+      const rendition: Rendition =
+        member === null
+          ? base
+          : {
+              ...base,
+              id: member.main ? id : `${id}:${member.entry.name}`,
+              playlistUrl: member.entry.uri ?? variant.uri,
+            };
+      if (member === null || member.main) {
+        renditions.push(rendition);
+        if (member !== null) mainVideo ??= member;
+      } else {
+        const version = alternateVideos.get(member.key) ?? { member, renditions: [] };
+        version.renditions.push(rendition);
+        alternateVideos.set(member.key, version);
+      }
+      if (Object.keys(requires).length > 0) {
+        couplings.push({ renditionId: rendition.id, requires });
+      }
     }
   }
 
@@ -819,9 +884,20 @@ export function parse(
       id: 'video-main',
       contentType: 'video',
       mimeType: 'video/mp4',
+      ...(mainVideo !== undefined ? videoTrackFields(mainVideo) : {}),
       protection: sessionProtection,
       renditions,
     });
+    for (const { member, renditions: versionRenditions } of alternateVideos.values()) {
+      tracks.push({
+        id: `video:${member.entry.name}`,
+        contentType: 'video',
+        mimeType: 'video/mp4',
+        ...videoTrackFields(member),
+        protection: sessionProtection,
+        renditions: versionRenditions,
+      });
+    }
   } else if (audioOnlyVariants.length > 0) {
     // Pure audio presentation: the STREAM-INF variants are the audio
     // renditions and there is no video track.

@@ -4,6 +4,7 @@
  * same way; this is the one copy.
  */
 import type { Period, Presentation, Rendition, Track } from '../types/ir.js';
+import { videoKind } from './characteristics.js';
 
 /** A track and the period that holds it. */
 export interface TrackSite {
@@ -19,6 +20,15 @@ export interface RenditionSite extends TrackSite {
 /** An I-frame-only video track, kept for trick play and never selected for normal playback. */
 export function isTrick(track: Track): boolean {
   return track.role === 'trick';
+}
+
+/**
+ * A video track that shows the main picture: its kind is main, or the
+ * manifest gives none. Not a sign-language, alternate or commentary version.
+ */
+export function isMainPicture(track: Track): boolean {
+  const kind = videoKind(track);
+  return !isTrick(track) && (kind === 'main' || kind === '');
 }
 
 export function findTrackSite(
