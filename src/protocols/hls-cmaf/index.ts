@@ -197,7 +197,8 @@ export const createReduceHls =
     if (msg.type === 'SEGMENT_LOADED' && msg.trackId === 'manifest' && state.manifestUrl !== null) {
       const fact = manifestFact(
         msg.bytes,
-        state.manifestUrl,
+        // After a redirect, the variant URIs are relative to where it led.
+        msg.url ?? state.manifestUrl,
         (text) => claims(state, text),
         (text, url) => parse(text, url, parseMedia),
       );
@@ -216,7 +217,7 @@ export const createReduceHls =
       const pending = { ...state.pending };
       delete pending[msg.trackId];
       next = { ...next, pending };
-      const media = parseMedia(new TextDecoder().decode(msg.bytes), url);
+      const media = parseMedia(new TextDecoder().decode(msg.bytes), msg.url ?? url);
       const playlist = media.playlist;
       // A complete playlist with no segment can never be played from, the
       // same as one that does not parse.

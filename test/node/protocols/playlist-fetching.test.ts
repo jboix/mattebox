@@ -626,3 +626,71 @@ describe('live reload failures are bounded', () => {
     expect(after.filter((e) => e.kind === 'fetch' || e.kind === 'schedule')).toEqual([]);
   });
 });
+
+describe('a redirect decides the base URL', () => {
+  // The page asks one host; the server redirects to another, where the
+  // relative URIs of the manifest live (RFC 3986 §5.1.3, as hls.js and dash.js).
+  const ASKED = 'https://entry.example/ztnr/42.m3u8';
+  const LANDED = 'https://cdn.example/vod/master.m3u8';
+
+  function loadedFrom(trackId: string, body: ArrayBuffer, url: string, token = trackId): Message {
+    return { ...loaded(trackId, body, token), url } as Message;
+  }
+
+  it('hls-cmaf resolves the variant playlists against the redirect target', () => {
+    const reduce = compose(hlsCmaf);
+    let state = initialState();
+    [state] = reduce(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = reduce(state, { type: 'LOAD', url: ASKED });
+    const token = [...state.scheduling.inflight.keys()][0] as string;
+    const { effects } = settle(
+      reduce,
+      ...reduce(state, loadedFrom('manifest', bytes(MASTER), LANDED, token)),
+    );
+    expect(fetches(effects, 'hls:pl:').map((f) => f.url)).toEqual([
+      'https://cdn.example/vod/v1.m3u8',
+      'https://cdn.example/vod/v2.m3u8',
+      'https://cdn.example/vod/audio.m3u8',
+    ]);
+  });
+
+  it('hls-cmaf resolves the segments against the redirect of their playlist', () => {
+    const reduce = compose(hlsCmaf);
+    let state = initialState();
+    [state] = reduce(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = reduce(state, { type: 'LOAD', url: LANDED });
+    const token = [...state.scheduling.inflight.keys()][0] as string;
+    const booted = settle(reduce, ...reduce(state, loaded('manifest', bytes(MASTER), token)));
+    const first = fetches(booted.effects, 'hls:pl:')[0] as Fetch;
+    const [after, fx] = reduce(
+      booted.state,
+      loadedFrom(first.token, bytes(vodPlaylist('v1')), 'https://edge.example/abc/v1.m3u8'),
+    );
+    const settled = settle(reduce, after, fx);
+    expect(segmentsOf(settled.state, 'v-1000000')[0]?.url).toBe(
+      'https://edge.example/abc/v1-0.m4s',
+    );
+  });
+
+  it('dash-cmaf resolves its BaseURLs against the redirect target', () => {
+    const reduce = compose(dashCmaf);
+    const MPD = readFileSync(
+      join(import.meta.dirname, '../../fixtures/manifests/shaka-angel-one-segmentbase.mpd'),
+      'utf8',
+    );
+    let state = initialState();
+    [state] = reduce(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = reduce(state, { type: 'LOAD', url: 'https://entry.example/go/angel.mpd' });
+    const token = [...state.scheduling.inflight.keys()][0] as string;
+    const { effects } = settle(
+      reduce,
+      ...reduce(
+        state,
+        loadedFrom('manifest', bytes(MPD), 'https://cdn.example/angel/dash.mpd', token),
+      ),
+    );
+    const urls = fetches(effects, 'dash:idx:').map((f) => f.url);
+    expect(urls.length).toBeGreaterThan(0);
+    for (const url of urls) expect(url.startsWith('https://cdn.example/angel/')).toBe(true);
+  });
+});

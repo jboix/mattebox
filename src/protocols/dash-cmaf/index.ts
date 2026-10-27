@@ -198,7 +198,8 @@ export const createReduceDash =
       let warnings: readonly MatteboxError[] = [];
       const fact = manifestFact(
         msg.bytes,
-        state.manifestUrl,
+        // After a redirect, the BaseURLs and templates are relative to where it led.
+        msg.url ?? state.manifestUrl,
         (text) => claims(state, text),
         (text, url) => {
           const result = parse(text, url, lowLatency);

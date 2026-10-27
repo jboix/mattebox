@@ -199,6 +199,12 @@ export type Fact =
       readonly rtt: number;
       readonly size: number;
       /**
+       * The URL a redirect led to, when the response came from one. A
+       * manifest or playlist resolves its relative URIs against it, not
+       * against the URL asked for (RFC 3986 §5.1.3), as hls.js and dash.js do.
+       */
+      readonly url?: string;
+      /**
        * The bytes and milliseconds a throughput sample covers, when that is
        * not the whole response. A server that holds a request until the
        * resource exists (an LL-HLS preload hint), or sends a segment as the

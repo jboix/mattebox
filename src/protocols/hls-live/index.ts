@@ -581,10 +581,12 @@ export const createReduceHlsLive =
       if (url === null) return [state, []];
       const text = new TextDecoder().decode(msg.bytes);
       const site = findRendition(kernel.presentation, renditionId);
+      // After a redirect, the segment URIs are relative to where it led.
+      const base = msg.url ?? url;
       const media =
         ll === undefined
-          ? parseMediaPlaylist(text, url)
-          : ll.parse(text, url, site?.rendition.segments ?? [], site?.rendition.dateRanges ?? []);
+          ? parseMediaPlaylist(text, base)
+          : ll.parse(text, base, site?.rendition.segments ?? [], site?.rendition.dateRanges ?? []);
       if (media.playlist === null) {
         return reloadFailed(state, kernel, renditionId, media.error, retryMs);
       }

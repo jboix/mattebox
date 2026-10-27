@@ -114,13 +114,19 @@ export interface Transport {
    * segment. The oldest are dropped first past 32 entries or 48 MB. An
    * entry expires after `keepMs`, 30 s by default. `rtt` is the time its
    * request took: the answer reports it, so a preloaded segment measures
-   * the network and not the lookup.
+   * the network and not the lookup. `redirected` is the URL a redirect led
+   * to, which the answer reports too.
    */
   prime(
     url: string,
     bytes: ArrayBuffer,
     headers: Headers,
-    kept?: { readonly range?: ByteRange; readonly keepMs?: number; readonly rtt?: number },
+    kept?: {
+      readonly range?: ByteRange;
+      readonly keepMs?: number;
+      readonly rtt?: number;
+      readonly redirected?: string;
+    },
   ): void;
   /**
    * Runs fetch effects for another message loop: the same request hooks,
@@ -164,6 +170,8 @@ interface Primed {
   readonly headers: Headers;
   readonly expires: number;
   readonly rtt: number;
+  /** The URL a redirect led to, which the answer reports as its request's would. */
+  readonly redirected?: string;
 }
 
 /** A primed response answers one URL and one byte range. */
@@ -334,7 +342,12 @@ export function createTransport(options: TransportOptions): Transport {
     url: string,
     bytes: ArrayBuffer,
     headers: Headers,
-    kept: { readonly range?: ByteRange; readonly keepMs?: number; readonly rtt?: number } = {},
+    kept: {
+      readonly range?: ByteRange;
+      readonly keepMs?: number;
+      readonly rtt?: number;
+      readonly redirected?: string;
+    } = {},
   ): void {
     const key = primedKey(url, kept.range);
     primed.delete(key);
@@ -343,6 +356,7 @@ export function createTransport(options: TransportOptions): Transport {
       headers,
       expires: now() + (kept.keepMs ?? PRIMED_TTL_MS),
       rtt: kept.rtt ?? 0,
+      ...(kept.redirected === undefined ? {} : { redirected: kept.redirected }),
     });
     let total = 0;
     for (const entry of primed.values()) total += entry.bytes.byteLength;
@@ -529,8 +543,10 @@ export function createTransport(options: TransportOptions): Transport {
           live.delete(sink.id + token);
           return;
         }
-        // A kept response reports the time its own request took.
+        // A kept response reports the time its own request took, and the redirect it followed.
         const rtt = answer !== null ? answer.rtt : now() - startedAt;
+        const redirected =
+          answer !== null ? answer.redirected : response.redirected ? response.url : undefined;
         notifyResponse({
           token,
           url: draft.url,
@@ -564,6 +580,7 @@ export function createTransport(options: TransportOptions): Transport {
             ...(range !== undefined ? { range } : {}),
             keepMs: sink.keepMs,
             rtt,
+            ...(redirected === undefined ? {} : { redirected }),
           });
         }
         // A preload hint waits at the server until its part exists, so
@@ -584,6 +601,7 @@ export function createTransport(options: TransportOptions): Transport {
           bytes,
           rtt,
           size,
+          ...(redirected === undefined ? {} : { url: redirected }),
           ...(transfer !== undefined ? { transfer } : {}),
           ...(Number.isFinite(date) ? { serverDate: date / 1000 } : {}),
           // Wall time at receipt: the live stages' clock input.

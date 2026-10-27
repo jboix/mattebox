@@ -323,7 +323,9 @@ export const createReduceDashLive =
 
     if (msg.type === 'SEGMENT_LOADED' && msg.trackId === MPD_TOKEN) {
       if (state.manifestUrl === null) return [state, []];
-      const result = parse(new TextDecoder().decode(msg.bytes), state.manifestUrl, lowLatency);
+      // The refresh asks the URL the page gave; its redirect decides the base, as on the first load.
+      const base = msg.url ?? state.manifestUrl;
+      const result = parse(new TextDecoder().decode(msg.bytes), base, lowLatency);
       if (result.presentation === null) {
         return reloadFailed(state, kernel.presentation, result.error.code);
       }

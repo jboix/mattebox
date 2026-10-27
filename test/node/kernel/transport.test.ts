@@ -241,6 +241,46 @@ describe('transport', () => {
   });
 });
 
+describe('a redirect', () => {
+  /** A response the fetch reached through a redirect, as a browser reports one. */
+  function redirectedTo(url: string): FetchImpl {
+    return () => {
+      const response = new Response(new ArrayBuffer(4), { status: 200 });
+      Object.defineProperty(response, 'redirected', { value: true });
+      Object.defineProperty(response, 'url', { value: url });
+      return Promise.resolve(response);
+    };
+  }
+
+  it('names the URL it led to on SEGMENT_LOADED, and a direct response names none', async () => {
+    const h = harness(redirectedTo('https://edge.example/v/3.m4s'));
+    h.runner.run([{ kind: 'fetch', token: 't1', url: 'https://cdn.example/v/3.m4s' }]);
+    await vi.runAllTimersAsync();
+    expect(h.facts[0]).toMatchObject({
+      type: 'SEGMENT_LOADED',
+      url: 'https://edge.example/v/3.m4s',
+    });
+    const direct = harness(ok(4));
+    direct.runner.run([{ kind: 'fetch', token: 't1', url: 'https://cdn.example/v/3.m4s' }]);
+    await vi.runAllTimersAsync();
+    expect(direct.facts[0]).not.toHaveProperty('url');
+  });
+
+  it('stays with a kept response, which the answer reports', async () => {
+    const h = harness(ok(4));
+    h.transport.prime('https://cdn.example/v/3.m4s', new ArrayBuffer(2), new Headers(), {
+      redirected: 'https://edge.example/v/3.m4s',
+    });
+    h.runner.run([{ kind: 'fetch', token: 't1', url: 'https://cdn.example/v/3.m4s' }]);
+    await vi.runAllTimersAsync();
+    expect(h.calls).toEqual([]);
+    expect(h.facts[0]).toMatchObject({
+      type: 'SEGMENT_LOADED',
+      url: 'https://edge.example/v/3.m4s',
+    });
+  });
+});
+
 describe('manifest Content-Type guard', () => {
   function manifestHarness(
     fetchImpl: FetchImpl,
