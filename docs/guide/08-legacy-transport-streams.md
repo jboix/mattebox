@@ -52,6 +52,23 @@ codec its type declares. The first time that happens the stage emits
 up in a trace. A variant without a separate audio rendition keeps its muxed
 audio and the video buffer declares both codecs.
 
+## Audio and video in step
+
+`ts-transmux` places each segment by its own timestamps. The first segment
+of a timeline, in any rendition, puts its first timestamp at its playlist
+start. Every later segment of that timeline, in every rendition, keeps its
+distance from it, as hls.js does with one initPTS per discontinuity.
+
+- A separate audio rendition whose segments start before or after the
+  video's keeps that offset, so the sound stays in step with the picture.
+- Inside one segment, the audio and the video each start at their own first
+  timestamp.
+- A segment whose timestamps lie further from its playlist start than its
+  own duration (at least 2 seconds) had its clock jump without
+  `EXT-X-DISCONTINUITY`. It goes at its playlist start, and the segments
+  after it follow it.
+- Audio placed before the start of the presentation is cut there.
+
 ## Segments cut mid-GOP
 
 A segment that starts mid-GOP carries no parameter sets (the SPS and PPS, and the VPS for HEVC). `ts-transmux`

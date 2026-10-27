@@ -78,18 +78,60 @@ describe('ts-transmux fMP4 output', () => {
     expect(transmux(fixture('muxed.m2ts'), 0).droppedAudio).toBe(false);
   });
 
-  it('anchors baseMediaDecodeTime to the presentation start, not the raw PTS', () => {
-    // Two segments at different playlist offsets must land at those offsets.
+  it('puts the earlier track at the presentation start, and keeps the other at its distance', () => {
+    // The fixture's audio starts 23.2 ms before its video (PTS 1.4000 and 1.4232).
     const atZero = transmux(fixture('muxed.m2ts'), 0);
     const atSix = transmux(fixture('muxed.m2ts'), 6);
     expect(atZero.bytes).not.toBeNull();
     expect(atSix.bytes).not.toBeNull();
-    // The tfdt payload holds the 64-bit baseMediaDecodeTime; the six-second
-    // version must be exactly 6 * 90000 ticks larger for the video track.
-    const baseZero = firstTfdt(atZero.bytes as Uint8Array);
-    const baseSix = firstTfdt(atSix.bytes as Uint8Array);
-    expect(baseZero).toBe(0);
-    expect(baseSix).toBe(6 * 90000);
+    const [videoZero, audioZero] = tfdts(atZero.bytes as Uint8Array);
+    const [videoSix, audioSix] = tfdts(atSix.bytes as Uint8Array);
+    expect(audioZero).toBe(0);
+    expect(videoZero).toBe(2090);
+    // The six-second version is exactly six seconds later on both tracks.
+    expect(videoSix).toBe(6 * 90000 + 2090);
+    expect(audioSix).toBe(6 * 44100);
+  });
+
+  it('places a segment by the anchor of its timeline, as a separate rendition of it', () => {
+    // A video rendition sets the anchor; the audio rendition of the same
+    // timeline lands at its own distance from it, not at its playlist start.
+    const video = transmux(fixture('muxed.m2ts'), 10, false, 'video');
+    expect(video.anchor).toEqual({ pts: expect.any(Number), time: 10 });
+    const [videoBase] = tfdts(video.bytes as Uint8Array);
+    expect(videoBase).toBe(10 * 90000);
+    const timing = { anchor: video.anchor, tolerance: 6 };
+    const audio = transmux(fixture('muxed.m2ts'), 10, false, 'audio', null, timing);
+    expect(audio.anchor).toBe(video.anchor);
+    const [audioBase] = tfdts(audio.bytes as Uint8Array);
+    expect(audioBase).toBe(Math.round((10 - 2090 / 90000) * 44100));
+  });
+
+  it('sets a new anchor for a segment whose clock jumped past the tolerance', () => {
+    const video = transmux(fixture('muxed.m2ts'), 10, false, 'video');
+    // The same bytes listed 20 seconds later: no encoder offset is that large.
+    const jumped = transmux(fixture('muxed.m2ts'), 30, false, 'audio', null, {
+      anchor: video.anchor,
+      tolerance: 6,
+    });
+    expect(jumped.anchor).toEqual({ pts: expect.any(Number), time: 30 });
+    expect(tfdts(jumped.bytes as Uint8Array)[0]).toBe(30 * 44100);
+  });
+
+  it('drops the audio frames an anchor puts before the presentation start', () => {
+    const video = transmux(fixture('muxed.m2ts'), 0, false, 'video');
+    const whole = transmux(fixture('muxed.m2ts'), 0, false, 'audio');
+    const trimmed = transmux(fixture('muxed.m2ts'), 0, false, 'audio', null, {
+      anchor: video.anchor,
+      tolerance: 6,
+    });
+    // 23.22 ms before zero: one frame of 1024 samples at 44.1 kHz is 23.22 ms,
+    // just short of it, so two frames go.
+    const [base] = tfdts(trimmed.bytes as Uint8Array);
+    expect(base).toBe(Math.round(((2 * 1024) / 44100) * 44100 - (2090 / 90000) * 44100));
+    expect(sampleCount(trimmed.bytes as Uint8Array)).toBe(
+      sampleCount(whole.bytes as Uint8Array) - 2,
+    );
   });
 
   it('is deterministic: identical input and start yield identical bytes', () => {
@@ -183,7 +225,8 @@ describe('the ID3 metadata stream', () => {
   it('returns each tag at its presentation time and leaves the media as it was', () => {
     const result = transmux(fixture('muxed-id3.m2ts'), 10);
     expect(result.metadata).toHaveLength(1);
-    expect(result.metadata[0]?.time).toBeCloseTo(11, 6);
+    // One second after the video, which starts 23.2 ms after the audio.
+    expect(result.metadata[0]?.time).toBeCloseTo(11 + 2090 / 90000, 6);
     expect([...(result.metadata[0]?.bytes.subarray(0, 3) ?? [])]).toEqual([0x49, 0x44, 0x33]);
     expect(result.bytes).toEqual(transmux(fixture('muxed.m2ts'), 10).bytes);
     expect(transmux(fixture('muxed.m2ts'), 10).metadata).toEqual([]);
@@ -268,17 +311,27 @@ function videoCts(data: Uint8Array): number[] {
 }
 
 /** Reads the first track's tfdt baseMediaDecodeTime (version 1, 64-bit). */
-function firstTfdt(data: Uint8Array): number {
-  let base = -1;
+/** Every baseMediaDecodeTime of the fragment, in track order. */
+function tfdts(data: Uint8Array): number[] {
+  const bases: number[] = [];
   walkBoxes(data, (box) => {
-    if (box.path === 'moof/traf' && box.type === 'tfdt' && base === -1) {
+    if (box.path === 'moof/traf' && box.type === 'tfdt') {
       const view = new DataView(box.payload.buffer, box.payload.byteOffset, box.payload.byteLength);
-      // FullBox head is 4 bytes; version 1 stores a 64-bit value after it.
-      const high = view.getUint32(4);
-      const low = view.getUint32(8);
-      base = high * 0x1_0000_0000 + low;
+      bases.push(view.getUint32(4) * 0x1_0000_0000 + view.getUint32(8));
     }
     return true;
   });
-  return base;
+  return bases;
+}
+
+/** The number of samples in the fragment's trun boxes. */
+function sampleCount(data: Uint8Array): number {
+  let count = 0;
+  walkBoxes(data, (box) => {
+    if (box.path === 'moof/traf' && box.type === 'trun') {
+      count += new DataView(box.payload.buffer, box.payload.byteOffset).getUint32(4);
+    }
+    return true;
+  });
+  return count;
 }

@@ -42,6 +42,7 @@ function metaFor(request: InflightRequest): SegmentMeta {
     start: request.segmentStart ?? 0,
     duration: request.segmentDuration ?? 0,
     isInit: request.seq < 0,
+    ...(request.epoch === undefined ? {} : { epoch: request.epoch }),
   };
 }
 

@@ -5,13 +5,17 @@
  * Worker. A muxed segment produces one init with a video and an audio track
  * and one media fragment carrying both, so a single SourceBuffer decodes it.
  *
- * Segment timing is anchored to the playlist presentation start, not the raw
- * PES timestamps: legacy TS streams begin at an arbitrary PTS, and aligning
- * baseMediaDecodeTime to the playlist is what keeps the buffer where the
- * scheduler expects it. Sample durations still come from the PES timeline.
+ * Segment timing maps the raw PES timestamps onto the presentation through
+ * an anchor: one timestamp at one presentation time. Legacy TS streams begin
+ * at an arbitrary PTS, so the first segment of a timeline sets the anchor at
+ * its playlist start, and every later segment of every rendition is placed
+ * from its own timestamps against that anchor. Audio and video renditions
+ * whose segments do not start together keep the offset the encoder gave
+ * them, as hls.js keeps it with one initPTS per discontinuity. Inside one
+ * segment, the video and the audio each start at their own first timestamp.
  */
 
-import { adtsFragment, parseAdts } from '../adts.js';
+import { adtsFragment, parseAdts, SAMPLES_PER_FRAME } from '../adts.js';
 import type { CcPacket } from '../captions.js';
 import {
   type AudioTrackConfig,
@@ -68,6 +72,8 @@ export interface ParameterSets {
   readonly vps?: Uint8Array;
 }
 
+const PTS_WRAP = 2 ** 33;
+
 export interface TransmuxResult {
   /** The fMP4 bytes, or null when the input was not a transport stream. */
   readonly bytes: Uint8Array | null;
@@ -82,6 +88,43 @@ export interface TransmuxResult {
   readonly droppedAudio: boolean;
   /** The parameter sets the video track used, for the caller to carry to the next segment. */
   readonly parameterSets: ParameterSets | null;
+  /** The anchor the segment was placed by, for the caller to keep for its timeline. */
+  readonly anchor: TimeAnchor | null;
+}
+
+/**
+ * A raw 90 kHz timestamp and the presentation time it sits at, in seconds.
+ * The caller keeps it between segments of one timeline.
+ */
+export interface TimeAnchor {
+  readonly pts: number;
+  readonly time: number;
+}
+
+/** How to place a segment: the anchor of its timeline, if any, and how far it may drift from the playlist. */
+export interface TransmuxTiming {
+  readonly anchor: TimeAnchor | null;
+  /**
+   * Seconds a segment's anchored start may lie from its playlist start. A
+   * segment past it had its clock jump without a discontinuity tag: it
+   * sets a new anchor at its playlist start.
+   */
+  readonly tolerance: number;
+}
+
+/** Presentation time, in seconds, of a raw 90 kHz timestamp. */
+type TimeOf = (timestamp: number) => number;
+
+/** The signed distance from `from` to `to` on the 33-bit clock, in 90 kHz units. */
+function wrapDelta(to: number, from: number): number {
+  let delta = (to - from) % PTS_WRAP;
+  if (delta > PTS_WRAP / 2) delta -= PTS_WRAP;
+  else if (delta < -PTS_WRAP / 2) delta += PTS_WRAP;
+  return delta;
+}
+
+function timeOfAnchor(anchor: TimeAnchor): TimeOf {
+  return (timestamp) => anchor.time + wrapDelta(timestamp, anchor.pts) / VIDEO_TIMESCALE;
 }
 
 /** One PES payload of a metadata stream (one ID3 tag) and its presentation time. */
@@ -90,26 +133,16 @@ export interface TimedTag {
   readonly bytes: Uint8Array;
 }
 
-const PTS_WRAP = 2 ** 33;
-
 /**
- * The metadata stream's tags on the presentation timeline. The first video
- * DTS (or audio PTS) sits at `presentationStart`, so each tag keeps its
- * distance from it, across a 33-bit PTS wrap. The bytes are copied so a Worker posts only the
- * tag, not the segment it was cut from.
+ * The metadata stream's tags on the presentation timeline, each at its own
+ * PTS, across a 33-bit PTS wrap. The bytes are copied so a Worker posts only
+ * the tag, not the segment it was cut from.
  */
-function timedTags(
-  streams: ReturnType<typeof demux>,
-  presentationStart: number,
-  anchor: number | null,
-): TimedTag[] {
+function timedTags(streams: ReturnType<typeof demux>, timeOf: TimeOf): TimedTag[] {
   const tags: TimedTag[] = [];
   for (const packet of streams.id3) {
-    if (packet.pts === null || anchor === null) continue;
-    let delta = (packet.pts - anchor) % PTS_WRAP;
-    if (delta > PTS_WRAP / 2) delta -= PTS_WRAP;
-    else if (delta < -PTS_WRAP / 2) delta += PTS_WRAP;
-    tags.push({ time: presentationStart + delta / VIDEO_TIMESCALE, bytes: packet.data.slice() });
+    if (packet.pts === null) continue;
+    tags.push({ time: timeOf(packet.pts), bytes: packet.data.slice() });
   }
   return tags;
 }
@@ -212,7 +245,7 @@ function frameAccessUnits(
 
 function buildVideo(
   packets: ReturnType<typeof demux>['video'],
-  presentationStart: number,
+  timeOf: TimeOf,
   wantCaptions: boolean,
   carried: ParameterSets | null,
 ): VideoResult | null {
@@ -240,9 +273,13 @@ function buildVideo(
 
   const dts = unrollTimestamps(framed.map((f) => f.dts));
   const pts = unrollTimestamps(framed.map((f) => f.pts));
-  const base = Math.round(presentationStart * VIDEO_TIMESCALE);
+  // The first decode time sits where the anchor puts it; the rest keep their
+  // distances. A decode time cannot be negative: video the anchor puts
+  // before the presentation's start begins at it.
+  const start = Math.max(0, timeOf(dts[0] ?? 0));
+  const base = Math.round(start * VIDEO_TIMESCALE);
   // Captions ride the video SEI; each access unit's triples display at that
-  // frame's presentation time, anchored to the playlist start like the media.
+  // frame's presentation time, on the same timeline as the media.
   const captions: CcPacket[] = [];
   if (wantCaptions) {
     const firstPts = pts[0] ?? 0;
@@ -251,7 +288,7 @@ function buildVideo(
       if (unit.sei.length === 0) continue;
       const triples = unit.sei.flatMap((nal) => ccTriplesFromSei(nal, syntax.seiHeader));
       if (triples.length === 0) continue;
-      const time = presentationStart + ((pts[i] as number) - firstPts) / VIDEO_TIMESCALE;
+      const time = start + ((pts[i] as number) - firstPts) / VIDEO_TIMESCALE;
       captions.push({ time, triples });
     }
   }
@@ -299,12 +336,56 @@ interface AudioResult {
 
 function buildAudio(
   packets: ReturnType<typeof demux>['audio'],
+  timeOf: TimeOf,
   presentationStart: number,
 ): AudioResult | null {
   if (packets.length === 0) return null;
   const adts = parseAdts(concat(...packets.map((p) => p.data)));
   if (adts.frames.length === 0) return null;
-  return adtsFragment(adts, AUDIO_TRACK_ID, presentationStart);
+  // The first frame's PTS places the fragment; a PES without one keeps the playlist start.
+  const first = packets[0]?.pts ?? null;
+  const start = first === null ? presentationStart : timeOf(first);
+  if (start >= 0) return adtsFragment(adts, AUDIO_TRACK_ID, start);
+  // Audio the anchor puts before the presentation's start has nothing to
+  // play against: its frames up to there are dropped, as hls.js drops them.
+  const frame = SAMPLES_PER_FRAME / adts.sampleRate;
+  const dropped = Math.ceil(-start / frame - 1e-9);
+  if (dropped >= adts.frames.length) return null;
+  return adtsFragment(
+    { ...adts, frames: adts.frames.slice(dropped) },
+    AUDIO_TRACK_ID,
+    start + dropped * frame,
+  );
+}
+
+/**
+ * The anchor a segment is placed by: its timeline's, or a new one that puts
+ * the segment's first timestamp at its playlist start, when the timeline
+ * has none or the segment drifted past the tolerance.
+ */
+function anchorFor(
+  reference: number | null,
+  presentationStart: number,
+  timing: TransmuxTiming | null,
+): TimeAnchor | null {
+  if (reference === null) return timing?.anchor ?? null;
+  const fresh = { pts: reference, time: presentationStart };
+  const kept = timing?.anchor ?? null;
+  if (kept === null) return fresh;
+  const drift = timeOfAnchor(kept)(reference) - presentationStart;
+  return Math.abs(drift) > (timing as TransmuxTiming).tolerance ? fresh : kept;
+}
+
+/** The first timestamp of the field `key` among `packets`, or null when none carries one. */
+function firstTimestamp(
+  packets: ReadonlyArray<{ readonly pts: number | null; readonly dts: number | null }>,
+  key: 'pts' | 'dts',
+): number | null {
+  for (const packet of packets) {
+    const value = packet[key];
+    if (value !== null) return value;
+  }
+  return null;
 }
 
 export function transmux(
@@ -313,6 +394,7 @@ export function transmux(
   wantCaptions = false,
   tracks: TransmuxTracks = 'all',
   parameterSets: ParameterSets | null = null,
+  timing: TransmuxTiming | null = null,
 ): TransmuxResult {
   const streams = demux(input);
   if (streams.notTransportStream) {
@@ -324,13 +406,25 @@ export function transmux(
       metadata: [],
       droppedAudio: false,
       parameterSets: null,
+      anchor: timing?.anchor ?? null,
     };
   }
+  // The segment's reference timestamp: the earlier of its first video DTS
+  // and its first audio PTS, as hls.js takes its initPTS, so neither track
+  // of a muxed segment starts before the other's playlist start.
+  const videoFirst = tracks !== 'audio' ? firstTimestamp(streams.video, 'dts') : null;
+  const audioFirst = tracks !== 'video' ? firstTimestamp(streams.audio, 'pts') : null;
+  const reference =
+    videoFirst === null
+      ? audioFirst
+      : audioFirst === null || wrapDelta(audioFirst, videoFirst) >= 0
+        ? videoFirst
+        : audioFirst;
+  const anchor = anchorFor(reference, presentationStart, timing);
+  const timeOf: TimeOf = anchor === null ? () => presentationStart : timeOfAnchor(anchor);
   const video =
-    tracks === 'audio'
-      ? null
-      : buildVideo(streams.video, presentationStart, wantCaptions, parameterSets);
-  const audio = tracks === 'video' ? null : buildAudio(streams.audio, presentationStart);
+    tracks === 'audio' ? null : buildVideo(streams.video, timeOf, wantCaptions, parameterSets);
+  const audio = tracks === 'video' ? null : buildAudio(streams.audio, timeOf, presentationStart);
   const droppedAudio = tracks === 'video' && streams.audio.length > 0;
   if (video === null && audio === null) {
     return {
@@ -341,6 +435,7 @@ export function transmux(
       metadata: [],
       droppedAudio,
       parameterSets: null,
+      anchor,
     };
   }
   const configs: TrackConfig[] = [];
@@ -360,12 +455,9 @@ export function transmux(
     notTransportStream: false,
     empty: false,
     captions: video?.captions ?? [],
-    metadata: timedTags(
-      streams,
-      presentationStart,
-      (video !== null ? streams.video[0]?.dts : streams.audio[0]?.pts) ?? null,
-    ),
+    metadata: timedTags(streams, timeOf),
     droppedAudio,
     parameterSets: video?.parameterSets ?? null,
+    anchor,
   };
 }

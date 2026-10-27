@@ -36,6 +36,8 @@ export interface SegmentMeta {
   /** True for an init segment; `seq` is then meaningless. */
   readonly isInit: boolean;
   readonly discontinuity?: boolean;
+  /** The timeline epoch the segment belongs to, the same name in every track of the period. */
+  readonly epoch?: string;
   /** For text and metadata: the cue format key, such as `text/vtt` or `application/mp4;stpp`. */
   readonly format?: string;
 }

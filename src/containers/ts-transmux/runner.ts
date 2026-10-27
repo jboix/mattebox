@@ -6,7 +6,14 @@
  * paths call the identical function, so the bytes match whatever route a
  * given browser takes; only the timing differs.
  */
-import type { ParameterSets, TransmuxResult, TransmuxTracks, transmux } from './transmux.js';
+import type {
+  ParameterSets,
+  TimeAnchor,
+  TransmuxResult,
+  TransmuxTiming,
+  TransmuxTracks,
+  transmux,
+} from './transmux.js';
 
 export interface TransmuxRunnerOptions {
   /** A custom Worker URL for strict-CSP hosts that serve the chunk themselves. */
@@ -35,6 +42,7 @@ export interface TransmuxRunner {
     wantCaptions?: boolean,
     tracks?: TransmuxTracks,
     parameterSets?: ParameterSets | null,
+    timing?: TransmuxTiming | null,
   ): Promise<TransmuxResult>;
   /** Which path the most recent run took, for diagnostics and the handoff. */
   path(): 'worker' | 'main';
@@ -47,6 +55,7 @@ interface Request {
   readonly wantCaptions: boolean;
   readonly tracks: TransmuxTracks;
   readonly parameterSets: ParameterSets | null;
+  readonly timing: TransmuxTiming | null;
 }
 
 interface Pending extends Request {
@@ -61,6 +70,7 @@ interface WorkerResponse {
   readonly metadata: TransmuxResult['metadata'];
   readonly droppedAudio: boolean;
   readonly parameterSets: ParameterSets | null;
+  readonly anchor: TimeAnchor | null;
 }
 
 export function createTransmuxRunner(
@@ -84,6 +94,7 @@ export function createTransmuxRunner(
       request.wantCaptions,
       request.tracks,
       request.parameterSets,
+      request.timing,
     );
   }
 
@@ -107,6 +118,7 @@ export function createTransmuxRunner(
           metadata: event.data.metadata,
           droppedAudio: event.data.droppedAudio,
           parameterSets: event.data.parameterSets,
+          anchor: event.data.anchor,
         });
       };
       worker.onerror = () => {
@@ -129,8 +141,15 @@ export function createTransmuxRunner(
   }
 
   return {
-    run(bytes, presentationStart, wantCaptions = false, tracks = 'all', parameterSets = null) {
-      const request = { bytes, presentationStart, wantCaptions, tracks, parameterSets };
+    run(
+      bytes,
+      presentationStart,
+      wantCaptions = false,
+      tracks = 'all',
+      parameterSets = null,
+      timing = null,
+    ) {
+      const request = { bytes, presentationStart, wantCaptions, tracks, parameterSets, timing };
       const active = ensureWorker();
       if (active === null) {
         lastPath = 'main';
@@ -147,7 +166,15 @@ export function createTransmuxRunner(
         try {
           // The parameter sets are small and cloned; only the segment bytes transfer.
           active.postMessage(
-            { id, bytes: copy.buffer, presentationStart, wantCaptions, tracks, parameterSets },
+            {
+              id,
+              bytes: copy.buffer,
+              presentationStart,
+              wantCaptions,
+              tracks,
+              parameterSets,
+              timing,
+            },
             [copy.buffer],
           );
         } catch {

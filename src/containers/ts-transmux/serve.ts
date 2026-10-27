@@ -5,7 +5,14 @@
  * output buffer is transferred back, not copied.
  */
 import type { CcPacket } from '../captions.js';
-import { type ParameterSets, type TimedTag, type TransmuxTracks, transmux } from './transmux.js';
+import {
+  type ParameterSets,
+  type TimeAnchor,
+  type TimedTag,
+  type TransmuxTiming,
+  type TransmuxTracks,
+  transmux,
+} from './transmux.js';
 
 export interface TransmuxRequest {
   readonly id: number;
@@ -14,6 +21,7 @@ export interface TransmuxRequest {
   readonly wantCaptions: boolean;
   readonly tracks?: TransmuxTracks;
   readonly parameterSets?: ParameterSets | null;
+  readonly timing?: TransmuxTiming | null;
 }
 
 export interface TransmuxResponse {
@@ -24,6 +32,7 @@ export interface TransmuxResponse {
   readonly metadata: readonly TimedTag[];
   readonly droppedAudio: boolean;
   readonly parameterSets: ParameterSets | null;
+  readonly anchor: TimeAnchor | null;
 }
 
 /** The DedicatedWorkerGlobalScope, typed minimally to keep the WebWorker lib out of the package. */
@@ -42,6 +51,7 @@ export function serveTransmux(scope: TransmuxScope): void {
       wantCaptions,
       tracks,
       event.data.parameterSets ?? null,
+      event.data.timing ?? null,
     );
     const out = result.bytes;
     if (out === null) {
@@ -54,6 +64,7 @@ export function serveTransmux(scope: TransmuxScope): void {
           metadata: [],
           droppedAudio: result.droppedAudio,
           parameterSets: null,
+          anchor: result.anchor,
         },
         [],
       );
@@ -70,6 +81,7 @@ export function serveTransmux(scope: TransmuxScope): void {
         metadata: result.metadata,
         droppedAudio: result.droppedAudio,
         parameterSets: result.parameterSets,
+        anchor: result.anchor,
       },
       [buffer],
     );

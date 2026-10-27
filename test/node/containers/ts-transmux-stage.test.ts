@@ -33,6 +33,19 @@ function captureContext(activeAudio: string | null = null): {
   return { ctx, transforms, events };
 }
 
+/** The first baseMediaDecodeTime of the fragment. */
+function baseOf(data: Uint8Array): number {
+  let base = -1;
+  walkBoxes(data, (box) => {
+    if (base === -1 && box.path === 'moof/traf' && box.type === 'tfdt') {
+      const view = new DataView(box.payload.buffer, box.payload.byteOffset, box.payload.byteLength);
+      base = view.getUint32(4) * 0x1_0000_0000 + view.getUint32(8);
+    }
+    return true;
+  });
+  return base;
+}
+
 function trakCount(data: Uint8Array): number {
   let count = 0;
   walkBoxes(data, (box) => {
@@ -138,8 +151,28 @@ describe('ts-transmux stage', () => {
     const unregister = registerMetadataConsumer((events) => delivered.push(...events));
     await step.transform(fixture('muxed-id3.m2ts'), { ...videoMeta, start: 20 });
     unregister();
-    expect(delivered.map((e) => [e.id, e.source])).toEqual([['id3@21000#0', 'id3']]);
+    // One second after the video, which starts 23.2 ms after the audio.
+    expect(delivered.map((e) => [e.id, e.source])).toEqual([['id3@21023#0', 'id3']]);
     expect(delivered[0]?.frames?.[0]).toMatchObject({ id: 'TXXX', value: 'golden' });
+  });
+
+  it('places every rendition of an epoch by one anchor, set by its first segment', async () => {
+    const { ctx, transforms } = captureContext('audio0:Deutsch');
+    tsTransmux({ disableWorker: true }).install(ctx);
+    const step = transforms[0] as TransformStep;
+    const video: SegmentMeta = { ...videoMeta, start: 10, epoch: 'p0:d0' };
+    const audio: SegmentMeta = { ...video, trackId: 'sb:audio', contentType: 'audio' };
+    // Both renditions' first segments at once, as the scheduler sends them.
+    const [videoOut, audioOut] = await Promise.all([
+      step.transform(fixture('muxed.m2ts'), video),
+      step.transform(fixture('muxed.m2ts'), audio),
+    ]);
+    expect(baseOf(videoOut)).toBe(10 * 90000);
+    // The audio keeps the 23.2 ms it starts before the video in the bytes.
+    expect(baseOf(audioOut)).toBe(Math.round((10 - 2090 / 90000) * 44100));
+    // Another epoch has an anchor of its own.
+    const next = await step.transform(fixture('muxed.m2ts'), { ...audio, epoch: 'p0:d1' });
+    expect(baseOf(next)).toBe(10 * 44100);
   });
 
   it('leaves text and metadata bytes untouched', async () => {
