@@ -271,6 +271,92 @@ describe('eme-core certificate fetch', () => {
   });
 });
 
+describe('eme-core key system negotiation', () => {
+  it('negotiates once when the manifest and the encrypted event arrive together', async () => {
+    const SYSTEM_ID = '5a1c7e2b-9d3f-4e8a-b6c4-2f7e9a1d3c5b';
+    registerKeySystem({
+      keySystem: 'com.example.race-test',
+      systemIds: [SYSTEM_ID],
+      initDataTypes: ['cenc'],
+      buildLicenseRequest: (m) => m,
+      parseLicenseResponse: (r) => r,
+    });
+    const session = {
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      generateRequest: async () => undefined,
+      close: async () => undefined,
+      closed: new Promise(() => undefined),
+      keyStatuses: new Map(),
+    };
+    const keys = { createSession: () => session };
+    let accesses = 0;
+    const original = navigator.requestMediaKeySystemAccess;
+    Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+      configurable: true,
+      value: async (keySystem: string) => {
+        if (keySystem !== 'com.example.race-test') throw new Error('unsupported');
+        accesses += 1;
+        return { createMediaKeys: async () => keys };
+      },
+    });
+    // A browser refuses a second setMediaKeys while the first holds the CDM.
+    let set = 0;
+    const setMediaKeys = vi.fn(async () => {
+      set += 1;
+      if (set > 1) throw new Error('InvalidStateError: the CDM cannot be replaced');
+    });
+    let onEncrypted: ((event: unknown) => void) | null = null;
+    try {
+      const errors: unknown[] = [];
+      let onProtection: ((payload: unknown) => void) | null = null;
+      emeCore().install({
+        element: {
+          addEventListener: (name: string, fn: (event: unknown) => void) => {
+            if (name === 'encrypted') onEncrypted = fn;
+          },
+          removeEventListener: () => undefined,
+          setMediaKeys,
+        },
+        registerNamespace: () => undefined,
+        request: async () => new Response(new ArrayBuffer(1)),
+        emit: (event: string, payload: unknown) => {
+          if (event === 'error') errors.push(payload);
+        },
+        on: (event: string, fn: (payload: unknown) => void) => {
+          if (event === 'presentation:protection') onProtection = fn;
+          return () => undefined;
+        },
+      } as unknown as StageContext);
+      (onProtection as unknown as (payload: unknown) => void)([
+        {
+          systemId: SYSTEM_ID,
+          scheme: null,
+          keyId: null,
+          licenseUrl: null,
+          initData: null,
+          initDataType: null,
+        },
+      ]);
+      // The first init segment, before the negotiation above has finished.
+      (onEncrypted as unknown as (event: unknown) => void)({
+        initDataType: 'cenc',
+        initData: bytes('pssh'),
+      });
+      await vi.waitFor(() => expect(setMediaKeys).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(accesses).toBe(1);
+      expect(setMediaKeys).toHaveBeenCalledTimes(1);
+      expect(errors).toEqual([]);
+    } finally {
+      Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+        configurable: true,
+        value: original,
+      });
+    }
+  });
+});
+
 describe('eme-core certificate URL', () => {
   it('fetches the certificate eme-core was given when the FairPlay stage has none', async () => {
     const SYSTEM_ID = '0f0e0d0c-0b0a-4908-8706-050403020100';

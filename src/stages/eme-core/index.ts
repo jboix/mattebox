@@ -350,9 +350,22 @@ export default function emeCore(options: EmeOptions = {}): Stage {
         return response.arrayBuffer();
       }
 
+      // The negotiation in flight. The manifest route and the media route
+      // both ask for keys, often within the same tick: a second negotiation
+      // would call setMediaKeys again while the first holds the CDM, and
+      // the browser refuses that. One negotiation serves both, as in
+      // Shaka and hls.js.
+      let negotiation: Promise<boolean> | null = null;
+
+      /** Chooses and initializes a key system, once: a later caller waits for the first. */
+      function ensureKeys(preferredSystemIds: readonly string[]): Promise<boolean> {
+        if (mediaKeys !== null) return Promise.resolve(true);
+        negotiation ??= negotiate(preferredSystemIds);
+        return negotiation;
+      }
+
       /** Chooses and initializes a key system for the given systemIds. */
-      async function ensureKeys(preferredSystemIds: readonly string[]): Promise<boolean> {
-        if (mediaKeys !== null) return true;
+      async function negotiate(preferredSystemIds: readonly string[]): Promise<boolean> {
         // Listed key systems go first, in list order; the rest keep their
         // order after them, as dash.js ranks systems without a priority.
         const preferred = options.preferredKeySystems ?? [];
