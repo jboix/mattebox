@@ -60,6 +60,19 @@ export interface TrackFragment {
   readonly trackId: number;
   readonly baseMediaDecodeTime: number;
   readonly samples: readonly Sample[];
+  /** The samples' encryption entries, kept from the fragment they came from. */
+  readonly encryption?: SampleEncryption;
+}
+
+/**
+ * Common Encryption's per-sample entries (ISO/IEC 23001-7 §7.2): one per
+ * sample, its IV and, with flag 0x2, its subsample map, as the `senc` box
+ * stores them. The writer adds `saiz`, `saio` and `senc` for them.
+ */
+export interface SampleEncryption {
+  /** The `senc` flags: 0x2 when the entries carry subsamples. */
+  readonly flags: number;
+  readonly entries: readonly Uint8Array[];
 }
 
 // ---- box primitives -------------------------------------------------------
@@ -350,6 +363,34 @@ function sampleFlags(sample: Sample): number {
   return sample.isKeyframe ? 0x0200_0000 : (0x0001_0000 | 0x0100_0000) >>> 0;
 }
 
+/**
+ * The saiz, saio and senc boxes of a fragment's encryption, after its trun.
+ * The saio offset is a placeholder the caller patches: `at` is where it
+ * sits, and `entries` where the first entry begins, both from the start of
+ * the three boxes.
+ */
+function encryptionBoxes(encryption: SampleEncryption): {
+  bytes: Uint8Array;
+  at: number;
+  entries: number;
+} {
+  const sizes = encryption.entries.map((entry) => entry.byteLength);
+  const same = sizes.every((size) => size === sizes[0]);
+  const count = u32(sizes.length);
+  const saiz = same
+    ? fullBox('saiz', 0, 0, new Uint8Array([sizes[0] ?? 0]), count)
+    : fullBox('saiz', 0, 0, new Uint8Array([0]), count, new Uint8Array(sizes));
+  const saio = fullBox('saio', 0, 0, u32(1), u32(0));
+  const senc = fullBox('senc', 0, encryption.flags, count, ...encryption.entries);
+  return {
+    bytes: concat(saiz, saio, senc),
+    // saio: header 8, fullbox 4, entry_count 4, then the offset.
+    at: saiz.byteLength + 16,
+    // senc: header 8, fullbox 4, sample_count 4, then the entries.
+    entries: saiz.byteLength + saio.byteLength + 16,
+  };
+}
+
 function traf(fragment: TrackFragment, trunHead: Uint8Array): Uint8Array {
   const tfhd = fullBox('tfhd', 0, TFHD_FLAGS, u32(fragment.trackId));
   const tfdt = fullBox('tfdt', 1, 0, u64(fragment.baseMediaDecodeTime));
@@ -364,7 +405,8 @@ function traf(fragment: TrackFragment, trunHead: Uint8Array): Uint8Array {
     view.setUint32(base + 12, sample.cts);
   }
   const trun = fullBox('trun', 1, TRUN_FLAGS, trunHead, entries);
-  return box('traf', tfhd, tfdt, trun);
+  if (fragment.encryption === undefined) return box('traf', tfhd, tfdt, trun);
+  return box('traf', tfhd, tfdt, trun, encryptionBoxes(fragment.encryption).bytes);
 }
 
 /**
@@ -397,6 +439,13 @@ export function writeMediaSegment(
     const tfdtLen = 8 + 4 + 8;
     const trunDataOffsetPos = trafOffsetInMoof + 8 + tfhdLen + tfdtLen + 8 + 4 + 4;
     moofView.setUint32(trunDataOffsetPos, mdatCursor);
+    if (fragment.encryption !== undefined) {
+      // The saio offset is from the moof, the base default-base-is-moof sets.
+      const trunLen = 8 + 4 + 4 + 4 + fragment.samples.length * 16;
+      const boxesAt = trafOffsetInMoof + 8 + tfhdLen + tfdtLen + trunLen;
+      const placed = encryptionBoxes(fragment.encryption);
+      moofView.setUint32(boxesAt + placed.at, boxesAt + placed.entries);
+    }
     let fragmentBytes = 0;
     for (const sample of fragment.samples) fragmentBytes += sample.data.byteLength;
     mdatCursor += fragmentBytes;

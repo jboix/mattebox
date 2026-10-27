@@ -2,11 +2,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { fitFragment } from '../../../src/containers/fmp4/fit.js';
-import { concat } from '../../../src/containers/fmp4/writer.js';
+import { concat, writeMediaSegment } from '../../../src/containers/fmp4/writer.js';
 import {
   decoderConfigBox,
   findBox,
   fragmentSamples,
+  fullBox,
   parseTfdt,
   trackTimescales,
   walkBoxes,
@@ -50,6 +51,68 @@ describe('fitting a trick-play fragment', () => {
     const tfdt = (bytes: Uint8Array) =>
       parseTfdt(findBox(bytes, 'moof/traf/tfdt')?.payload ?? new Uint8Array())?.baseMediaDecodeTime;
     expect(tfdt(fitted)).toBe(tfdt(range));
+  });
+
+  describe('an encrypted fragment', () => {
+    // Two key frames of 40 ms in a 2-second slot, each with an 8-byte IV and
+    // two subsamples, the way a CENC packager writes a DASH trick segment.
+    const timescale = 90000;
+    const entry = (n: number) =>
+      new Uint8Array([n, n, n, n, n, n, n, n, 0, 2, 0, 10, 0, 0, 0, 90, 0, 20, 0, 0, 1, 0]);
+    const source = writeMediaSegment(7, [
+      {
+        trackId: 1,
+        baseMediaDecodeTime: 900000,
+        samples: [1, 2].map((n) => ({
+          data: new Uint8Array(100).fill(n),
+          duration: 3600,
+          cts: 0,
+          isKeyframe: true,
+        })),
+        encryption: { flags: 0x2, entries: [entry(1), entry(2)] },
+      },
+    ]);
+
+    /** The entries the fragment's saio points at, as many as its saiz sizes. */
+    function pointed(bytes: Uint8Array): Uint8Array[] {
+      const moof = findBox(bytes, 'moof');
+      const saiz = fullBox(findBox(bytes, 'moof/traf/saiz')?.payload ?? new Uint8Array());
+      const saio = fullBox(findBox(bytes, 'moof/traf/saio')?.payload ?? new Uint8Array());
+      if (moof === null || saiz === null || saio === null) throw new Error('no encryption boxes');
+      const size = saiz.body[0] as number;
+      const count = new DataView(saiz.body.buffer, saiz.body.byteOffset + 1).getUint32(0);
+      const offset = new DataView(saio.body.buffer, saio.body.byteOffset).getUint32(4);
+      return Array.from({ length: count }, (_, i) =>
+        bytes.slice(moof.start + offset + i * size, moof.start + offset + (i + 1) * size),
+      );
+    }
+
+    it('writes saiz, saio and senc that point at the entries', () => {
+      expect(pointed(source)).toEqual([entry(1), entry(2)]);
+      expect(fullBox(findBox(source, 'moof/traf/senc')?.payload ?? new Uint8Array())?.flags).toBe(
+        2,
+      );
+    });
+
+    it('keeps each kept frame its IV and subsamples when it fills the slot', () => {
+      const fitted = fitFragment(source, timescale, 2);
+      if (fitted === null) throw new Error('expected a rebuilt fragment');
+      expect(walkBoxes(fitted, () => undefined).error).toBeNull();
+      expect(fragmentSamples(fitted)[0]?.samples.map((sample) => sample.duration)).toEqual([
+        3600,
+        2 * timescale - 3600,
+      ]);
+      expect(pointed(fitted)).toEqual([entry(1), entry(2)]);
+    });
+
+    it('leaves a fragment it cannot read the encryption of as it came', () => {
+      // A senc without the saiz that sizes its entries.
+      const saiz = findBox(source, 'moof/traf/saiz');
+      if (saiz === null) throw new Error('no saiz');
+      const renamed = source.slice();
+      renamed.set([0x66, 0x72, 0x65, 0x65], saiz.start + 4);
+      expect(fitFragment(renamed, timescale, 2)).toBeNull();
+    });
   });
 
   it('fails when not even the first sample is present', () => {
