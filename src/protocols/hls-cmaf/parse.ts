@@ -10,7 +10,7 @@
  * coupling table as data. Generic descriptors only; the kernel routes.
  */
 
-import { byteToHex } from '../../kernel/base64.js';
+import { base64ToBytes, bytesToHex, byteToHex } from '../../kernel/base64.js';
 import type { PlaylistRefresh } from '../../kernel/refresh.js';
 import { applyRefresh } from '../../kernel/refresh.js';
 import { resolveUrl as resolve } from '../../kernel/url.js';
@@ -126,6 +126,49 @@ function dateRangesFrom(
     });
   }
   return out.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * The seconds of an `EXT-X-CUE-OUT`, written `30`, `30.0` or `DURATION=30`.
+ * The tag is not in RFC 8216; packagers write it in these forms.
+ */
+function cueOutDuration(value: string): number | undefined {
+  const match = /(?:DURATION=)?([0-9.]+)/.exec(value);
+  const seconds = match === null ? Number.NaN : Number(match[1]);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
+}
+
+/**
+ * A cue-out as a date range: from its segment to the cue-in's segment, or
+ * for its duration while no cue-in has come. Its attributes say what the
+ * tags said: `CUE-OUT` the duration, `SCTE35-OUT` the section as a
+ * hexadecimal sequence, the form a date range carries it in.
+ */
+function cueRange(
+  cue: {
+    readonly id: string;
+    readonly start: number;
+    readonly duration?: number;
+    readonly splice?: string;
+  },
+  end: number | null,
+  anchor: { readonly wallClock: number; readonly presentationTime: number } | undefined,
+): DateRange {
+  const bytes = cue.splice === undefined ? null : base64ToBytes(cue.splice.trim());
+  const attributes: Record<string, string> = {
+    'CUE-OUT': cue.duration === undefined ? '' : String(cue.duration),
+    ...(bytes !== null ? { 'SCTE35-OUT': `0x${bytesToHex(bytes)}` } : {}),
+  };
+  const closes = end ?? (cue.duration !== undefined ? cue.start + cue.duration : undefined);
+  return {
+    id: cue.id,
+    start: cue.start,
+    ...(closes !== undefined ? { end: closes } : {}),
+    ...(cue.duration !== undefined ? { plannedEnd: cue.start + cue.duration } : {}),
+    startDate:
+      anchor === undefined ? Number.NaN : anchor.wallClock + (cue.start - anchor.presentationTime),
+    attributes,
+  };
 }
 
 /** A media playlist parse either yields the playlist or says why not. */
@@ -270,6 +313,14 @@ export function parseMediaLines(lines: readonly Line[], baseUrl: string): MediaP
   let serverControl: Readonly<Record<string, string>> | null = null;
   let skipped = 0;
   let removedDateRanges: string[] = [];
+  // EXT-X-CUE-OUT and EXT-X-CUE-IN mark a break on the segment after them.
+  // They become date ranges, so the page and the stages read one record
+  // for a break whichever tag signals it.
+  let pendingCueOut: { duration?: number } | null = null;
+  let pendingCueIn = false;
+  let pendingSplice: string | null = null;
+  let openCue: { id: string; start: number; duration?: number; splice?: string } | null = null;
+  const cueRanges: DateRange[] = [];
 
   for (const line of lines) {
     if (line.kind === 'tag') {
@@ -300,6 +351,18 @@ export function parseMediaLines(lines: readonly Line[], baseUrl: string): MediaP
           break;
         case 'EXT-X-DATERANGE':
           dateRangeTags.push(line.attributes);
+          break;
+        case 'EXT-X-CUE-OUT': {
+          const duration = cueOutDuration(line.value);
+          pendingCueOut = duration === undefined ? {} : { duration };
+          break;
+        }
+        case 'EXT-X-CUE-IN':
+          pendingCueIn = true;
+          break;
+        case 'EXT-OATCLS-SCTE35':
+          // The splice_info_section of the cue-out that follows, in base64.
+          pendingSplice = line.value;
           break;
         case 'EXT-X-DISCONTINUITY-SEQUENCE':
           discontinuitySequence = Number(line.value) || 0;
@@ -360,6 +423,22 @@ export function parseMediaLines(lines: readonly Line[], baseUrl: string): MediaP
       dateAnchor = { wallClock: pendingDate, presentationTime: start };
     }
     pendingDate = null;
+    if ((pendingCueIn || pendingCueOut !== null) && openCue !== null) {
+      cueRanges.push(cueRange(openCue, start, dateAnchor));
+      openCue = null;
+    }
+    if (pendingCueOut !== null) {
+      // Named by the segment's media sequence number, so a reload keeps the id.
+      openCue = {
+        id: `cue-out-${seq}`,
+        start,
+        ...(pendingCueOut.duration !== undefined ? { duration: pendingCueOut.duration } : {}),
+        ...(pendingSplice !== null ? { splice: pendingSplice } : {}),
+      };
+    }
+    pendingCueOut = null;
+    pendingCueIn = false;
+    pendingSplice = null;
     // Each discontinuity adds one, also one on the first segment: the tag
     // stays there until the segment leaves the window, and then the server
     // raises the base (RFC 8216 §6.2.2), so a segment keeps its number
@@ -384,6 +463,12 @@ export function parseMediaLines(lines: readonly Line[], baseUrl: string): MediaP
     pendingDiscontinuity = false;
   }
 
+  if (openCue !== null) cueRanges.push(cueRange(openCue, null, dateAnchor));
+  const dateRanges = [
+    ...(dateRangeTags.length > 0 ? dateRangesFrom(dateRangeTags, dateAnchor) : []),
+    ...cueRanges,
+  ].sort((a, b) => a.start - b.start);
+
   return {
     playlist: {
       segments,
@@ -395,9 +480,7 @@ export function parseMediaLines(lines: readonly Line[], baseUrl: string): MediaP
       protection,
       ...(dateAnchor !== undefined ? { dateAnchor } : {}),
       ...(tiles !== null ? { tiles } : {}),
-      ...(dateRangeTags.length > 0
-        ? { dateRanges: dateRangesFrom(dateRangeTags, dateAnchor) }
-        : {}),
+      ...(dateRangeTags.length > 0 || cueRanges.length > 0 ? { dateRanges } : {}),
       ...(serverControl !== null ? { serverControl } : {}),
       ...(Number(serverControl?.['HOLD-BACK']) > 0
         ? { holdBack: Number(serverControl?.['HOLD-BACK']) }

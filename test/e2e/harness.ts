@@ -29,6 +29,7 @@ import emeCenc from '../../src/stages/eme-cenc/index.js';
 import type { EmeOptions } from '../../src/stages/eme-core/index.js';
 import emeCore from '../../src/stages/eme-core/index.js';
 import forcedSubtitles from '../../src/stages/forced-subtitles/index.js';
+import interstitials from '../../src/stages/interstitials/index.js';
 import liveCatchup from '../../src/stages/live-catchup/index.js';
 import metaId3 from '../../src/stages/meta-id3/index.js';
 import mp4Box from '../../src/stages/mp4-box/index.js';
@@ -64,6 +65,11 @@ export type Source =
   | 'names'
   | 'periods'
   | 'metadata'
+  | 'breaks'
+  | 'breaks-list'
+  | 'breaks-cue'
+  | 'breaks-scte35'
+  | 'breaks-dash'
   | 'hls-ll'
   | 'mux-ll'
   | 'dash-ll'
@@ -149,6 +155,14 @@ const sources: Record<Source, () => string> = {
   periods: () => `/streams/${flavor}-dash/manifest-periods.mpd`,
   // The TS stream with an ID3 stream in every segment and two date ranges.
   metadata: () => '/streams/ts/master-metadata.m3u8',
+  // Interstitials over the flavor's lowest rung (gen-interstitials.mjs): a
+  // pre-roll, an insert at 20 s, a replace at 40 s, a post-roll; an asset
+  // list at 20 s; a cue-out from 24 to 32 s; DASH insert and replace events.
+  breaks: () => `/streams/${flavor}-interstitials/master.m3u8`,
+  'breaks-list': () => `/streams/${flavor}-interstitials/master-list.m3u8`,
+  'breaks-cue': () => `/streams/${flavor}-interstitials/master-cue.m3u8`,
+  'breaks-scte35': () => `/streams/${flavor}-interstitials/master-scte35.m3u8`,
+  'breaks-dash': () => `/streams/${flavor}-dash/manifest-interstitials.mpd`,
   // The local LL-HLS origin: 1 s parts, blocking reloads, preload hints.
   'hls-ll': () => `/ll/${flavor}/${Date.now()}/master.m3u8`,
   // A public LL-HLS stream, H.264 High and AAC, so not on Playwright's Chromium.
@@ -260,6 +274,7 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
     stages.push(tsTransmux(), packedAudio(), metaId3());
   }
   if (src === 'metadata') stages.push(timedMetadata());
+  if (src.startsWith('breaks')) stages.push(interstitials());
   if (src === 'captions-708') stages.push(textCea708());
   if (src === 'ttml' || src === 'ttml-image') stages.push(textTtml());
   if (src === 'cmsd') stages.push(cmsd());

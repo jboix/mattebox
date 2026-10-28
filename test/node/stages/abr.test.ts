@@ -78,6 +78,8 @@ function composeWithAbr(options?: Parameters<typeof abr>[0]) {
     registerChunkSplitter: () => undefined,
     reduce: (name, reducer) => slices.push([name, reducer as SliceReducer]),
     dispatch: () => undefined,
+    load: () => undefined,
+    preload: async () => undefined,
     emit: () => undefined,
     on: () => () => undefined,
   } satisfies StageContext);

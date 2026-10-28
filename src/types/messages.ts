@@ -83,6 +83,8 @@ export type Command =
        * same, so it picks the rendition whose bytes were kept.
        */
       readonly seed?: LoadSeed;
+      /** The presentation time to start from, in seconds. Omitted: 0, or the live edge. */
+      readonly start?: number;
     }
   | { readonly type: 'UNLOAD' }
   /** Stops every request while the source stays loaded. Accepted in the ready phase only. */

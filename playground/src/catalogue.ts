@@ -43,6 +43,7 @@ import emeCore from '../../src/stages/eme-core/index.js';
 import emeFairplay from '../../src/stages/eme-fairplay/index.js';
 import forcedSubtitles from '../../src/stages/forced-subtitles/index.js';
 import hdr from '../../src/stages/hdr/index.js';
+import interstitials from '../../src/stages/interstitials/index.js';
 import liveCatchup from '../../src/stages/live-catchup/index.js';
 import metaId3 from '../../src/stages/meta-id3/index.js';
 import mp4Box from '../../src/stages/mp4-box/index.js';
@@ -118,6 +119,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('stages', chapters),
   built('stages', trickPlay),
   built('stages', timedMetadata),
+  built('stages', interstitials),
   built('stages', textCea708),
   built('stages', textTtml),
   built('stages', () => hdr()),
@@ -203,6 +205,8 @@ export interface StreamEntry {
   readonly thumbnails?: string;
   /** A chapters file, for the chapters stage. */
   readonly chapters?: string;
+  /** Stages outside the presets that the stream needs: choosing it adds them to the composition. */
+  readonly stages?: readonly string[];
 }
 
 /**
@@ -280,6 +284,42 @@ const LOCAL_STREAMS: readonly StreamEntry[] =
           url: local('ts/master-metadata.m3u8'),
           topic: 'local',
           tags: ['generated', 'timed metadata', 'needs ts-transmux'],
+        },
+        {
+          label:
+            'Interstitials: pre-roll, insert at 20 s, replace at 40 s (no skip, no jump), post-roll',
+          url: local('h264-interstitials/master.m3u8'),
+          topic: 'local',
+          tags: ['generated', 'HLS interstitials'],
+          stages: ['interstitials'],
+        },
+        {
+          label: 'Interstitials: an asset list of two ads at 20 s',
+          url: local('h264-interstitials/master-list.m3u8'),
+          topic: 'local',
+          tags: ['generated', 'HLS interstitials'],
+          stages: ['interstitials'],
+        },
+        {
+          label: 'EXT-X-CUE-OUT from 24 to 32 s, with an SCTE-35 splice_insert',
+          url: local('h264-interstitials/master-cue.m3u8'),
+          topic: 'local',
+          tags: ['generated', 'SCTE-35'],
+          stages: ['interstitials'],
+        },
+        {
+          label: 'EXT-X-DATERANGE with SCTE35-OUT from 24 to 32 s, a time_signal',
+          url: local('h264-interstitials/master-scte35.m3u8'),
+          topic: 'local',
+          tags: ['generated', 'SCTE-35'],
+          stages: ['interstitials'],
+        },
+        {
+          label: 'DASH alternative MPD: insert at 20 s, replace at 40 s (no jump)',
+          url: local('h264-dash/manifest-interstitials.mpd'),
+          topic: 'local',
+          tags: ['generated', 'DASH alternative MPD'],
+          stages: ['interstitials'],
         },
         {
           label: 'Packed AAC audio',
@@ -464,6 +504,50 @@ export const STREAMS: readonly StreamEntry[] = [
     url: 'https://dash.akamaized.net/dash264/TestCases/5a/nomor/1.mpd',
     topic: 'ads',
     tags: ['plays the first period only'],
+  },
+  {
+    // One HLS interstitial at the start: CUE="ONCE", X-RESTRICT="JUMP",
+    // X-RESUME-OFFSET=0. H.264, so not on a Chromium without it.
+    label: 'Shaka · HLS interstitial at the start, no jump',
+    url: 'https://storage.googleapis.com/shaka-demo-assets/hls-interstitials/interstitial.m3u8',
+    topic: 'ads',
+    tags: ['HLS interstitials'],
+    stages: ['interstitials'],
+  },
+  {
+    // DASH-IF livesim2's server-guided ad insertion: a 20 s replace event
+    // every minute, whose List MPD the ad server fills for the session and
+    // interests in the query (ISO/IEC 23009-1 Annex I). H.264.
+    label: 'DASH-IF livesim2 · alternative MPD replace every minute, live',
+    url: 'https://livesim2.dashif.org/livesim2/sgai_p60:20/testpic_2s/Manifest.mpd?sessionId=mattebox&interests=travel,sailing',
+    topic: 'ads',
+    tags: ['DASH alternative MPD', 'List MPD'],
+    stages: ['interstitials'],
+  },
+  {
+    // SVTA2053 ad creative signaling: two 10 s creatives every minute, each
+    // with its beacons, a skip offset and a click-through. The stream plays
+    // them; the stage reports them as breaks with their creatives.
+    label: 'DASH-IF livesim2 · SCTE-35 in the MPD, a break every minute, live',
+    url: 'https://livesim2.dashif.org/livesim2/scte35_p60:20@10;mpd=bin;emsg=0/testpic_2s/Manifest.mpd',
+    topic: 'ads',
+    tags: ['SCTE-35', 'EventStream'],
+    stages: ['interstitials'],
+  },
+  {
+    // The same cues in the media: an emsg in the segments that lead to each break.
+    label: 'DASH-IF livesim2 · SCTE-35 in emsg, a break every minute, live',
+    url: 'https://livesim2.dashif.org/livesim2/scte35_p60:20@10/testpic_2s/Manifest.mpd',
+    topic: 'ads',
+    tags: ['SCTE-35', 'emsg'],
+    stages: ['interstitials'],
+  },
+  {
+    label: 'DASH-IF livesim2 · SVTA2053 ad creatives every minute, live',
+    url: 'https://livesim2.dashif.org/livesim2/svta_p60:20;ads=2;click=1;skip=5/testpic_2s/Manifest.mpd?sessionId=mattebox',
+    topic: 'ads',
+    tags: ['SVTA2053'],
+    stages: ['interstitials'],
   },
   {
     label: 'Shaka · Angel One',

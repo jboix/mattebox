@@ -128,6 +128,8 @@ Ten stages are only in `full`. Add them with `stages` when you need them.
 
 `cmcd` is in no preset, because it changes every request to the CDN. Add it
 with `stages`. See [chapter 11](11-network-and-cdn.md#the-cmcd-stage).
+`interstitials` is in no preset either, because it loads other sources in
+the presentation's place. See [chapter 21](21-interstitials.md).
 
 The caption stages read the NAL unit headers of every H.264 and HEVC video
 segment, a fraction of a millisecond per segment. If your content has no

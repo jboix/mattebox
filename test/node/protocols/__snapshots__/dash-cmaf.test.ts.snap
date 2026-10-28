@@ -1708,6 +1708,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > edge-eventstre
           "id": "7",
           "scheme": "urn:example:program",
           "start": 5,
+          "timescale": 1000,
           "value": "1",
         },
         {
@@ -1716,6 +1717,7 @@ exports[`golden corpus: every MPD fixture parses to a stable IR > edge-eventstre
           "id": "urn:scte:scte35:2013:xml:0",
           "scheme": "urn:scte:scte35:2013:xml",
           "start": 12,
+          "timescale": 1,
         },
       ],
       "id": "p0",

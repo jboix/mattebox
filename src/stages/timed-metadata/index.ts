@@ -17,10 +17,10 @@
  * Every record is mirrored to a native `metadata` TextTrack as a VTTCue whose
  * text is the record as JSON, for pages that read `textTracks`.
  */
-import { readEmsg } from '../../containers/emsg.js';
+import { placeEmsg } from '../../containers/emsg.js';
 import { id3Frames } from '../../containers/id3.js';
 import { registerMetadataConsumer } from '../../containers/metadata.js';
-import { earliestDecodeTime, findBox, trackTimescales } from '../../containers/mp4-box/index.js';
+import { findBox, trackTimescales } from '../../containers/mp4-box/index.js';
 import { scte35Summary } from '../../containers/scte35.js';
 import { bytesToHex } from '../../kernel/base64.js';
 import { adoptTextTrack, emptyTextTrack } from '../../kernel/sinks/text-track-sink.js';
@@ -140,45 +140,30 @@ function manifestRecords(presentation: Presentation): MetadataEvent[] {
 }
 
 /**
- * A segment's emsg boxes as records. Version 0 times from the segment's
- * start. Version 1 is on the media clock, which the kernel lands at the
- * segment's start through its earliest decode time, so it maps the same
- * way; without the init's timescales it cannot be placed and is skipped.
- * Events with the same scheme, value, and id are one event (ISO/IEC
- * 23009-1 §5.10.3.3.5), so a repeat in every segment stays one record.
+ * A segment's emsg boxes as records. Events with the same scheme, value,
+ * and id are one event (ISO/IEC 23009-1 §5.10.3.3.5), so a repeat in every
+ * segment stays one record.
  */
 function emsgRecords(
   data: Uint8Array,
   meta: SegmentMeta,
   timescales: ReadonlyMap<number, number> | undefined,
 ): MetadataEvent[] {
-  const boxes = readEmsg(data);
-  if (boxes.length === 0) return [];
-  const decode = timescales === undefined ? null : earliestDecodeTime(data, timescales);
-  const records: MetadataEvent[] = [];
-  for (const box of boxes) {
-    const offset = box.time / box.timescale;
-    let start: number;
-    if (box.version === 0) start = meta.start + offset;
-    else if (decode !== null) start = meta.start + offset - decode;
-    else continue;
+  return placeEmsg(data, meta.start, timescales).map(({ box, start, end }) => {
     // A copy, so the record does not hold the whole segment.
     const bytes = box.data.slice();
-    records.push(
-      withScte35({
-        id: `${box.scheme}|${box.value}|${box.id}`,
-        source: 'emsg',
-        scheme: box.scheme,
-        ...(box.value !== '' ? { value: box.value } : {}),
-        start,
-        end: box.duration === null ? null : start + box.duration / box.timescale,
-        attributes: {},
-        data: bytes,
-        ...(box.scheme === ID3_EMSG ? { frames: id3Frames(bytes) } : {}),
-      }),
-    );
-  }
-  return records;
+    return withScte35({
+      id: `${box.scheme}|${box.value}|${box.id}`,
+      source: 'emsg',
+      scheme: box.scheme,
+      ...(box.value !== '' ? { value: box.value } : {}),
+      start,
+      end,
+      attributes: {},
+      data: bytes,
+      ...(box.scheme === ID3_EMSG ? { frames: id3Frames(bytes) } : {}),
+    });
+  });
 }
 
 /** What a record says, for telling a changed record from the same one rebuilt. */

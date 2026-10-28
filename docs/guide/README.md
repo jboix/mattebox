@@ -3,28 +3,29 @@
 Each chapter covers one topic and ends with a working example. Read them in
 order the first time, then use the table.
 
-| Chapter                                                       | You will learn                                                      |
-| ------------------------------------------------------------- | ------------------------------------------------------------------- |
-| [01 Getting started](01-getting-started.md)                   | Install, create an engine, attach, load, detach                     |
-| [02 Presets and stages](02-presets-and-stages.md)             | Stages, presets, size per preset                                    |
-| [03 HLS and DASH](03-hls-and-dash.md)                         | The protocol adapters                                               |
-| [04 Live streaming](04-live-streaming.md)                     | The live adapters, the edge, latency, wall-clock time               |
-| [05 Quality and ABR](05-quality-and-abr.md)                   | Renditions, constraints, pins, the `abr` and `hdr` stages           |
-| [06 Audio and text](06-audio-and-text.md)                     | Alternate audio, WebVTT, TTML, CEA-608 and 708, timed metadata      |
-| [07 DRM](07-drm.md)                                           | ClearKey, Widevine, PlayReady, FairPlay                             |
-| [08 Legacy transport streams](08-legacy-transport-streams.md) | MPEG-TS, packed audio, and codec probing                            |
-| [09 Events and errors](09-events-and-errors.md)               | Events, error codes, the `recovery` stage                           |
-| [10 Thumbnails](10-thumbnails.md)                             | Scrub previews from the manifest or a sprite track                  |
-| [11 Network and CDN](11-network-and-cdn.md)                   | Transport hooks, retries, CMCD, content steering                    |
-| [12 Diagnostics](12-diagnostics.md)                           | Stats, the trace, replay, the hosted playground                     |
-| [13 Builds and targets](13-builds-and-targets.md)             | The three build outputs, the modern build, TV targets               |
-| [14 CDN](14-cdn.md)                                           | Script tags from jsDelivr, pinning, integrity, ESM                  |
-| [15 Chapters](15-chapters.md)                                 | Chapters from the manifest or a file, `engine.chapters`             |
-| [16 Trick play](16-trick-play.md)                             | Fast forward and rewind, `engine.trick`                             |
-| [17 Stage reference](17-stage-reference.md)                   | Every stage, the presets that include it, and its chapter           |
-| [18 Conformance](18-conformance.md)                           | Which public test streams play, in which browser                    |
-| [19 Real devices](19-real-devices.md)                         | How to test on a TV and on iOS, and the results                     |
-| [20 Pilot](20-pilot.md)                                       | How to try the engine in production and compare it with your player |
+| Chapter                                                       | You will learn                                                             |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [01 Getting started](01-getting-started.md)                   | Install, create an engine, attach, load, detach                            |
+| [02 Presets and stages](02-presets-and-stages.md)             | Stages, presets, size per preset                                           |
+| [03 HLS and DASH](03-hls-and-dash.md)                         | The protocol adapters                                                      |
+| [04 Live streaming](04-live-streaming.md)                     | The live adapters, the edge, latency, wall-clock time                      |
+| [05 Quality and ABR](05-quality-and-abr.md)                   | Renditions, constraints, pins, the `abr` and `hdr` stages                  |
+| [06 Audio and text](06-audio-and-text.md)                     | Alternate audio, WebVTT, TTML, CEA-608 and 708, timed metadata             |
+| [07 DRM](07-drm.md)                                           | ClearKey, Widevine, PlayReady, FairPlay                                    |
+| [08 Legacy transport streams](08-legacy-transport-streams.md) | MPEG-TS, packed audio, and codec probing                                   |
+| [09 Events and errors](09-events-and-errors.md)               | Events, error codes, the `recovery` stage                                  |
+| [10 Thumbnails](10-thumbnails.md)                             | Scrub previews from the manifest or a sprite track                         |
+| [11 Network and CDN](11-network-and-cdn.md)                   | Transport hooks, retries, CMCD, content steering                           |
+| [12 Diagnostics](12-diagnostics.md)                           | Stats, the trace, replay, the hosted playground                            |
+| [13 Builds and targets](13-builds-and-targets.md)             | The three build outputs, the modern build, TV targets                      |
+| [14 CDN](14-cdn.md)                                           | Script tags from jsDelivr, pinning, integrity, ESM                         |
+| [15 Chapters](15-chapters.md)                                 | Chapters from the manifest or a file, `engine.chapters`                    |
+| [16 Trick play](16-trick-play.md)                             | Fast forward and rewind, `engine.trick`                                    |
+| [17 Stage reference](17-stage-reference.md)                   | Every stage, the presets that include it, and its chapter                  |
+| [18 Conformance](18-conformance.md)                           | Which public test streams play, in which browser                           |
+| [19 Real devices](19-real-devices.md)                         | How to test on a TV and on iOS, and the results                            |
+| [20 Pilot](20-pilot.md)                                       | How to try the engine in production and compare it with your player        |
+| [21 Interstitials](21-interstitials.md)                       | HLS interstitials, DASH alternative MPD, SCTE-35 cue-outs, your own breaks |
 
 The [architecture document](../architecture.md) covers the internals, for
 writing your own stage.

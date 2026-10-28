@@ -80,6 +80,8 @@ function harness(options: LiveCatchupOptions = {}, info: LiveInfo = {}) {
     request: async () => new Response(),
     reduce: () => undefined,
     dispatch: (command) => commands.push(command),
+    load: () => undefined,
+    preload: async () => undefined,
     emit: (event, payload) => emitted.push([event, payload]),
     on: (event, fn) => {
       if (event === 'trace') traces.push(fn);

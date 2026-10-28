@@ -654,6 +654,38 @@ describe('date ranges', () => {
     const text = fixture('edge-daterange-media.m3u8').replace(/#EXT-X-PROGRAM-DATE-TIME.*\n/, '');
     expect(parseMediaPlaylist(text, BASE).playlist?.dateRanges).toEqual([]);
   });
+  const cues = (lines: readonly string[]) => {
+    const text = ['#EXTM3U', '#EXT-X-TARGETDURATION:4', '#EXT-X-MEDIA-SEQUENCE:10', ...lines].join(
+      '\n',
+    );
+    const result = parseMediaPlaylist(text, BASE);
+    expect(result.error).toBeNull();
+    return result.playlist?.dateRanges ?? [];
+  };
+  const segments = (n: number) =>
+    Array.from({ length: n }, (_, i) => [`#EXTINF:4,`, `s${i}.m4s`]).flat();
+
+  it('turns a cue-out and its cue-in into one date range, named by the segment', () => {
+    const ranges = cues([
+      ...segments(2),
+      '#EXT-OATCLS-SCTE35:/DAhAAAAAAAAAP/wEAUAAAHAf+9/fgAg9YDAAAAAAAA25aoh',
+      '#EXT-X-CUE-OUT:DURATION=8',
+      ...segments(2),
+      '#EXT-X-CUE-IN',
+      ...segments(1),
+    ]);
+    expect(ranges).toHaveLength(1);
+    expect(ranges[0]).toMatchObject({ id: 'cue-out-12', start: 8, end: 16, plannedEnd: 16 });
+    expect(ranges[0]?.attributes['CUE-OUT']).toBe('8');
+    // The base64 section becomes the hexadecimal sequence a date range carries.
+    expect(ranges[0]?.attributes['SCTE35-OUT']).toMatch(/^0xfc30/);
+  });
+
+  it('a cue-out without its cue-in yet spans its duration, and needs no program date time', () => {
+    const ranges = cues([...segments(1), '#EXT-X-CUE-OUT:30', ...segments(2)]);
+    expect(ranges.map((r) => [r.id, r.start, r.end])).toEqual([['cue-out-11', 4, 34]]);
+    expect(Number.isNaN(ranges[0]?.startDate)).toBe(true);
+  });
 });
 
 describe('variant bitrates and supplemental codecs', () => {

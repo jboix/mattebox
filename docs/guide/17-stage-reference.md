@@ -89,6 +89,7 @@ these.
 
 ## Stages in no preset
 
-| Stage  | Does                                           | Guide                                      |
-| ------ | ---------------------------------------------- | ------------------------------------------ |
-| `cmcd` | Sends playback data to the CDN on each request | [11](11-network-and-cdn.md#the-cmcd-stage) |
+| Stage           | Does                                                             | Guide                                      |
+| --------------- | ---------------------------------------------------------------- | ------------------------------------------ |
+| `cmcd`          | Sends playback data to the CDN on each request                   | [11](11-network-and-cdn.md#the-cmcd-stage) |
+| `interstitials` | Plays ad breaks and other clips the stream or the page schedules | [21](21-interstitials.md)                  |

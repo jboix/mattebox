@@ -72,6 +72,7 @@ const EVENT_LEVELS: Record<string, Level> = {
   'recovery:skip': 'warn',
   'recovery:readmitted': 'info',
   'steering:failover': 'warn',
+  'interstitials:warning': 'warn',
 };
 const EVENT_NAMES = [
   'error',
@@ -99,6 +100,14 @@ const EVENT_NAMES = [
   'codecprobe:detected',
   'tracks:changed',
   'presentation:protection',
+  'interstitials:opportunity',
+  'interstitials:break-start',
+  'interstitials:asset-start',
+  'interstitials:progress',
+  'interstitials:asset-end',
+  'interstitials:break-end',
+  'interstitials:skipped',
+  'interstitials:warning',
 ];
 
 const MEDIA_EVENTS: Record<string, Level> = {
@@ -334,6 +343,20 @@ function describeEvent(name: string, payload: unknown): { message: string; level
       return { message: `license renewal for ${String(p.keyIds ?? '')}`, level: 'warn' };
     case 'drm:encrypted':
       return { message: `encrypted media detected (${String(p.initDataType ?? '')})`, level };
+    case 'interstitials:opportunity':
+      return { message: `break opportunity ${String(p.id)}, ${String(p.duration)} s`, level };
+    case 'interstitials:break-start':
+    case 'interstitials:break-end':
+      return {
+        message: `${name.slice(14)} ${String(p.id)}${p.stitched === true ? ' (in the stream)' : ''}`,
+        level,
+      };
+    case 'interstitials:asset-start':
+      return { message: `asset ${String(p.asset)} of ${String(p.id)}: ${String(p.url)}`, level };
+    case 'interstitials:progress':
+      return { message: `break ${String(p.id)} quartile ${String(p.quartile)}`, level };
+    case 'interstitials:warning':
+      return { message: `break ${String(p.id)}: ${String(p.reason)}`, level };
     case 'codecprobe:detected':
       return { message: `codec probed: ${String(p.codecs ?? JSON.stringify(p))}`, level };
     case 'tracks:changed':

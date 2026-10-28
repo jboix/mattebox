@@ -13,6 +13,44 @@ DURATION=72
 
 command -v ffmpeg >/dev/null || { echo "ffmpeg is required to generate E2E streams"; exit 1; }
 
+# The ad clip the interstitial fixtures schedule: 8 s of colour bars and a
+# 1 kHz tone, in the flavor's codecs, as HLS (a master over a video and an
+# audio playlist) and as DASH. gen-interstitials.mjs writes the playlists
+# and MPDs that put it in breaks over the flavor's media.
+ads_flavor() { # flavor vcodec vstring acodec astring extra...
+  local flavor=$1 vcodec=$2 vstring=$3 acodec=$4 astring=$5
+  shift 5
+  local dir="$OUT/ads/$flavor"
+  mkdir -p "$dir"
+  ffmpeg -y -loglevel error -f lavfi -i "smptebars=size=320x180:rate=30" -t 8 \
+    -c:v "$vcodec" -pix_fmt yuv420p -b:v 150k -g 120 -keyint_min 120 "$@" \
+    -f hls -hls_time 4 -hls_playlist_type vod -hls_segment_type fmp4 \
+    -hls_fmp4_init_filename "init-video.mp4" -hls_segment_filename "$dir/video-%03d.m4s" \
+    "$dir/video.m3u8"
+  ffmpeg -y -loglevel error -f lavfi -i "sine=frequency=1000:sample_rate=48000" -t 8 \
+    -c:a "$acodec" -b:a 64k \
+    -f hls -hls_time 4 -hls_playlist_type vod -hls_segment_type fmp4 \
+    -hls_fmp4_init_filename "init-audio.mp4" -hls_segment_filename "$dir/audio-%03d.m4s" \
+    "$dir/audio.m3u8"
+  cat > "$dir/ad.m3u8" <<EOF
+#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="Tone",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,URI="audio.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=220000,RESOLUTION=320x180,CODECS="$vstring,$astring",AUDIO="aud"
+video.m3u8
+EOF
+  ffmpeg -y -loglevel error -f lavfi -i "smptebars=size=320x180:rate=30" \
+    -f lavfi -i "sine=frequency=1000:sample_rate=48000" -t 8 \
+    -map 0:v -map 1:a -c:v "$vcodec" -pix_fmt yuv420p -b:v 150k -g 120 -keyint_min 120 "$@" \
+    -c:a "$acodec" -b:a 64k \
+    -f dash -dash_segment_type mp4 -seg_duration 4 -use_template 1 -use_timeline 1 \
+    -init_seg_name 'dash-init-$RepresentationID$.m4s' \
+    -media_seg_name 'dash-chunk-$RepresentationID$-$Number%05d$.m4s' \
+    -adaptation_sets "id=0,streams=v id=1,streams=a" \
+    "$dir/ad.mpd"
+}
+
 # HLS image playlists (the Roku EXT-X-IMAGE-STREAM-INF form) and Apple JSON
 # chapters over the h264
 # media: sprite sheets of 5x2 tiles, one tile per 2 s, so a 20 s sheet and a
@@ -213,6 +251,13 @@ if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
     [ -f "$OUT/$flavor-dash/manifest-list.mpd" ] || node "$ROOT/test/e2e/gen-segmentlist.mjs" "$OUT/$flavor-dash"
     [ -f "$OUT/$flavor-dash/manifest-periods.mpd" ] || node "$ROOT/test/e2e/gen-multiperiod.mjs" "$OUT/$flavor-dash"
   done
+  [ -f "$OUT/ads/h264/ad.mpd" ] || ads_flavor h264 libx264 \
+    "$(grep -o 'avc1[^,"]*' "$OUT/h264/master.m3u8" | head -1)" aac mp4a.40.2 -profile:v baseline
+  [ -f "$OUT/ads/vp9/ad.mpd" ] || ads_flavor vp9 libvpx-vp9 \
+    "$(grep -o 'vp09[^,"]*' "$OUT/vp9/master.m3u8" | head -1)" libopus opus -deadline realtime -cpu-used 8
+  for flavor in h264 vp9; do
+    [ -f "$OUT/$flavor-interstitials/master-scte35.m3u8" ] || node "$ROOT/test/e2e/gen-interstitials.mjs" "$OUT" "$flavor"
+  done
   echo "streams present, skipping generation"
   exit 0
 fi
@@ -397,6 +442,11 @@ dash vp9 libvpx-vp9 -deadline realtime -cpu-used 8
 node "$ROOT/test/e2e/gen-ttml.mjs" "$OUT/vp9-dash"
 node "$ROOT/test/e2e/gen-segmentlist.mjs" "$OUT/vp9-dash"
 node "$ROOT/test/e2e/gen-multiperiod.mjs" "$OUT/vp9-dash"
+
+ads_flavor h264 libx264 "$H_LOW" aac mp4a.40.2 -profile:v baseline
+ads_flavor vp9 libvpx-vp9 "$V_LOW" libopus opus -deadline realtime -cpu-used 8
+node "$ROOT/test/e2e/gen-interstitials.mjs" "$OUT" h264
+node "$ROOT/test/e2e/gen-interstitials.mjs" "$OUT" vp9
 
 ts_flavor
 ts_hevc_flavor

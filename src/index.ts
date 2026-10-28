@@ -428,10 +428,17 @@ export function mattebox(options: MatteboxOptions): Mattebox {
       if (phase !== 'idle' && phase !== 'attaching') bus.dispatch({ type: 'UNLOAD' });
       const kept = seeds.get(absolute);
       seeds.delete(absolute);
+      // Stages that keep state per source, or reload it, learn its URL here.
+      bus.emitEvent('lifecycle:loading', {
+        url: absolute,
+        ...(loadOptions?.mimeType !== undefined ? { mimeType: loadOptions.mimeType } : {}),
+        ...(loadOptions?.start !== undefined ? { start: loadOptions.start } : {}),
+      });
       bus.dispatch({
         type: 'LOAD',
         url: absolute,
         ...(loadOptions?.mimeType !== undefined ? { mimeType: loadOptions.mimeType } : {}),
+        ...(loadOptions?.start !== undefined ? { start: loadOptions.start } : {}),
         ...(kept !== undefined && performance.now() < kept.expires ? { seed: kept.seed } : {}),
       });
     },
@@ -465,6 +472,7 @@ export function mattebox(options: MatteboxOptions): Mattebox {
           absolute,
           {
             ...(loadOptions?.mimeType !== undefined ? { mimeType: loadOptions.mimeType } : {}),
+            ...(loadOptions?.start !== undefined ? { start: loadOptions.start } : {}),
             segments,
             keepMs,
           },

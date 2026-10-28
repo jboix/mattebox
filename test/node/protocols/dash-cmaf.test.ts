@@ -700,6 +700,7 @@ describe('EventStream', () => {
         start: 5,
         duration: 2.5,
         data: 'news',
+        timescale: 1000,
       },
       {
         scheme: 'urn:scte:scte35:2013:xml',
@@ -707,6 +708,45 @@ describe('EventStream', () => {
         start: 12,
         duration: 30,
         data: 'splice body',
+        timescale: 1,
+      },
+    ]);
+  });
+
+  it("keeps an Event's child elements with their attributes, as an alternative MPD needs", () => {
+    const mpd = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT60S">
+  <Period id="p0" start="PT0S">
+    <EventStream schemeIdUri="urn:mpeg:dash:event:alternativeMPD:replace:2025" timescale="90000">
+      <Event presentationTime="1800000" duration="900000" id="ad-1">
+        <ReplacePresentation uri="https://ads.example.com/ad.mpd" returnOffset="900000" noJump="1"/>
+      </Event>
+    </EventStream>
+    <AdaptationSet id="1" contentType="video" mimeType="video/mp4" codecs="avc1.4d401f">
+      <SegmentTemplate media="v-$Number$.m4s" initialization="v-init.mp4" duration="6" timescale="1"/>
+      <Representation id="v1" bandwidth="800000" width="640" height="360"/>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+    const result = parse(mpd, BASE);
+    expect(result.error).toBeNull();
+    expect(result.presentation?.periods[0]?.events).toEqual([
+      {
+        scheme: 'urn:mpeg:dash:event:alternativeMPD:replace:2025',
+        id: 'ad-1',
+        start: 20,
+        duration: 10,
+        timescale: 90000,
+        elements: [
+          {
+            name: 'ReplacePresentation',
+            attributes: {
+              uri: 'https://ads.example.com/ad.mpd',
+              returnOffset: '900000',
+              noJump: '1',
+            },
+          },
+        ],
       },
     ]);
   });

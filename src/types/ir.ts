@@ -373,7 +373,7 @@ export interface DateRange {
   readonly end?: number;
   /** From PLANNED-DURATION, when given. */
   readonly plannedEnd?: number;
-  /** START-DATE as epoch seconds. */
+  /** START-DATE as epoch seconds. NaN for a cue-out in a playlist without a program date. */
   readonly startDate: number;
   /** Every attribute as written: CLASS, SCTE35-OUT, X-ASSET-URI, and the rest. */
   readonly attributes: Readonly<Record<string, string>>;
@@ -392,6 +392,19 @@ export interface PresentationEvent {
   readonly duration?: number;
   /** The messageData attribute, or else the element's text. */
   readonly data?: string;
+  /** The EventStream's timescale, for times an event's body gives in its units. */
+  readonly timescale?: number;
+  /** The Event's child elements with their attributes as written, in document order. */
+  readonly elements?: readonly EventElement[];
+  /** The EventStream's own child elements other than its Events, such as a `RequestParam`. */
+  readonly streamElements?: readonly EventElement[];
+}
+
+/** One child element of a DASH Event, such as an alternative MPD's `ReplacePresentation`. */
+export interface EventElement {
+  /** The local name, without a namespace prefix. */
+  readonly name: string;
+  readonly attributes: Readonly<Record<string, string>>;
 }
 
 /**

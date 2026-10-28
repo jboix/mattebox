@@ -251,6 +251,12 @@ export interface KernelState {
     readonly currentTime: number;
     readonly buffered: TimeRangesSnapshot;
     readonly seeking: boolean;
+    /**
+     * The position a load asked to start from, until the presentation is
+     * known and the element seeks there. The element's own time reads 0
+     * until then, so its time updates do not move the playhead.
+     */
+    readonly start?: number;
   };
 }
 

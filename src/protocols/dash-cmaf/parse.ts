@@ -21,6 +21,7 @@ import type { MatteboxError } from '../../types/error.js';
 import type {
   ByteRange,
   ContentType,
+  EventElement,
   IndexedSegments,
   Presentation,
   PresentationEvent,
@@ -77,6 +78,17 @@ function numberAttr(element: Element, name: string): number | null {
   if (value === null) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** An element's children by local name, with their attributes, for a body a scheme defines in XML. */
+function elementsOf(parent: Element): EventElement[] {
+  const out: EventElement[] = [];
+  for (const child of parent.children) {
+    const attributes: Record<string, string> = {};
+    for (const attribute of child.attributes) attributes[attribute.localName] = attribute.value;
+    out.push({ name: child.localName, attributes });
+  }
+  return out;
 }
 
 /** @frameRate is "30" or "30000/1001". */
@@ -203,11 +215,13 @@ function eventsOf(periodElement: Element, periodStart: number): PresentationEven
     const value = attr(stream, 'value');
     const timescale = numberAttr(stream, 'timescale') ?? 1;
     const offset = numberAttr(stream, 'presentationTimeOffset') ?? 0;
+    const streamElements = elementsOf(stream).filter((element) => element.name !== 'Event');
     let index = 0;
     for (const event of children(stream, 'Event')) {
       const time = numberAttr(event, 'presentationTime') ?? 0;
       const duration = numberAttr(event, 'duration');
       const data = attr(event, 'messageData') ?? event.textContent?.trim() ?? '';
+      const elements = elementsOf(event);
       out.push({
         scheme,
         ...(value !== null ? { value } : {}),
@@ -215,6 +229,9 @@ function eventsOf(periodElement: Element, periodStart: number): PresentationEven
         start: periodStart + (time - offset) / timescale,
         ...(duration !== null ? { duration: duration / timescale } : {}),
         ...(data !== '' ? { data } : {}),
+        timescale,
+        ...(elements.length > 0 ? { elements } : {}),
+        ...(streamElements.length > 0 ? { streamElements } : {}),
       });
       index += 1;
     }

@@ -30,6 +30,8 @@ function compose(...factories: Array<() => Stage>) {
       request: async () => new Response(),
       reduce: (name, reducer) => slices.push([name, reducer as SliceReducer]),
       dispatch: () => undefined,
+      load: () => undefined,
+      preload: async () => undefined,
       emit: () => undefined,
       on: () => () => undefined,
     });

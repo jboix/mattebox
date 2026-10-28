@@ -5,6 +5,7 @@
  * not a stub that throws.
  */
 
+import type { MatteboxBase } from '../types/facade.js';
 import type { ContentType } from '../types/ir.js';
 import type { SliceReducer } from '../types/kernel.js';
 import type { AbrChooser, SwitchPolicy } from '../types/quality.js';
@@ -153,6 +154,14 @@ export function createStageContext(deps: ContextDeps): { ctx: StageContext; tear
     },
     dispatch(cmd) {
       deps.bus.dispatch(cmd);
+    },
+    // Through the facade, so a stage's load takes a preload's bytes and
+    // seed the way the page's does.
+    load(url, options) {
+      (deps.facade as unknown as MatteboxBase).load(url, options);
+    },
+    preload(url, options) {
+      return (deps.facade as unknown as MatteboxBase).preload(url, options);
     },
     emit(event, payload) {
       deps.bus.emitEvent(event, payload);

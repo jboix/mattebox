@@ -1041,6 +1041,58 @@ describe('suspend and resume', () => {
   });
 });
 
+describe('a load with a start position', () => {
+  const loaded = (start: number) => {
+    let state = frozen(initialState());
+    [state] = reduce(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = reduce(frozen(state), { type: 'LOAD', url: 'https://cdn.example/m.m3u8', start });
+    return state;
+  };
+
+  it('holds the playhead there, whatever the element reads before it seeks', () => {
+    const state = loaded(42);
+    expect(state.playback.currentTime).toBe(42);
+    const [after] = reduce(frozen(state), { type: 'TIME_UPDATE', currentTime: 0, buffered: [] });
+    expect(after.playback.currentTime).toBe(42);
+  });
+
+  it('on demand, seeks the element there with the manifest, within the duration', () => {
+    const [ready, fx] = reduce(frozen(loaded(42)), {
+      type: 'MANIFEST_LOADED',
+      presentation: vodFixture,
+    });
+    expect(fx).toContainEqual({ kind: 'seekElement', to: 42 });
+    expect(ready.playback.start).toBeUndefined();
+    const [late, lateFx] = reduce(frozen(loaded(900)), {
+      type: 'MANIFEST_LOADED',
+      presentation: vodFixture,
+    });
+    expect(lateFx).toContainEqual({ kind: 'seekElement', to: 600 });
+    expect(late.playback.currentTime).toBe(600);
+  });
+
+  it('live, starts there when the first window holds it, and at the edge when not', () => {
+    const live = (start: number) => {
+      const [state] = reduce(frozen(loaded(start)), {
+        type: 'MANIFEST_LOADED',
+        presentation: { ...vodFixture, isLive: true },
+      });
+      return reduce(frozen(state), {
+        type: 'LIVE_WINDOW_CHANGED',
+        start: 100,
+        end: 120,
+        edge: 116,
+      });
+    };
+    const [inside, insideFx] = live(105);
+    expect(inside.playback.currentTime).toBe(105);
+    expect(insideFx).toContainEqual({ kind: 'seekElement', to: 105 });
+    const [outside] = live(20);
+    expect(outside.playback.currentTime).toBeCloseTo(115.95);
+    expect(outside.playback.start).toBeUndefined();
+  });
+});
+
 describe('rejected commands and slices', () => {
   it('a rejected command reaches no slice; accepted commands and facts do', () => {
     const seen: string[] = [];

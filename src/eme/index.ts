@@ -93,6 +93,8 @@ export function attachEme(
     registerChunkSplitter: noop,
     reduce: noop,
     dispatch: noop,
+    load: noop,
+    preload: async () => undefined,
     addRequestHook: () => noop,
     addResponseHook: () => noop,
     capabilities: () => [],

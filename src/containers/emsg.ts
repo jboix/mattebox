@@ -4,7 +4,7 @@
  * event from the segment's earliest presentation time; version 1 places it
  * on the track's media timeline, the same clock as tfdt.
  */
-import { fourcc, viewOf } from './mp4-box/index.js';
+import { earliestDecodeTime, fourcc, viewOf } from './mp4-box/index.js';
 
 export interface EmsgBox {
   readonly version: number;
@@ -93,6 +93,46 @@ export function readEmsg(segment: Uint8Array): EmsgBox[] {
       if (box !== null && box.timescale > 0) out.push(box);
     }
     offset += size;
+  }
+  return out;
+}
+
+/** An emsg box placed on the presentation timeline. */
+export interface PlacedEmsg {
+  readonly box: EmsgBox;
+  /** Presentation seconds. */
+  readonly start: number;
+  /** Null for an unknown duration. */
+  readonly end: number | null;
+}
+
+/**
+ * A segment's emsg boxes on the presentation timeline. Version 0 times from
+ * the segment's start. Version 1 is on the media clock, which the kernel
+ * lands at the segment's start through its earliest decode time, so it maps
+ * the same way; without the init's timescales it cannot be placed and is
+ * left out.
+ */
+export function placeEmsg(
+  data: Uint8Array,
+  segmentStart: number,
+  timescales: ReadonlyMap<number, number> | undefined,
+): PlacedEmsg[] {
+  const boxes = readEmsg(data);
+  if (boxes.length === 0) return [];
+  const decode = timescales === undefined ? null : earliestDecodeTime(data, timescales);
+  const out: PlacedEmsg[] = [];
+  for (const box of boxes) {
+    const offset = box.time / box.timescale;
+    let start: number;
+    if (box.version === 0) start = segmentStart + offset;
+    else if (decode !== null) start = segmentStart + offset - decode;
+    else continue;
+    out.push({
+      box,
+      start,
+      end: box.duration === null ? null : start + box.duration / box.timescale,
+    });
   }
   return out;
 }

@@ -73,6 +73,20 @@ const engine = mattebox.from(video);
 The CDN bundles expose the same `mattebox` as a global, plus the bundle's
 preset and stage factories. [Chapter 14](14-cdn.md) has the script tag.
 
+## Start at a position
+
+`start` loads a source from a presentation time, in seconds. The first
+requests are the segments there, so the element never fetches the start.
+
+```ts
+engine.load(url, { start: 600 });
+```
+
+- On demand, a start past the end lands on the end.
+- Live, a start inside the window lands there, and one outside it lands on
+  the live edge.
+- `preload` takes `start` too: its segments are the ones at that time.
+
 ## Preload the next source
 
 `engine.preload(url)` fetches a source's manifest while the current source
@@ -92,10 +106,11 @@ no request, which suits a feed of short clips.
 await engine.preload(next.url, { segments: 3, keepSeconds: 60 });
 ```
 
-| Option        | Meaning                                                      | Default |
-| ------------- | ------------------------------------------------------------ | ------- |
-| `segments`    | Media segments to fetch per track, from the start. 0 is none | 0       |
-| `keepSeconds` | Seconds each response is kept                                | 30      |
+| Option        | Meaning                                                    | Default |
+| ------------- | ---------------------------------------------------------- | ------- |
+| `segments`    | Media segments to fetch per track, from `start`. 0 is none | 0       |
+| `start`       | The presentation time the load will start from             | 0       |
+| `keepSeconds` | Seconds each response is kept                              | 30      |
 
 - The responses are kept in memory, at most 32 of them and 48 MB.
 - A response answers one request. The load that uses it removes it.

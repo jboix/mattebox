@@ -17,9 +17,11 @@ Media element events stay on the element. Subscribe to `timeupdate`,
 | Event                               | Meaning                                                                                       |
 | ----------------------------------- | --------------------------------------------------------------------------------------------- |
 | `tracks:changed`                    | The set of available tracks changed                                                           |
+| `presentation:changed`              | The manifest or a media playlist was read, with the presentation's `id`                       |
 | `tracks:selected`                   | A track was selected or deselected: `{ contentType, trackId }`, `trackId` null on deselect    |
 | `playback:stalled`                  | The decoder stopped inside buffered data, or `waiting` fired                                  |
 | `playback:ended`                    | The presentation reached its end                                                              |
+| `lifecycle:loading`                 | `engine.load()` was called, with the `url`, `mimeType` and `start`                            |
 | `lifecycle:suspended`               | `engine.suspend()` took effect                                                                |
 | `lifecycle:resumed`                 | `engine.resume()` took effect                                                                 |
 | `quality:constraints-unsatisfiable` | Constraints were dropped to keep a playable rendition                                         |

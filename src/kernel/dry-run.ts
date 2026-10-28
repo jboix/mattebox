@@ -37,6 +37,8 @@ export interface DryRunDeps {
 
 export interface DryRunOptions {
   readonly mimeType?: string;
+  /** The presentation time the load will start from: the segments come from there. */
+  readonly start?: number;
   /** Media segments to fetch per track. */
   readonly segments: number;
   /** Milliseconds each response is kept. */
@@ -236,6 +238,7 @@ export function dryRun(deps: DryRunDeps, url: string, options: DryRunOptions): P
       url,
       seed: deps.seed,
       ...(options.mimeType !== undefined ? { mimeType: options.mimeType } : {}),
+      ...(options.start !== undefined ? { start: options.start } : {}),
     });
   });
 }

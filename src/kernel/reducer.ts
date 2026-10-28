@@ -454,9 +454,20 @@ function reduceCommand(
               },
               quality: { ...state.quality, constraints: new Map(seed.constraints) },
             };
+      // A start position is the playhead from now on, so the first fetches
+      // are the segments there. The element seeks once the presentation is
+      // known (loadPresentation, or the first live playlist).
+      const start = msg.start;
+      const placed: KernelState =
+        start === undefined || !Number.isFinite(start)
+          ? seeded
+          : {
+              ...seeded,
+              playback: { ...seeded.playback, currentTime: Math.max(0, start), start },
+            };
       return [
         {
-          ...seeded,
+          ...placed,
           lifecycle: { phase: 'loading' },
           scheduling: { ...state.scheduling, inflight, tokenSeq },
         },
@@ -950,6 +961,13 @@ function loadPresentation(
   const manifestEffects: Effect[] = sameTracks
     ? []
     : [{ kind: 'emit', event: 'tracks:changed', payload: { available } }];
+  // A merged media playlist can bring what only it carries, such as date
+  // ranges: a stage that reads the presentation reads it again here.
+  manifestEffects.push({
+    kind: 'emit',
+    event: 'presentation:changed',
+    payload: { id: presentation.id },
+  });
   // The manifest DRM route: emit every track's protection schemes so
   // eme-core (if loaded) can open sessions. Serializable init data
   // rides the event; nothing DRM-specific enters the reducer.
@@ -965,6 +983,15 @@ function loadPresentation(
   }
   if (!presentation.isLive && presentation.duration !== undefined) {
     manifestEffects.push({ kind: 'setDuration', seconds: presentation.duration });
+  }
+  // On demand, the start position is known now: the element seeks there,
+  // within the duration. Live waits for its first playlist.
+  const start = loaded.playback.start;
+  if (start !== undefined && !presentation.isLive) {
+    const to = Math.max(0, Math.min(start, presentation.duration ?? start));
+    const { start: _, ...rest } = loaded.playback;
+    manifestEffects.push({ kind: 'seekElement', to });
+    return [{ ...loaded, playback: { ...rest, currentTime: to } }, manifestEffects];
   }
   return [loaded, manifestEffects];
 }
@@ -1573,9 +1600,12 @@ function reduceFact(
     }
 
     case 'TIME_UPDATE': {
+      // Before the seek to a start position, the element still reads 0.
+      const currentTime =
+        state.playback.start !== undefined ? state.playback.currentTime : msg.currentTime;
       const moved: KernelState = {
         ...state,
-        playback: { ...state.playback, currentTime: msg.currentTime, buffered: msg.buffered },
+        playback: { ...state.playback, currentTime, buffered: msg.buffered },
       };
       return driveScheduling(moved, hooks, cfg);
     }
@@ -1651,12 +1681,27 @@ function reduceFact(
       // edge instead of the beginning of what can be a long DVR span (hours
       // behind). The playhead moves to the edge, the element seeks there, and
       // scheduling then fills the buffer at the edge, not at the span start.
-      if (firstWindow && msg.edge > state.playback.currentTime + 1) {
+      if (
+        firstWindow &&
+        state.playback.start === undefined &&
+        msg.edge > state.playback.currentTime + 1
+      ) {
         const to = edgeStart(msg.start, msg.edge);
         const seeked: KernelState = {
           ...withLive,
           playback: { ...withLive.playback, currentTime: to },
         };
+        const [scheduled, effects] = driveScheduling(seeked, hooks, cfg);
+        return [scheduled, [...spanEffects, { kind: 'seekElement', to }, ...effects]];
+      }
+      // A load with a start position starts there when the live range holds it,
+      // and at the edge when it does not.
+      const start = state.playback.start;
+      if (firstWindow && start !== undefined) {
+        const inside = start >= msg.start && start <= msg.edge;
+        const to = inside ? start : edgeStart(msg.start, msg.edge);
+        const { start: _, ...rest } = withLive.playback;
+        const seeked: KernelState = { ...withLive, playback: { ...rest, currentTime: to } };
         const [scheduled, effects] = driveScheduling(seeked, hooks, cfg);
         return [scheduled, [...spanEffects, { kind: 'seekElement', to }, ...effects]];
       }

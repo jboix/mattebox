@@ -32,6 +32,7 @@ import { fmtBitrate, renderQuality } from './dock.js';
 import type { FaultConfig } from './faults.js';
 import { createFaultyFetch, defaultFaults } from './faults.js';
 import { escapeHtml } from './html.js';
+import { renderInterstitials } from './interstitials.js';
 import type { Level, Source } from './log.js';
 import { createEventLog, toJson } from './log.js';
 import type { Check, ParsedManifest } from './manifest-checks.js';
@@ -249,6 +250,8 @@ function composedReducer() {
       registerChunkSplitter: () => undefined,
       reduce: (name, reducer) => slices.push([name, reducer as SliceReducer]),
       dispatch: () => undefined,
+      load: () => undefined,
+      preload: async () => undefined,
       emit: () => undefined,
       on: () => () => undefined,
     });
@@ -399,6 +402,11 @@ app.innerHTML = `
       <div class="sub">
         <div class="panel-head"><h3>Timed metadata</h3><span class="hint">engine.metadata: date ranges, EventStream, emsg, and ID3, the ones under the playhead in bold</span></div>
         <div id="metadata"></div>
+      </div>
+
+      <div class="sub">
+        <div class="panel-head"><h3>Breaks</h3><span class="hint">engine.interstitials: HLS interstitials, DASH alternative MPD, SCTE-35 cue-outs, the one that plays in bold</span></div>
+        <div id="interstitials"></div>
       </div>
 
       <div class="sub">
@@ -768,6 +776,17 @@ function renderStages(): void {
         .map((entry) => {
           const built = entry.factory !== null;
           const checked = config.stages.includes(entry.name);
+          // A module another checked one includes, as hls-ll includes
+          // hls-cmaf and hls-live: its code runs there, and checking it too
+          // would register the same parser twice.
+          const host = checked
+            ? undefined
+            : CATALOGUE.find(
+                (other) =>
+                  other.name !== entry.name &&
+                  config.stages.includes(other.name) &&
+                  other.provides.includes(entry.name),
+              );
           const requires = entry.requires.map((requirement) => {
             const names = alternativesOf(requirement);
             const kernel = names.some((name) => KERNEL_PROVIDES.has(name));
@@ -777,10 +796,10 @@ function renderStages(): void {
             }">${names.join(' or ')}</span>`;
           });
           return `<tr class="${built ? '' : 'unbuilt'}">
-            <td><input type="checkbox" data-stage="${entry.name}" ${checked ? 'checked' : ''} ${built && custom ? '' : 'disabled'}></td>
+            <td><input type="checkbox" data-stage="${entry.name}" ${checked || host !== undefined ? 'checked' : ''} ${built && custom && host === undefined ? '' : 'disabled'}></td>
             <td class="stage-name">${entry.name}</td>
             <td>${requires.join(' ') || '<span class="muted">nothing</span>'}</td>
-            <td class="muted">${built ? (checked ? 'on' : 'off') : 'not built yet'}</td>
+            <td class="muted">${built ? (checked ? 'on' : host !== undefined ? `in ${host.name}` : 'off') : 'not built yet'}</td>
           </tr>`;
         })
         .join('');
@@ -831,10 +850,17 @@ function streamBadges(entry: StreamEntry): string[] {
     ...(entry.thumbnails !== undefined ? ['thumbnail track'] : []),
     ...(entry.chapters !== undefined ? ['chapters file'] : []),
     ...(entry.licenseUrl !== undefined ? ['DRM'] : []),
+    ...(entry.stages ?? []).map((name) => `adds ${name}`),
   ];
 }
 
 function chooseStream(entry: StreamEntry): void {
+  // A stream that needs a stage outside the presets brings it in.
+  const missing = (entry.stages ?? []).filter((name) => !config.stages.includes(name));
+  if (missing.length > 0) {
+    config.stages = [...config.stages, ...missing];
+    renderStages();
+  }
   applyStreamChoice({
     url: entry.url,
     ...(entry.licenseUrl !== undefined ? { licenseUrl: entry.licenseUrl } : {}),
@@ -1730,6 +1756,7 @@ Object.assign(window, {
 const dockDeps = { engine: () => engine, constraints: config.constraints };
 const qualityHost = document.querySelector('#quality') as HTMLElement;
 const metadataHost = document.querySelector('#metadata') as HTMLElement;
+const interstitialsHost = document.querySelector('#interstitials') as HTMLElement;
 setInterval(() => {
   log.poll();
   charts.poll();
@@ -1737,6 +1764,7 @@ setInterval(() => {
   renderQuality(qualityHost, dockDeps);
   renderEngineInfo();
   renderMetadata(metadataHost, engine, video.currentTime);
+  renderInterstitials(interstitialsHost, engine);
   qoePanel.render(engine);
   renderPlaybackStatus();
   transport.poll();

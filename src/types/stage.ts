@@ -7,6 +7,7 @@
  */
 import type { ContentType } from './ir.js';
 import type { KernelState, SliceReducer } from './kernel.js';
+import type { LoadOptions, PreloadOptions } from './load.js';
 import type { Command, CueDescriptor } from './messages.js';
 import type { AbrChooser, SwitchPolicy } from './quality.js';
 import type { SegmentMeta, Sink } from './sink.js';
@@ -187,6 +188,15 @@ export interface StageContext {
   /** Contributes a named state slice. The reducer receives only that slice plus a read-only kernel view. */
   reduce<S>(slice: string, reducer: SliceReducer<S>): void;
   dispatch(cmd: Command): void;
+  /**
+   * Loads a source on this engine, as `engine.load` does: the current one
+   * goes, and the stages stay installed. A stage that plays a break in
+   * place of the presentation loads through it, and loads the
+   * presentation again after.
+   */
+  load(url: string, options?: LoadOptions): void;
+  /** Preloads a source, as `engine.preload` does, so a later `load` of it starts at once. */
+  preload(url: string, options?: PreloadOptions): Promise<void>;
   /** Broadcasts an engine event, symmetric to `on`. The impure edge of a stage (eme-core) reports through it. */
   emit(event: string, payload: unknown): void;
   on(event: string, fn: Listener): Unsubscribe;
