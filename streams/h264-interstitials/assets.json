@@ -1,0 +1,12 @@
+{
+  "ASSETS": [
+    {
+      "URI": "../ads/h264/ad.m3u8",
+      "DURATION": 8
+    },
+    {
+      "URI": "../ads/h264/ad.m3u8",
+      "DURATION": 8
+    }
+  ]
+}
