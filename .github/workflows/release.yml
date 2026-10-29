@@ -6,6 +6,9 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # The release environment holds the bot's secrets, so only a job that
+    # names it can mint the token, and npm can require it of the publish.
+    environment: release
     permissions:
       contents: write
       issues: write
@@ -16,7 +19,7 @@ jobs:
         id: bot-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
+          client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
       - name: Checkout
