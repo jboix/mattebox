@@ -274,7 +274,8 @@ export function mattebox(options: MatteboxOptions): Mattebox {
   function activeVideoRenditions(): readonly Rendition[] {
     const state = bus.getState();
     if (state.presentation === null) return [];
-    const activeId = state.tracks.active.get('video');
+    // During a scan or a scrub, the track the I-frame track stands in for.
+    const activeId = state.tracks.behindTrick ?? state.tracks.active.get('video');
     for (const period of state.presentation.periods) {
       for (const track of period.tracks) {
         if (track.contentType !== 'video' || isTrick(track)) continue;

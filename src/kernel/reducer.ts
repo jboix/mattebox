@@ -678,7 +678,7 @@ function reduceCommand(
       return [
         {
           ...state,
-          tracks: { ...state.tracks, active },
+          tracks: behindTrick({ ...state.tracks, active }, track, previousTrack),
           buffers,
           scheduling: clearRepeat({ ...state.scheduling, inflight }),
           quality: bumped(state.quality),
@@ -904,6 +904,23 @@ function undecodable(
     }
   }
   return withDeadGroups(presentation, out);
+}
+
+/**
+ * Keeps the main video track behind an I-frame track. A scan or a scrub
+ * switches to the I-frame track for a while; the quality API goes on
+ * describing the track it replaced, so a quality menu does not empty.
+ */
+function behindTrick(
+  tracks: KernelState['tracks'],
+  track: Track,
+  previous: Track | null,
+): KernelState['tracks'] {
+  if (track.contentType !== 'video') return tracks;
+  const { behindTrick: _behind, ...rest } = tracks;
+  if (!isTrick(track)) return rest;
+  if (previous !== null && !isTrick(previous)) return { ...rest, behindTrick: previous.id };
+  return tracks;
 }
 
 /**

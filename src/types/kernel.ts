@@ -243,6 +243,11 @@ export interface KernelState {
     readonly resolve?: ReadonlySet<RenditionId>;
     /** Tracks added with ADD_TRACK, re-joined to every merged presentation. */
     readonly added?: readonly Track[];
+    /**
+     * The video track an I-frame track stands in for while the I-frame track
+     * is active, for a scan or a scrub. The quality API keeps describing it.
+     */
+    readonly behindTrick?: TrackId;
   };
   readonly quality: QualityState;
   readonly stats: StatsState;
