@@ -161,6 +161,18 @@ export function createMseController(options: MseControllerOptions): MseControlle
     return true;
   }
 
+  /**
+   * Whether a duration or a live window can still apply to the current
+   * MediaSource: it is open, or attached and waiting for sourceopen. A
+   * manifest can parse before sourceopen, and a duration dropped then is
+   * never sent again: the first init segment sets an unknown duration, which
+   * Chrome reports as Infinity for the whole session.
+   */
+  function accepting(): boolean {
+    if (mediaSource === null) return false;
+    return mediaSource.readyState === 'open' || !opened;
+  }
+
   /** endOfStream and duration assignment both throw while any buffer updates; run them at quiet points. */
   function runDeferredGlobalOps(): void {
     if (mediaSource === null || mediaSource.readyState !== 'open' || !allIdle()) return;
@@ -337,6 +349,10 @@ export function createMseController(options: MseControllerOptions): MseControlle
       }
       opened = true;
       absorb({ type: 'MEDIASOURCE_OPEN' });
+      // A duration or a live window decided before the source opened, applied
+      // while no buffer exists to be busy: after the held appends, the first
+      // init segment would set an unknown duration first.
+      runDeferredGlobalOps();
       // Create requests that arrived while the source was still opening: a
       // load right after a reset can parse its manifest before sourceopen.
       for (const effect of pendingCreates.splice(0)) createSourceBuffer(effect);
@@ -616,14 +632,14 @@ export function createMseController(options: MseControllerOptions): MseControlle
     });
 
     runner.register('setDuration', (effect) => {
-      if (mediaSource === null || mediaSource.readyState !== 'open') return undefined;
+      if (!accepting()) return undefined;
       pendingDuration = effect.seconds;
       runDeferredGlobalOps();
       return undefined;
     });
 
     runner.register('setLiveSeekableRange', (effect) => {
-      if (mediaSource === null || mediaSource.readyState !== 'open') return undefined;
+      if (!accepting()) return undefined;
       pendingLiveRange = { start: effect.start, end: effect.end };
       runDeferredGlobalOps();
       return undefined;

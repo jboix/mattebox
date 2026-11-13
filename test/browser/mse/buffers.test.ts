@@ -59,6 +59,27 @@ describe.runIf(profile !== null)('source buffers', () => {
     stack.controller.detach();
   });
 
+  it('a duration decided before sourceopen applies once the source opens', async () => {
+    // A manifest can parse before sourceopen. Dropped then, the duration is
+    // never sent again, and the element reports the init segment's unknown
+    // duration for the whole session.
+    const init = await fixture(profile.init);
+    const seg = await fixture(profile.seg);
+    const stack = createStack();
+    stack.controller.attach(stack.el);
+    expect(stack.controller.readyState()).toBe('closed');
+    stack.runner.run([
+      { kind: 'createSourceBuffer', sbId: 'sb:video', codecs: profile.type },
+      { kind: 'setDuration', seconds: 30 },
+      { kind: 'append', sbId: 'sb:video', data: init },
+      { kind: 'append', sbId: 'sb:video', data: seg },
+    ]);
+    await waitFor(() => stack.el.buffered.length > 0, 'the held bytes appended');
+    await waitFor(() => stack.el.readyState >= HTMLMediaElement.HAVE_METADATA, 'metadata');
+    expect(stack.el.duration).toBe(30);
+    stack.controller.detach();
+  });
+
   it('a codec-less buffer waits for its first segment and opens with the probed type', async () => {
     const stack = createStack({ inferType: () => profile.type });
     await attachAndOpen(stack);
