@@ -407,6 +407,7 @@ function reduceCommand(
       // Idempotent and safe from any phase, including error.
       const [, aborts] = abortInflight(state);
       const fresh = initialState(cfg);
+      forgetArbitration(hooks);
       // The throughput estimate stays, as on UNLOAD: it measures this
       // page's network, not the element. A player detaches between two
       // sources, and the next one starts where the network just was.
@@ -478,6 +479,7 @@ function reduceCommand(
     case 'UNLOAD': {
       const [, aborts] = abortInflight(state);
       const fresh = initialState(cfg);
+      forgetArbitration(hooks);
       const phase = state.lifecycle.phase === 'idle' ? 'idle' : 'attaching';
       // The source goes, so do its cues: a native track keeps rendering
       // what it holds, and the next source must not start under the last
@@ -2091,6 +2093,16 @@ type ArbiterPair = {
   audio: ReturnType<typeof createArbiter>;
 };
 const arbiters = new WeakMap<ReducerHooks, ArbiterPair>();
+/**
+ * Drops the arbiters' last outcome with the source. They are memoized on the
+ * quality version, which the reset state starts again at 0, so an outcome
+ * kept across an UNLOAD or a DETACH would answer the next source's first
+ * decision with a rendition of the last one. Its video then never fetches.
+ */
+function forgetArbitration(hooks: ReducerHooks): void {
+  arbiters.delete(hooks);
+}
+
 function arbiterFor(hooks: ReducerHooks, contentType: 'video' | 'audio') {
   let pair = arbiters.get(hooks);
   if (pair === undefined) {
@@ -2136,8 +2148,13 @@ export function isCommand(msg: Message): msg is Command {
 export function createReducer(
   slices?: Iterable<readonly [string, SliceReducer]>,
   config?: Partial<KernelConfig>,
-  hooks: ReducerHooks = {},
+  shared: ReducerHooks = {},
 ): Reducer {
+  // The arbiters' memory is keyed by the hooks object, and a preload's dry
+  // run builds its reducer over the very same hooks. Each reducer reads the
+  // shared hooks through its own object, so it keeps its own memory: the
+  // content a pre-roll preloads can no longer answer the ad's choice.
+  const hooks: ReducerHooks = Object.create(shared);
   const sliceList: ReadonlyArray<readonly [string, SliceReducer]> = slices ? [...slices] : [];
   const cfg = resolveConfig(config);
   const DRIVING_FACTS = new Set([

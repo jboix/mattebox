@@ -13,6 +13,37 @@ function emptyBuffer(): ArrayBuffer {
   return new ArrayBuffer(8);
 }
 
+/**
+ * An 8 s ad over the VOD fixture's tracks, its video rendition under another
+ * id, as a pre-roll's playlist would be.
+ */
+function adFixture(): typeof vodFixture {
+  const [video, audio] = vodFixture.periods[0]?.tracks ?? [];
+  if (video === undefined || audio === undefined) throw new Error('fixture');
+  return {
+    ...vodFixture,
+    id: 'ad',
+    duration: 8,
+    periods: [
+      {
+        id: 'p0',
+        start: 0,
+        tracks: [
+          {
+            ...video,
+            renditions: video.renditions.map((r) => ({
+              ...r,
+              id: 'ad-v',
+              segments: [{ seq: 0, start: 0, duration: 4, url: 'https://ads.example/v/0.m4s' }],
+            })),
+          },
+          audio,
+        ],
+      },
+    ],
+  };
+}
+
 describe('lifecycle', () => {
   it('walks idle to ready through attach, load, and manifest', () => {
     let state = frozen(initialState());
@@ -92,6 +123,46 @@ describe('lifecycle', () => {
     const [next, fx] = reduce(frozen(initialState()), { type: 'UNLOAD' });
     expect(next.lifecycle.phase).toBe('idle');
     expect(fx).toEqual([]);
+  });
+
+  it('the next source picks its own video rendition, not the one chosen before the UNLOAD', () => {
+    // The interstitials stage does this: the content decides once, a pre-roll
+    // replaces it, and the ad's video renditions have other ids. The reset
+    // state starts the quality version again, so a choice remembered across
+    // the UNLOAD names a rendition the ad does not have, and its video never
+    // fetches a segment.
+    const own = createReducer();
+    const ad = adFixture();
+    let state = frozen(initialState());
+    [state] = own(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+    [state] = own(frozen(state), { type: 'LOAD', url: 'https://cdn.example/master.m3u8' });
+    [state] = own(frozen(state), { type: 'MANIFEST_LOADED', presentation: vodFixture });
+    expect(state.quality.active).toBe('v-1');
+    [state] = own(frozen(state), { type: 'UNLOAD' });
+    [state] = own(frozen(state), { type: 'LOAD', url: 'https://ads.example/ad.m3u8' });
+    const [loaded, fx] = own(frozen(state), { type: 'MANIFEST_LOADED', presentation: ad });
+    expect(loaded.quality.active).toBe('ad-v');
+    expect(fx).toContainEqual(
+      expect.objectContaining({ kind: 'fetch', url: 'https://ads.example/v/0.m4s' }),
+    );
+  });
+
+  it('a second reducer over the same hooks keeps its own rendition choice', () => {
+    // A preload's dry run builds its reducer over the engine's hooks. While a
+    // pre-roll plays, the dry run decides for the content at the quality
+    // version the ad is at, and the ad must not take the content's rendition.
+    const hooks = {};
+    const live = createReducer(undefined, undefined, hooks);
+    const dry = createReducer(undefined, undefined, hooks);
+    const ready = (reduce: typeof live, presentation: typeof vodFixture): KernelState => {
+      let state = frozen(initialState());
+      [state] = reduce(state, { type: 'ATTACH', element: {} as HTMLMediaElement });
+      [state] = reduce(frozen(state), { type: 'LOAD', url: `https://${presentation.id}/m.m3u8` });
+      [state] = reduce(frozen(state), { type: 'MANIFEST_LOADED', presentation });
+      return state;
+    };
+    expect(ready(dry, vodFixture).quality.active).toBe('v-1');
+    expect(ready(live, adFixture()).quality.active).toBe('ad-v');
   });
 });
 
