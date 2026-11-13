@@ -50,14 +50,6 @@ const PRESETS = [
 
 /** The other players: npm package, pinned version, and the browser bundle inside its tarball. */
 const OTHERS = [
-  {
-    // VHS ships inside video.js and cannot run alone, so video.js is the bar.
-    pkg: 'video.js',
-    version: '8.24.0',
-    label: 'video.js + vhs',
-    file: 'package/dist/video.min.js',
-    detail: '',
-  },
   { pkg: 'hls.js', version: '1.7.2', label: 'hls.js', file: 'package/dist/hls.min.js', detail: '' },
   {
     pkg: 'shaka-player',
