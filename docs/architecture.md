@@ -96,14 +96,16 @@ selectable.
 
 ## Layer 1: protocol adapters
 
-| Module      | Directory                 | Responsibility                                                               | Requires    |
-| ----------- | ------------------------- | ---------------------------------------------------------------------------- | ----------- |
-| `hls-cmaf`  | `src/protocols/hls-cmaf`  | Multivariant and media playlists, byte ranges, keys, couplings               | kernel      |
-| `hls-live`  | `src/protocols/hls-live`  | Playlist reload on the target-duration cadence, sliding window, `ENDLIST`    | `hls-cmaf`  |
-| `dash-cmaf` | `src/protocols/dash-cmaf` | MPD parsing, `SegmentTemplate`, `SegmentTimeline`, `SegmentBase` with `sidx` | kernel      |
-| `dash-live` | `src/protocols/dash-live` | Live window from `availabilityStartTime`, `UTCTiming`, MPD refresh           | `dash-cmaf` |
+| Module      | Directory                 | Responsibility                                                                                         | Requires    |
+| ----------- | ------------------------- | ------------------------------------------------------------------------------------------------------ | ----------- |
+| `hls-cmaf`  | `src/protocols/hls-cmaf`  | Multivariant and media playlists, byte ranges, keys, couplings                                         | kernel      |
+| `hls-live`  | `src/protocols/hls-live`  | Playlist reload on the target-duration cadence, sliding window, `ENDLIST`                              | `hls-cmaf`  |
+| `dash-cmaf` | `src/protocols/dash-cmaf` | MPD parsing, `SegmentTemplate`, `SegmentTimeline`, `SegmentBase` with `sidx`                           | kernel      |
+| `dash-live` | `src/protocols/dash-live` | Live window from `availabilityStartTime`, `UTCTiming`, MPD refresh                                     | `dash-cmaf` |
+| `hls-ll`    | `src/protocols/hls-ll`    | Parts, preload hints, blocking reloads and delta updates. Replaces `hls-cmaf` and `hls-live`           | kernel      |
+| `dash-ll`   | `src/protocols/dash-ll`   | `ServiceDescription`, `availabilityTimeOffset`, chunked segments. Replaces `dash-cmaf` and `dash-live` | kernel      |
 
-Both live adapters register `engine.live`.
+The live adapters and the low-latency adapters register `engine.live`.
 
 ## Layer 2: containers
 
@@ -129,27 +131,34 @@ Stages group by feature. Each row is one directory under `src/stages/`.
 | -------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- | ------------ |
 | `abr`          | Picks renditions from throughput and buffer level. Registers the chooser and an emergency floor | `scheduler`, `track-registry` |              |
 | `abr-cap-size` | Caps rendition height to the element size                                                       | `rendition-select`            |              |
+| `hdr`          | Keeps PQ and HLG renditions off a screen or decoder that cannot show them                       | `rendition-select`            | `hdr`        |
 | `codec-switch` | Answers whether a rendition switch is seamless, needs `changeType`, or a reload                 | `mse`                         |              |
 | `codec-probe`  | Publishes the codec string derived from init segments                                           | `mp4-box`                     | `codecProbe` |
 | `mp4-box`      | Exposes the box walker as `engine.mp4box`                                                       |                               | `mp4box`     |
 
 ### Audio, text, and metadata
 
-| Stage                   | Responsibility                                                          | Requires                    |
-| ----------------------- | ----------------------------------------------------------------------- | --------------------------- |
-| `alt-audio`             | Keeps the audio track consistent with the video rendition's audio group | `scheduler`, `codec-switch` |
-| `text-webvtt`           | WebVTT parser and the text sink                                         | `scheduler`                 |
-| `text-webvtt-segmented` | Applies `X-TIMESTAMP-MAP` offsets to segmented HLS subtitles            | `text-webvtt`               |
-| `text-cea608`           | CEA-608 captions from SEI to a native caption track                     | `nal-scan` or `ts-transmux` |
-| `nal-scan`              | Finds SEI units in H.264 and HEVC fMP4 samples for CEA-608              |                             |
-| `meta-id3`              | ID3 timed metadata to a metadata track                                  | `media-transform`           |
+| Stage                   | Responsibility                                                             | Requires                    |
+| ----------------------- | -------------------------------------------------------------------------- | --------------------------- |
+| `alt-audio`             | Keeps the audio track consistent with the video rendition's audio group    | `scheduler`, `codec-switch` |
+| `rendition-names`       | Localized rendition names from the HLS localization dictionary             | `transport`                 |
+| `forced-subtitles`      | Shows the forced track that goes with the audio language                   | `scheduler`                 |
+| `text-ttml`             | TTML (IMSC1 Text, EBU-TT-D), as a document or in fMP4, and image subtitles | `scheduler`                 |
+| `text-webvtt`           | WebVTT parser and the text sink                                            | `scheduler`                 |
+| `text-webvtt-segmented` | Applies `X-TIMESTAMP-MAP` offsets to segmented HLS subtitles               | `text-webvtt`               |
+| `text-cea608`           | CEA-608 captions from SEI to a native caption track                        | `nal-scan` or `ts-transmux` |
+| `text-cea708`           | CEA-708 services from the DTVCC data `text-cea608` leaves                  | `nal-scan` or `ts-transmux` |
+| `nal-scan`              | Finds SEI units in H.264 and HEVC fMP4 samples for CEA-608                 |                             |
+| `meta-id3`              | ID3 timed metadata to a metadata track                                     | `media-transform`           |
+| `timed-metadata`        | Date ranges, DASH events, ID3 and `emsg` in one list as `engine.metadata`  |                             |
 
 ### Live
 
-| Stage         | Responsibility                                                               | Requires   | Namespace |
-| ------------- | ---------------------------------------------------------------------------- | ---------- | --------- |
-| `pdt`         | Converts between wall clock and presentation time                            | `timeline` | `pdt`     |
-| `cmaf-timing` | Reads each segment's decode time so the kernel lands it at its manifest time |            |           |
+| Stage          | Responsibility                                                               | Requires   | Namespace |
+| -------------- | ---------------------------------------------------------------------------- | ---------- | --------- |
+| `pdt`          | Converts between wall clock and presentation time                            | `timeline` | `pdt`     |
+| `cmaf-timing`  | Reads each segment's decode time so the kernel lands it at its manifest time |            |           |
+| `live-catchup` | Holds a low-latency stream's target latency with playback-rate changes       |            | `catchup` |
 
 ### Legacy HLS
 
@@ -165,14 +174,24 @@ Stages group by feature. Each row is one directory under `src/stages/`.
 | `eme-cenc`     | Widevine and PlayReady license request and response shapes | `eme-core` |           |
 | `eme-fairplay` | FairPlay's SPC and CKC flow, certificate fetch             | `eme-core` |           |
 
-### Recovery, CDN, and thumbnails
+### Recovery, CDN, and navigation
 
-| Stage              | Responsibility                                                    | Requires           | Namespace    |
-| ------------------ | ----------------------------------------------------------------- | ------------------ | ------------ |
-| `recovery`         | Rendition exclusion, gap jumps, flushes, segment skips on failure | `scheduler`, `mse` |              |
-| `content-steering` | Pathway priority from a steering manifest, failover               | `transport`        |              |
-| `cmcd`             | Common Media Client Data on every request                         | `transport`        |              |
-| `thumbnails`       | Sprite-sheet tiles from a WebVTT thumbnail track                  | `transport`        | `thumbnails` |
+| Stage              | Responsibility                                                         | Requires                        | Namespace    |
+| ------------------ | ---------------------------------------------------------------------- | ------------------------------- | ------------ |
+| `recovery`         | Rendition exclusion, gap jumps, flushes, segment skips on failure      | `scheduler`, `mse`              |              |
+| `content-steering` | Pathway priority from a steering manifest, failover                    | `transport`                     |              |
+| `cmcd`             | Common Media Client Data on every request                              | `transport`                     |              |
+| `cmsd`             | Common Media Server Data: the CDN's throughput hint, read per response | `transport`, `rendition-select` |              |
+| `thumbnails`       | Sprite-sheet tiles from a WebVTT thumbnail track                       | `transport`                     | `thumbnails` |
+| `chapters`         | Named spans from the manifest, a chapters track or your data           | `transport`                     | `chapters`   |
+| `trick-play`       | Fast forward and rewind through the I-frame track                      | `scheduler`, `mse`              | `trick`      |
+
+### Breaks and measurement
+
+| Stage           | Responsibility                                                                          | Namespace       |
+| --------------- | --------------------------------------------------------------------------------------- | --------------- |
+| `interstitials` | HLS interstitials, DASH alternative MPD and scheduled breaks, played on the one engine  | `interstitials` |
+| `qoe`           | Startup time, rebuffering and quality switches, measured in the page. Nothing leaves it | `qoe`           |
 
 ## Dependency rules
 

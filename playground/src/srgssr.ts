@@ -2,9 +2,7 @@
  * SRG SSR content through the integration layer (IL): search by business
  * unit, resolve a URN to its media composition, pick a resource, and add
  * the Akamai token and DRM license URLs the resource needs. Playground
- * code only: the engine never knows where a URL came from. Adapted from
- * pillarbox-web (srgssr middleware, AkamaiTokenService, Drm) and the
- * pillarbox theme editor's il-provider.
+ * code only: the engine never knows where a URL came from.
  */
 
 export const IL_HOST = 'il.srgssr.ch';

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="700" viewBox="0 0 960 700" role="img" aria-label="Mattebox layers: your app on top, then the facade, stages, containers, protocol adapters, the kernel, and the browser platform at the bottom. Imports point downward only.">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="760" viewBox="0 0 960 760" role="img" aria-label="Mattebox layers: your app on top, then the facade, stages, containers, protocol adapters, the kernel, and the browser platform at the bottom. Imports point downward only.">
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b8b93"/>
@@ -20,57 +20,60 @@
   <text x="60" y="66" class="mono sub">mattebox({ stages: [hlsCmaf(), abr(), textWebvtt()] })</text>
 
   <!-- Facade -->
-  <rect x="40" y="98" width="780" height="72" rx="10" fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
+  <rect x="40" y="98" width="780" height="90" rx="10" fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
   <text x="60" y="123" class="label title">Facade</text>
   <text x="60" y="144" class="mono mods">engine.attach · load · quality · tracks · stats · error · media · on</text>
-  <text x="60" y="161" class="mono sub">engine.live · engine.drm · engine.thumbnails · engine.pdt   (only when the stage is loaded)</text>
+  <text x="60" y="161" class="mono sub">engine.live · drm · pdt · catchup · thumbnails · chapters · trick · interstitials</text>
+  <text x="60" y="178" class="mono sub">engine.qoe · hdr · ttml · metadata   (each only when its stage is loaded)</text>
 
   <!-- Layer 3 -->
-  <rect x="40" y="190" width="780" height="112" rx="10" fill="#bfdbfe" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="60" y="215" class="label title">Layer 3 · Stages</text>
-  <text x="250" y="215" class="label sub">optional, additive, never import each other</text>
-  <text x="60" y="240" class="mono mods">abr · abr-cap-size · abr-persist · alt-audio · codec-switch · codec-probe · mp4-box</text>
-  <text x="60" y="259" class="mono mods">text-webvtt · text-webvtt-segmented · text-cea608 · nal-scan · meta-id3 · pdt · cmaf-timing</text>
-  <text x="60" y="278" class="mono mods">eme-core · eme-cenc · eme-fairplay · recovery · content-steering · cmcd · thumbnails</text>
+  <rect x="40" y="208" width="780" height="150" rx="10" fill="#bfdbfe" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="60" y="233" class="label title">Layer 3 · Stages</text>
+  <text x="250" y="233" class="label sub">optional, additive, never import each other</text>
+  <text x="60" y="258" class="mono mods">abr · abr-cap-size · codec-switch · hdr · rendition-names · recovery · content-steering</text>
+  <text x="60" y="277" class="mono mods">alt-audio · forced-subtitles · text-webvtt · text-webvtt-segmented · text-ttml</text>
+  <text x="60" y="296" class="mono mods">text-cea608 · text-cea708 · nal-scan · codec-probe · mp4-box · cmaf-timing · pdt</text>
+  <text x="60" y="315" class="mono mods">live-catchup · aes-128 · eme-core · eme-cenc · eme-fairplay · cmcd · cmsd · qoe</text>
+  <text x="60" y="334" class="mono mods">thumbnails · chapters · trick-play · timed-metadata · meta-id3 · interstitials</text>
 
   <!-- Layer 2 -->
-  <rect x="40" y="322" width="780" height="72" rx="10" fill="#c7d2fe" stroke="#4f46e5" stroke-width="1.5"/>
-  <text x="60" y="347" class="label title">Layer 2 · Containers</text>
-  <text x="270" y="347" class="label sub">byte-level work, optional</text>
-  <text x="60" y="372" class="mono mods">mp4-box · codec-probe · fmp4 writer · ts-transmux · packed-audio</text>
+  <rect x="40" y="378" width="780" height="72" rx="10" fill="#c7d2fe" stroke="#4f46e5" stroke-width="1.5"/>
+  <text x="60" y="403" class="label title">Layer 2 · Containers</text>
+  <text x="270" y="403" class="label sub">byte-level work, optional</text>
+  <text x="60" y="428" class="mono mods">mp4-box · codec-probe · fmp4 · ts-transmux · packed-audio · adts · id3 · emsg · scte35 · sei</text>
 
   <!-- Layer 1 -->
-  <rect x="40" y="414" width="780" height="72" rx="10" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1.5"/>
-  <text x="60" y="439" class="label title">Layer 1 · Protocol adapters</text>
-  <text x="310" y="439" class="label sub">at least one, all emit the same IR</text>
-  <text x="60" y="464" class="mono mods">hls-cmaf · hls-live · dash-cmaf · dash-live</text>
+  <rect x="40" y="470" width="780" height="72" rx="10" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="60" y="495" class="label title">Layer 1 · Protocol adapters</text>
+  <text x="310" y="495" class="label sub">at least one, all emit the same IR</text>
+  <text x="60" y="520" class="mono mods">hls-cmaf · hls-live · hls-ll · dash-cmaf · dash-live · dash-ll</text>
 
   <!-- Layer 0 -->
-  <rect x="40" y="506" width="780" height="112" rx="10" fill="#fecaca" stroke="#dc2626" stroke-width="1.5"/>
-  <text x="60" y="531" class="label title">Layer 0 · Kernel</text>
-  <text x="220" y="531" class="label sub">always present, imports nothing above it</text>
-  <text x="60" y="556" class="mono mods">bus · reducer · effects · trace · loader · lifecycle · context</text>
-  <text x="60" y="575" class="mono mods">mse · append-queue · evictor · scheduler · transport · timeline · watchdog</text>
-  <text x="60" y="594" class="mono mods">track-registry · rendition-select · sinks (mse · text-track · metadata)</text>
+  <rect x="40" y="562" width="780" height="112" rx="10" fill="#fecaca" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="60" y="587" class="label title">Layer 0 · Kernel</text>
+  <text x="220" y="587" class="label sub">always present, imports nothing above it</text>
+  <text x="60" y="612" class="mono mods">bus · reducer · effects · trace · dry-run · loader · lifecycle · context · prepare</text>
+  <text x="60" y="631" class="mono mods">mse · append-queue · evictor · scheduler · transport · timeline · refresh · watchdog</text>
+  <text x="60" y="650" class="mono mods">track-registry · rendition-select · characteristics · sinks (mse · text-track · metadata)</text>
 
   <!-- Platform -->
-  <rect x="40" y="638" width="780" height="44" rx="10" fill="#e4e4e7" stroke="#a1a1aa" stroke-width="1.5" stroke-dasharray="6 4"/>
-  <text x="60" y="665" class="label title">Browser</text>
-  <text x="160" y="665" class="mono sub">MediaSource · SourceBuffer · EME · fetch · TextTrack · ResizeObserver</text>
+  <rect x="40" y="694" width="780" height="44" rx="10" fill="#e4e4e7" stroke="#a1a1aa" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="60" y="721" class="label title">Browser</text>
+  <text x="160" y="721" class="mono sub">MediaSource · SourceBuffer · EME · fetch · TextTrack · ResizeObserver</text>
 
   <!-- Dependency arrow -->
-  <line x1="852" y1="190" x2="852" y2="610" stroke="#8b8b93" stroke-width="2" marker-end="url(#arrow)"/>
-  <text x="870" y="380" class="label sidebold">imports</text>
-  <text x="870" y="398" class="label side">point down</text>
-  <text x="870" y="416" class="label side">only</text>
+  <line x1="852" y1="208" x2="852" y2="666" stroke="#8b8b93" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="870" y="420" class="label sidebold">imports</text>
+  <text x="870" y="438" class="label side">point down</text>
+  <text x="870" y="456" class="label side">only</text>
 
   <!-- Requires note -->
-    <text x="870" y="230" class="label sidebold">requires</text>
-  <text x="870" y="248" class="label side">resolved by</text>
-  <text x="870" y="266" class="label side">the loader</text>
+  <text x="870" y="248" class="label sidebold">requires</text>
+  <text x="870" y="266" class="label side">resolved by</text>
+  <text x="870" y="284" class="label side">the loader</text>
 
   <!-- IR note -->
-  <text x="870" y="450" class="label sidebold">IR</text>
-  <text x="870" y="468" class="label side">one timeline</text>
-  <text x="870" y="486" class="label side">model</text>
+  <text x="870" y="506" class="label sidebold">IR</text>
+  <text x="870" y="524" class="label side">one timeline</text>
+  <text x="870" y="542" class="label side">model</text>
 </svg>
