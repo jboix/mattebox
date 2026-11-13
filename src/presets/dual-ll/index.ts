@@ -4,7 +4,10 @@
  * HLS and DASH live channels.
  */
 import { definePreset } from '../define.js';
-import { base, dashLlLine, hlsLlLine, lowLatencyTier } from '../tiers.js';
+import { base } from '../tiers/base.js';
+import { dashLlLine } from '../tiers/dash-ll.js';
+import { hlsLlLine } from '../tiers/hls-ll.js';
+import { lowLatencyTier } from '../tiers/low-latency.js';
 
 const preset = definePreset('dual-ll', () => [
   ...hlsLlLine(),

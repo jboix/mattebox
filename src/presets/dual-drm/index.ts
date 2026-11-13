@@ -2,7 +2,10 @@
  * The `dual-drm` preset: `dual` plus the EME stages.
  */
 import { definePreset } from '../define.js';
-import { base, dashLine, drmTier, hlsLine } from '../tiers.js';
+import { base } from '../tiers/base.js';
+import { dashLine } from '../tiers/dash.js';
+import { drmTier } from '../tiers/drm.js';
+import { hlsLine } from '../tiers/hls.js';
 
 const preset = definePreset('dual-drm', () => [
   ...hlsLine(),

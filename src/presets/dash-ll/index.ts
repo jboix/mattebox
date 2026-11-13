@@ -4,7 +4,9 @@
  * in `dash`.
  */
 import { definePreset } from '../define.js';
-import { base, dashLlLine, lowLatencyTier } from '../tiers.js';
+import { base } from '../tiers/base.js';
+import { dashLlLine } from '../tiers/dash-ll.js';
+import { lowLatencyTier } from '../tiers/low-latency.js';
 
 const preset = definePreset('dash-ll', () => [...dashLlLine(), ...lowLatencyTier(), ...base()]);
 export default preset;

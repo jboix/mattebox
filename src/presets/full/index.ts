@@ -25,7 +25,12 @@ import thumbnails from '../../stages/thumbnails/index.js';
 import timedMetadata from '../../stages/timed-metadata/index.js';
 import trickPlay from '../../stages/trick-play/index.js';
 import { definePreset } from '../define.js';
-import { base, dashLlLine, drmTier, hlsLlLine, lowLatencyTier, tsTier } from '../tiers.js';
+import { base } from '../tiers/base.js';
+import { dashLlLine } from '../tiers/dash-ll.js';
+import { drmTier } from '../tiers/drm.js';
+import { hlsLlLine } from '../tiers/hls-ll.js';
+import { lowLatencyTier } from '../tiers/low-latency.js';
+import { tsTier } from '../tiers/ts.js';
 
 const preset = definePreset('full', () => [
   ...hlsLlLine(),
