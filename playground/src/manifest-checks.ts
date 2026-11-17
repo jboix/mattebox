@@ -42,6 +42,7 @@ const KEY_SYSTEMS: Record<string, { name: string; keySystem: string }> = {
     keySystem: 'com.microsoft.playready',
   },
   '94ce86fb-07ff-4f43-adb8-93d2fa968ca2': { name: 'FairPlay', keySystem: 'com.apple.fps' },
+  '3d5e6d35-9b9a-41e8-b843-dd3c6e72c42c': { name: 'WisePlay', keySystem: 'com.huawei.wiseplay' },
   '1077efec-c0b2-4d02-ace3-3c1e52e2fb4b': { name: 'ClearKey', keySystem: 'org.w3.clearkey' },
   'e2719d58-a985-b3c9-781a-b030af78d30e': { name: 'ClearKey', keySystem: 'org.w3.clearkey' },
 };

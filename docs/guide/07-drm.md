@@ -9,9 +9,10 @@ This chapter covers protected content through Encrypted Media Extensions.
 | `eme-core`     | The EME handshake, session management, and ClearKey |
 | `eme-cenc`     | Widevine and PlayReady over Common Encryption       |
 | `eme-fairplay` | FairPlay Streaming on Safari                        |
+| `eme-wiseplay` | Huawei WisePlay over Common Encryption              |
 
-`eme-core` is required by the other two. Load the key systems your content
-uses.
+`eme-core` is required by the others. Load the key systems your content
+uses. The `-drm` presets and `full` carry all four.
 
 ```ts
 import emeCenc from 'mattebox/stages/eme-cenc';
@@ -61,6 +62,7 @@ emeCore({
     'com.widevine.alpha': 'https://license.example.com/widevine',
     'com.microsoft.playready': 'https://license.example.com/playready',
     'com.apple.fps': 'https://license.example.com/fairplay',
+    'com.huawei.wiseplay': 'https://license.example.com/wiseplay',
   },
   requestFilter: (body, keySystem) => body,
 });
@@ -241,6 +243,40 @@ Key servers differ in the license request body they accept.
 FairPlay HLS in MPEG-TS uses SAMPLE-AES. Only Safari's own player decrypts
 it, so it plays through native HLS (see "DRM without the engine" below),
 not through the engine. FairPlay in fMP4 (`cbcs`) plays through both.
+
+## WisePlay
+
+WisePlay is Huawei's key system, built on the ChinaDRM standard. LG webOS
+TVs and Huawei devices have it; desktop browsers do not.
+
+```ts
+import emeWiseplay from 'mattebox/stages/eme-wiseplay';
+
+emeCore({
+  licenseUrls: { 'com.huawei.wiseplay': 'https://license.example.com/wiseplay' },
+});
+emeWiseplay();
+```
+
+- The key system is `com.huawei.wiseplay`. Where the device refuses it,
+  the engine asks for `com.wiseplay.drm`, the name a HarmonyOS device
+  answered to in [shaka-player#8185](https://github.com/shaka-project/shaka-player/issues/8185).
+  A `licenseUrls` entry under that name serves that case; `licenseUrl`
+  serves both.
+- The manifest names WisePlay with the
+  system id `3d5e6d35-9b9a-41e8-b843-dd3c6e72c42c`: a DASH
+  `ContentProtection`, or an HLS `EXT-X-KEY` with
+  `KEYFORMAT="urn:uuid:3d5e6d35-9b9a-41e8-b843-dd3c6e72c42c"`.
+- The init data is `cenc`. The license request is the CDM's message as it
+  is, and the response is the license, as for Widevine. A server that
+  wraps them needs `requestFilter` and `responseFilter`.
+- The request names no robustness level, since WisePlay publishes none.
+- On a device that has both Widevine and WisePlay, a manifest that names
+  both gets the first one in `preferredKeySystems`, else the first
+  registered.
+
+The stage is tested against a stand-in for EME, not yet against a WisePlay
+CDM. Report what a real device does.
 
 ## ClearKey
 

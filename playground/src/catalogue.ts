@@ -41,6 +41,7 @@ import contentSteering from '../../src/stages/content-steering/index.js';
 import emeCenc from '../../src/stages/eme-cenc/index.js';
 import emeCore from '../../src/stages/eme-core/index.js';
 import emeFairplay from '../../src/stages/eme-fairplay/index.js';
+import emeWiseplay from '../../src/stages/eme-wiseplay/index.js';
 import forcedSubtitles from '../../src/stages/forced-subtitles/index.js';
 import hdr from '../../src/stages/hdr/index.js';
 import interstitials from '../../src/stages/interstitials/index.js';
@@ -112,6 +113,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('stages', () => emeCore()),
   built('stages', emeCenc),
   built('stages', () => emeFairplay()),
+  built('stages', emeWiseplay),
   built('stages', recovery),
   built('stages', contentSteering),
   built('stages', cmcd),
@@ -561,5 +563,17 @@ export const STREAMS: readonly StreamEntry[] = [
     url: 'https://storage.googleapis.com/shaka-demo-assets/sintel-widevine/dash.mpd',
     topic: 'drm',
     licenseUrl: 'https://cwip-shaka-proxy.appspot.com/no_auth',
+  },
+  {
+    // ByteArk's test pair for its WisePlay sample app
+    // (github.com/byteark/huawei-wiseplay-example-app). It plays only where
+    // a WisePlay CDM is, such as an LG webOS TV or a Huawei device.
+    label: 'ByteArk · Big Buck Bunny, WisePlay',
+    url: 'https://byteark-dev-video-sample.st-th-1.byteark.com/wiseplay/big_buck_bunny/playlist.mpd',
+    topic: 'drm',
+    tags: ['WisePlay'],
+    licenseUrl:
+      'https://byteark-drm.develop.poring.arkcube.com/wp/license/testwiseplayservice/bunnywiseplay',
+    keySystem: 'WisePlay',
   },
 ];

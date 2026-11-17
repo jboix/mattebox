@@ -3,7 +3,7 @@
  * and eme-core reads. A handler is pure config plus two shaping functions,
  * so a module-level registry is safe across engines: no per-engine state
  * lives here. eme-core supplies ClearKey itself; the others register
- * Widevine, PlayReady, and FairPlay.
+ * Widevine, PlayReady, FairPlay, and WisePlay.
  *
  * This mirrors live-shared.ts: a shared module is not a lateral stage
  * import, which keeps the dependency-cruiser rule satisfied while the

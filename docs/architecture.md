@@ -173,6 +173,7 @@ Stages group by feature. Each row is one directory under `src/stages/`.
 | `eme-core`     | The EME handshake, session management, ClearKey            | `mse`      | `drm`     |
 | `eme-cenc`     | Widevine and PlayReady license request and response shapes | `eme-core` |           |
 | `eme-fairplay` | FairPlay's SPC and CKC flow, certificate fetch             | `eme-core` |           |
+| `eme-wiseplay` | WisePlay's license request and response shapes             | `eme-core` |           |
 
 ### Recovery, CDN, and navigation
 

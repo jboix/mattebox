@@ -11,7 +11,7 @@ order the first time, then use the table.
 | [04 Live streaming](04-live-streaming.md)                     | The live adapters, the edge, latency, wall-clock time                      |
 | [05 Quality and ABR](05-quality-and-abr.md)                   | Renditions, constraints, pins, the `abr` and `hdr` stages                  |
 | [06 Audio and text](06-audio-and-text.md)                     | Alternate audio, WebVTT, TTML, CEA-608 and 708, timed metadata             |
-| [07 DRM](07-drm.md)                                           | ClearKey, Widevine, PlayReady, FairPlay                                    |
+| [07 DRM](07-drm.md)                                           | ClearKey, Widevine, PlayReady, FairPlay, WisePlay                          |
 | [08 Legacy transport streams](08-legacy-transport-streams.md) | MPEG-TS, packed audio, and codec probing                                   |
 | [09 Events and errors](09-events-and-errors.md)               | Events, error codes, the `recovery` stage                                  |
 | [10 Thumbnails](10-thumbnails.md)                             | Scrub previews from the manifest or a sprite track                         |

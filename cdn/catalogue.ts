@@ -27,6 +27,7 @@ import contentSteering from '../src/stages/content-steering/index.js';
 import emeCenc from '../src/stages/eme-cenc/index.js';
 import emeCore from '../src/stages/eme-core/index.js';
 import emeFairplay from '../src/stages/eme-fairplay/index.js';
+import emeWiseplay from '../src/stages/eme-wiseplay/index.js';
 import forcedSubtitles from '../src/stages/forced-subtitles/index.js';
 import hdr from '../src/stages/hdr/index.js';
 import liveCatchup from '../src/stages/live-catchup/index.js';
@@ -74,7 +75,7 @@ export const baseFactories = {
 export const tsFactories = { tsTransmux, packedAudio, metaId3 };
 // attachEme: the same DRM on an element the engine does not drive, such as
 // Safari playing HLS natively. A player's own CDN bundle reads it here.
-export const drmFactories = { emeCore, emeCenc, emeFairplay, attachEme };
+export const drmFactories = { emeCore, emeCenc, emeFairplay, emeWiseplay, attachEme };
 export const accessoryFactories = {
   cmcd,
   thumbnails,

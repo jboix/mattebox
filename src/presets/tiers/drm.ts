@@ -7,9 +7,10 @@
 import emeCenc from '../../stages/eme-cenc/index.js';
 import emeCore from '../../stages/eme-core/index.js';
 import emeFairplay from '../../stages/eme-fairplay/index.js';
+import emeWiseplay from '../../stages/eme-wiseplay/index.js';
 import type { Stage } from '../../types/stage.js';
 
-/** The EME stages: sessions, CENC (Widevine, PlayReady, ClearKey), FairPlay. */
+/** The EME stages: sessions, CENC (Widevine, PlayReady, ClearKey), FairPlay, WisePlay. */
 export function drmTier(): Stage[] {
-  return [emeCore(), emeCenc(), emeFairplay()];
+  return [emeCore(), emeCenc(), emeFairplay(), emeWiseplay()];
 }

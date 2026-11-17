@@ -637,3 +637,180 @@ describe('eme-core license renewal', () => {
     expect(t.sessions.every((s) => s.closed)).toBe(true);
   });
 });
+
+describe('eme-wiseplay', () => {
+  it('registers com.huawei.wiseplay for the ChinaDRM system id, passing the message and license through', async () => {
+    const { default: emeWiseplay, WISEPLAY_SYSTEM_ID } = await import(
+      '../../../src/stages/eme-wiseplay/index.js'
+    );
+    emeWiseplay().install({} as never);
+    const wiseplay = keySystemHandlers().find((h) => h.keySystem === 'com.huawei.wiseplay');
+    const fallback = keySystemHandlers().find((h) => h.keySystem === 'com.wiseplay.drm');
+    expect(fallback?.systemIds).toEqual([WISEPLAY_SYSTEM_ID]);
+    expect(WISEPLAY_SYSTEM_ID).toBe('3d5e6d35-9b9a-41e8-b843-dd3c6e72c42c');
+    expect(wiseplay?.systemIds).toEqual([WISEPLAY_SYSTEM_ID]);
+    expect(wiseplay?.initDataTypes).toEqual(['cenc']);
+    expect(wiseplay?.robustness).toBeUndefined();
+    const message = bytes('challenge');
+    expect(new Uint8Array(wiseplay?.buildLicenseRequest(message) as Uint8Array)).toEqual(
+      new Uint8Array(message),
+    );
+    const license = bytes('license');
+    expect(new Uint8Array(wiseplay?.parseLicenseResponse(license) as ArrayBuffer)).toEqual(
+      new Uint8Array(license),
+    );
+  });
+
+  it('a manifest that names WisePlay picks it over Widevine, and posts the message to its own license URL', async () => {
+    const { default: emeCenc } = await import('../../../src/stages/eme-cenc/index.js');
+    const { default: emeWiseplay } = await import('../../../src/stages/eme-wiseplay/index.js');
+    emeCenc().install({} as never);
+    emeWiseplay().install({} as never);
+    // An LG webOS TV: Widevine and WisePlay both answer.
+    const asked: Array<{ keySystem: string; robustness: string[] }> = [];
+    const updates: string[] = [];
+    const session = Object.assign(new EventTarget(), {
+      keyStatuses: new Map(),
+      closed: new Promise(() => undefined),
+      async generateRequest() {
+        const event = Object.assign(new Event('message'), {
+          messageType: 'license-request',
+          message: bytes('wiseplay-challenge'),
+        });
+        session.dispatchEvent(event);
+      },
+      async update(license: ArrayBuffer | Uint8Array) {
+        updates.push(new TextDecoder().decode(license));
+      },
+      async close() {},
+    });
+    const original = navigator.requestMediaKeySystemAccess;
+    Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+      configurable: true,
+      value: async (keySystem: string, configs: MediaKeySystemConfiguration[]) => {
+        if (keySystem !== 'com.widevine.alpha' && keySystem !== 'com.huawei.wiseplay') {
+          throw new Error('unsupported');
+        }
+        asked.push({
+          keySystem,
+          robustness: configs.map((c) => c.videoCapabilities?.[0]?.robustness ?? ''),
+        });
+        return { createMediaKeys: async () => ({ createSession: () => session }) };
+      },
+    });
+    const posts: Array<{ url: string; body: string }> = [];
+    const errors: unknown[] = [];
+    let chosen: unknown = null;
+    let onProtection: ((payload: unknown) => void) | null = null;
+    try {
+      emeCore({
+        licenseUrls: {
+          'com.widevine.alpha': 'https://widevine.example/license',
+          'com.huawei.wiseplay': 'https://wiseplay.example/license',
+        },
+      }).install({
+        element: Object.assign(new EventTarget(), {
+          paused: false,
+          setMediaKeys: async () => undefined,
+        }),
+        registerNamespace: () => undefined,
+        request: async (url: string, init: { body?: ArrayBuffer | Uint8Array }) => {
+          posts.push({ url, body: new TextDecoder().decode(init.body as Uint8Array) });
+          return new Response(bytes('wiseplay-license'));
+        },
+        emit: (event: string, payload: unknown) => {
+          if (event === 'error') errors.push(payload);
+          if (event === 'drm:keysystem') chosen = payload;
+        },
+        on: (event: string, fn: (payload: unknown) => void) => {
+          if (event === 'presentation:protection') onProtection = fn;
+          return () => undefined;
+        },
+      } as unknown as StageContext);
+      // HLS names the system in KEYFORMAT as a URN, in any case.
+      (onProtection as unknown as (payload: unknown) => void)([
+        {
+          systemId: 'urn:uuid:3D5E6D35-9B9A-41E8-B843-DD3C6E72C42C',
+          scheme: 'sample-aes-ctr',
+          keyId: null,
+          licenseUrl: null,
+          initData: bytes('pssh'),
+          initDataType: 'cenc',
+        },
+      ]);
+      await vi.waitFor(() => expect(updates).toEqual(['wiseplay-license']));
+      expect(chosen).toEqual({ keySystem: 'com.huawei.wiseplay' });
+      expect(asked).toEqual([{ keySystem: 'com.huawei.wiseplay', robustness: [''] }]);
+      expect(posts).toEqual([
+        { url: 'https://wiseplay.example/license', body: 'wiseplay-challenge' },
+      ]);
+      expect(errors).toEqual([]);
+    } finally {
+      Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+        configurable: true,
+        value: original,
+      });
+    }
+  });
+  it('a device that refuses com.huawei.wiseplay gets com.wiseplay.drm', async () => {
+    const { default: emeWiseplay } = await import('../../../src/stages/eme-wiseplay/index.js');
+    emeWiseplay().install({} as never);
+    // A HarmonyOS device, as in shaka-player#8185: only the second name answers.
+    const asked: string[] = [];
+    const original = navigator.requestMediaKeySystemAccess;
+    Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+      configurable: true,
+      value: async (keySystem: string) => {
+        asked.push(keySystem);
+        if (keySystem !== 'com.wiseplay.drm') throw new Error('unsupported');
+        return {
+          createMediaKeys: async () => ({
+            createSession: () =>
+              Object.assign(new EventTarget(), {
+                keyStatuses: new Map(),
+                closed: new Promise(() => undefined),
+                async generateRequest() {},
+                async close() {},
+              }),
+          }),
+        };
+      },
+    });
+    let chosen: unknown = null;
+    let onProtection: ((payload: unknown) => void) | null = null;
+    try {
+      emeCore({ licenseUrl: 'https://wiseplay.example/license' }).install({
+        element: Object.assign(new EventTarget(), {
+          paused: false,
+          setMediaKeys: async () => undefined,
+        }),
+        registerNamespace: () => undefined,
+        request: async () => new Response(bytes('license')),
+        emit: (event: string, payload: unknown) => {
+          if (event === 'drm:keysystem') chosen = payload;
+        },
+        on: (event: string, fn: (payload: unknown) => void) => {
+          if (event === 'presentation:protection') onProtection = fn;
+          return () => undefined;
+        },
+      } as unknown as StageContext);
+      (onProtection as unknown as (payload: unknown) => void)([
+        {
+          systemId: '3d5e6d35-9b9a-41e8-b843-dd3c6e72c42c',
+          scheme: 'cenc',
+          keyId: null,
+          licenseUrl: null,
+          initData: bytes('pssh'),
+          initDataType: 'cenc',
+        },
+      ]);
+      await vi.waitFor(() => expect(chosen).toEqual({ keySystem: 'com.wiseplay.drm' }));
+      expect(asked.slice(0, 2)).toEqual(['com.huawei.wiseplay', 'com.wiseplay.drm']);
+    } finally {
+      Object.defineProperty(navigator, 'requestMediaKeySystemAccess', {
+        configurable: true,
+        value: original,
+      });
+    }
+  });
+});

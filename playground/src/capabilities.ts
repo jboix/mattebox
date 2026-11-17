@@ -75,6 +75,7 @@ const KEY_SYSTEMS: readonly KeySystemProbe[] = [
     ],
   },
   { label: 'FairPlay', keySystems: ['com.apple.fps', 'com.apple.fps.1_0'], levels: [] },
+  { label: 'WisePlay', keySystems: ['com.huawei.wiseplay', 'com.wiseplay.drm'], levels: [] },
   { label: 'ClearKey', keySystems: ['org.w3.clearkey'], levels: [] },
 ];
 

@@ -18,8 +18,8 @@
  * its own (Widevine `license-renewal`) takes the normal license path.
  *
  * ClearKey is built in — it is the only key system testable headlessly.
- * Widevine, PlayReady, and FairPlay arrive as handlers eme-cenc and
- * eme-fairplay register through drm-shared.
+ * Widevine, PlayReady, FairPlay, and WisePlay arrive as handlers eme-cenc,
+ * eme-fairplay, and eme-wiseplay register through drm-shared.
  *
  * A license request follows hls.js's key-load policy: a network error or
  * an HTTP status outside 4xx retries up to 8 times, a timeout (20 s) once,

@@ -79,6 +79,7 @@ const KEY_SYSTEMS: Record<string, string> = {
   Widevine: 'com.widevine.alpha',
   PlayReady: 'com.microsoft.playready',
   FairPlay: 'com.apple.fps',
+  WisePlay: 'com.huawei.wiseplay',
   ClearKey: 'org.w3.clearkey',
 };
 
@@ -323,6 +324,7 @@ app.innerHTML = `
           <option value="Widevine">Widevine</option>
           <option value="PlayReady">PlayReady</option>
           <option value="FairPlay">FairPlay</option>
+          <option value="WisePlay">WisePlay</option>
           <option value="ClearKey">ClearKey</option>
         </select>
         <span id="drmState" class="pill">no DRM</span>

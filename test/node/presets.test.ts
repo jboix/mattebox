@@ -45,7 +45,7 @@ const BASE = [
   'text-cea608',
 ];
 const TS = ['ts-transmux', 'packed-audio', 'meta-id3'];
-const DRM = ['eme-core', 'eme-cenc', 'eme-fairplay'];
+const DRM = ['eme-core', 'eme-cenc', 'eme-fairplay', 'eme-wiseplay'];
 const ACCESSORIES = [
   'thumbnails',
   'chapters',
@@ -90,7 +90,7 @@ describe('the preset matrix', () => {
   it('full carries each of its stages once', () => {
     const names = full.stages().map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(35);
+    expect(names.length).toBe(36);
     // hls-ll and dash-ll stand in for the plain lines.
     expect(names).not.toContain('hls-live');
     expect(names).not.toContain('dash-live');

@@ -71,6 +71,7 @@ these.
 | `eme-core`     | Opens key sessions and requests licenses | [07](07-drm.md#eme-stages) |
 | `eme-cenc`     | Widevine, PlayReady, and ClearKey        | [07](07-drm.md#eme-stages) |
 | `eme-fairplay` | FairPlay                                 | [07](07-drm.md#fairplay)   |
+| `eme-wiseplay` | WisePlay                                 | [07](07-drm.md#wiseplay)   |
 
 ## Stages only in `full`
 
