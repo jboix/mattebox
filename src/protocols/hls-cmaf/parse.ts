@@ -901,6 +901,13 @@ export function parse(
         : video !== null && /^dv(h1|he|a1|av)/.test(video)
           ? 'PQ'
           : undefined;
+    // RFC 8216bis §4.4.6.2: entries by comma, preferred first; specifiers by slash.
+    const layout = (variant.attributes['REQ-VIDEO-LAYOUT'] ?? '').split(',')[0]?.split('/') ?? [];
+    const projection = layout.includes('PROJ-EQUI')
+      ? 'equirectangular'
+      : layout.includes('PROJ-HEQU')
+        ? 'half-equirectangular'
+        : undefined;
     const pathway = variant.attributes['PATHWAY-ID'];
     let id = pathway !== undefined ? `v-${bandwidth}-${pathway}` : `v-${bandwidth}`;
     const taken = declared.get(id);
@@ -929,6 +936,7 @@ export function parse(
       ...(height !== undefined ? { height } : {}),
       ...(Number.isFinite(frameRate) ? { frameRate } : {}),
       ...(videoRange !== undefined ? { videoRange } : {}),
+      ...(projection !== undefined ? { projection } : {}),
     };
     const requires: Record<string, string> = {};
     if (variant.attributes.AUDIO !== undefined) requires.audio = variant.attributes.AUDIO;

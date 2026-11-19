@@ -186,6 +186,22 @@ engine.on('tracks:changed', () => {
 });
 ```
 
+## 360° video
+
+A video rendition carries `projection` when the manifest says its picture
+maps onto a sphere. The engine only reports it. Drawing the sphere is the
+player's job, such as `@mattebox/player-360`.
+
+| `projection`             | HLS `REQ-VIDEO-LAYOUT` |
+| ------------------------ | ---------------------- |
+| `'equirectangular'`      | `PROJ-EQUI`            |
+| `'half-equirectangular'` | `PROJ-HEQU`            |
+
+- The engine reads the first entry of the attribute, the preferred one.
+- DASH has no attribute the engine reads yet, and neither do the boxes of
+  the init segment. A stream that states its projection only there has no
+  `projection`. Your page or connector tells the player instead.
+
 ## Example
 
 Play either format and log the renditions.

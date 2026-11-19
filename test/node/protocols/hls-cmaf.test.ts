@@ -591,6 +591,31 @@ describe('video range', () => {
   });
 });
 
+describe('projection', () => {
+  it('reads PROJ-EQUI and PROJ-HEQU from the preferred entry of REQ-VIDEO-LAYOUT', () => {
+    const master = [
+      '#EXTM3U',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1000,CODECS="avc1.640028",REQ-VIDEO-LAYOUT="CH-MONO/PROJ-EQUI"',
+      'equi.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=2000,CODECS="avc1.640028",REQ-VIDEO-LAYOUT="PROJ-HEQU/CH-STEREO,CH-MONO"',
+      'hequ.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=3000,CODECS="avc1.640028",REQ-VIDEO-LAYOUT="CH-STEREO,PROJ-EQUI"',
+      'later.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=4000,CODECS="avc1.640028"',
+      'flat.m3u8',
+    ].join('\n');
+    const video = parse(master, BASE).presentation?.periods[0]?.tracks.find(
+      (t) => t.contentType === 'video',
+    );
+    expect(video?.renditions.map((r) => r.projection)).toEqual([
+      'equirectangular',
+      'half-equirectangular',
+      undefined,
+      undefined,
+    ]);
+  });
+});
+
 describe('subtitles in fMP4', () => {
   it('types a subtitle group as application/mp4 with the stpp codec the variants name', () => {
     const master = [

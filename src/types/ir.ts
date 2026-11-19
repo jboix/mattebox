@@ -233,6 +233,13 @@ export interface Rendition {
    * codec without either. Absent means unknown, which counts as SDR.
    */
   readonly videoRange?: 'SDR' | 'PQ' | 'HLG';
+  /**
+   * How the picture maps onto a sphere, for 360° video: HLS REQ-VIDEO-LAYOUT
+   * `PROJ-EQUI` or `PROJ-HEQU` (RFC 8216bis §4.4.6.2), in its first entry,
+   * the preferred one. Absent means a flat picture, or a projection the
+   * manifest does not state.
+   */
+  readonly projection?: 'equirectangular' | 'half-equirectangular';
   /** RFC 6381 codec string. Null when the manifest does not declare one, common for text. */
   readonly codecs: string | null;
   /**
