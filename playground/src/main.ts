@@ -31,7 +31,7 @@ import { createCharts } from './charts.js';
 import { fmtBitrate, renderQuality } from './dock.js';
 import type { FaultConfig } from './faults.js';
 import { createFaultyFetch, defaultFaults } from './faults.js';
-import { escapeHtml } from './html.js';
+import { escapeHtml, markFlexGap, setChildren } from './html.js';
 import { renderInterstitials } from './interstitials.js';
 import type { Level, Source } from './log.js';
 import { createEventLog, toJson } from './log.js';
@@ -51,6 +51,8 @@ import {
 } from './srgssr.js';
 import { bindThemeToggle } from './theme.js';
 import { createTransportBar } from './transport.js';
+
+markFlexGap();
 
 interface PlaygroundConfig {
   stages: string[];
@@ -745,7 +747,8 @@ function renderStages(): void {
   const presetSelect = document.querySelector('#presetSelect') as HTMLSelectElement;
   const current = config.custom === true ? null : matchPreset(config.stages);
   const custom = current === null;
-  presetSelect.replaceChildren(
+  setChildren(
+    presetSelect,
     ...PRESETS.map((p) => new Option(p.name, p.name, false, p.name === current)),
     new Option('custom', 'custom', false, custom),
   );

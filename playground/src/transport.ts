@@ -15,6 +15,7 @@
  */
 import type { Mattebox, Track } from '../../src/index.js';
 import { collapseGroups, trackName } from './dock.js';
+import { setChildren } from './html.js';
 import type { ThumbnailsView } from './thumb.js';
 import { paintThumb } from './thumb.js';
 
@@ -437,7 +438,8 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
     const signature = all.map((c) => `${c.id}@${c.start}`).join('|');
     if (signature !== chaptersSignature) {
       chaptersSignature = signature;
-      chapterList.replaceChildren(
+      setChildren(
+        chapterList,
         ...all.map((chapter) => {
           const item = document.createElement('li');
           const button = document.createElement('button');
@@ -511,8 +513,9 @@ export function createTransportBar(host: HTMLElement, deps: TransportDeps): Tran
       node.disabled = !playable;
       return node;
     };
-    audioSelect.replaceChildren(...audio.map((t) => option(t, activeAudio)));
-    textSelect.replaceChildren(
+    setChildren(audioSelect, ...audio.map((t) => option(t, activeAudio)));
+    setChildren(
+      textSelect,
       new Option('Off', '', false, activeText === undefined),
       ...text.map((t) => option(t, activeText)),
     );

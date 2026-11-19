@@ -430,7 +430,15 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--link);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--link) 20%, transparent);
+  box-shadow: 0 0 0 1px var(--link);
+}
+/* color-mix() needs Chromium 111: an older browser keeps the plain ring. */
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+  input:focus,
+  select:focus,
+  textarea:focus {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--link) 20%, transparent);
+  }
 }
 select {
   cursor: pointer;
@@ -551,10 +559,16 @@ select {
   top: 50%;
   height: 4px;
   transform: translateY(-50%);
-  background: color-mix(in srgb, var(--ink) 28%, transparent);
+  background: var(--line);
   border-radius: 2px;
   pointer-events: none;
   z-index: 1;
+}
+/* color-mix() needs Chromium 111: an older browser keeps the line colour. */
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+  .tp-buffered {
+    background: color-mix(in srgb, var(--ink) 28%, transparent);
+  }
 }
 /* The hover card: a thumbnail tile when the stage has one, the time under it. */
 .tp-hover {

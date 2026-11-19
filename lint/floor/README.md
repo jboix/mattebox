@@ -4,8 +4,9 @@ A Biome plugin that fails the lint on browser APIs newer than Chromium 76,
 the floor of AGENTS.md rule 10. Chromium 76 is Samsung Tizen 6.0, the 2021
 sets; LG webOS 6 is Chromium 79.
 
-`biome.json` loads `js.grit` for `src`. The playground and the tests run in
-current browsers and are not checked.
+`biome.json` loads `js.grit` for `src` and `playground/src`. The hosted
+playground is how you try the engine on a TV, so it keeps the floor too.
+The tests run in current browsers and are not checked.
 
 Biome's own `useBaseline` rule does not do this job. It targets Baseline,
 which follows every major browser, not Chromium 76.

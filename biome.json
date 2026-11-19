@@ -34,7 +34,7 @@
   },
   "overrides": [
     {
-      "includes": ["src/**"],
+      "includes": ["src/**", "playground/src/**"],
       "plugins": ["./lint/floor/js.grit"]
     }
   ],
