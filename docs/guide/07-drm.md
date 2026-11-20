@@ -246,8 +246,12 @@ not through the engine. FairPlay in fMP4 (`cbcs`) plays through both.
 
 ## WisePlay
 
-WisePlay is Huawei's key system, built on the ChinaDRM standard. LG webOS
-TVs and Huawei devices have it; desktop browsers do not.
+WisePlay is Huawei's key system, built on the ChinaDRM standard. Huawei
+devices have it, per [Huawei's guide](https://developer.huawei.com/consumer/en/doc/development/Media-Guides/client-dev-0000001050040000).
+Desktop browsers do not. LG webOS TVs do not either:
+[LG's DRM table](https://webostv.developer.lge.com/develop/specifications/streaming-protocol-drm)
+lists only PlayReady and Widevine for every webOS version, and an LG C9
+refuses both WisePlay names.
 
 ```ts
 import emeWiseplay from 'mattebox/stages/eme-wiseplay';

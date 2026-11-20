@@ -666,7 +666,7 @@ describe('eme-wiseplay', () => {
     const { default: emeWiseplay } = await import('../../../src/stages/eme-wiseplay/index.js');
     emeCenc().install({} as never);
     emeWiseplay().install({} as never);
-    // An LG webOS TV: Widevine and WisePlay both answer.
+    // A device where Widevine and WisePlay both answer.
     const asked: Array<{ keySystem: string; robustness: string[] }> = [];
     const updates: string[] = [];
     const session = Object.assign(new EventTarget(), {

@@ -13,8 +13,9 @@
  * a HarmonyOS report (shaka-player#8185) needed `com.wiseplay.drm`. Each is
  * a handler, so eme-core asks for the first and falls back to the second.
  *
- * LG webOS TVs and Huawei devices have the CDM. No desktop browser does, so
- * the tests run against a stand-in for EME, not against a real CDM.
+ * Huawei devices have the CDM. No desktop browser does, and LG webOS TVs do
+ * not either, so the tests run against a stand-in for EME, not against a
+ * real CDM.
  */
 import type { Stage } from '../../types/stage.js';
 import { registerKeySystem } from '../drm-shared.js';

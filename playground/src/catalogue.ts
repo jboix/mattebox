@@ -567,7 +567,7 @@ export const STREAMS: readonly StreamEntry[] = [
   {
     // ByteArk's test pair for its WisePlay sample app
     // (github.com/byteark/huawei-wiseplay-example-app). It plays only where
-    // a WisePlay CDM is, such as an LG webOS TV or a Huawei device.
+    // a WisePlay CDM is, which means a Huawei device.
     label: 'ByteArk · Big Buck Bunny, WisePlay',
     url: 'https://byteark-dev-video-sample.st-th-1.byteark.com/wiseplay/big_buck_bunny/playlist.mpd',
     topic: 'drm',
