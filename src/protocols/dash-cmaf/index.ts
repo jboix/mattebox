@@ -21,7 +21,7 @@ import type { MatteboxError } from '../../types/error.js';
 import type { Rendition, SegmentAddressing, SidxSegments } from '../../types/ir.js';
 import type { KernelState, SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message, Serializable } from '../../types/messages.js';
-import type { Stage, StageContext } from '../../types/stage.js';
+import type { Capability, Stage, StageContext } from '../../types/stage.js';
 import { manifestFact, RETRY_SECONDS } from '../adapter-shared.js';
 import { parse, sidxToSegments } from './parse.js';
 import { installPeriods } from './periods-runtime.js';
@@ -102,7 +102,9 @@ function neededIndexes(state: DashSlice, kernel: Readonly<KernelState>): readonl
   const needed: Rendition[] = [];
   const types = ['video', 'audio', 'text'] as const;
   for (const { rendition } of activeRenditions(kernel, types, kernel.quality.active)) {
-    if (asSidx(rendition.segments) === null) continue;
+    const sidx = asSidx(rendition.segments);
+    // WebM Cues are the webm container stage's to resolve.
+    if (sidx === null || sidx.format === 'webm') continue;
     if (asked.has(rendition.id) || rendition.id in state.failed) continue;
     needed.push(rendition);
   }
@@ -170,9 +172,18 @@ function retry(state: DashSlice, renditionId: string): [DashSlice, Effect[]] {
   ];
 }
 
-/** The slice reducer. `lowLatency` reads the MPD as dash-ll does. */
+/**
+ * The slice reducer. `lowLatency` reads the MPD as dash-ll does.
+ * `capabilities` is the composition's, read once at install: they are
+ * fixed when the engine is built. A stage that provides `video/webm` keeps
+ * WebM Representations in.
+ */
 export const createReduceDash =
-  (retryMs: number, lowLatency = false): SliceReducer<DashSlice> =>
+  (
+    retryMs: number,
+    lowLatency = false,
+    capabilities: readonly Capability[] = [],
+  ): SliceReducer<DashSlice> =>
   (slice, msg, kernel) => {
     const state = slice ?? INITIAL;
 
@@ -202,7 +213,7 @@ export const createReduceDash =
         msg.url ?? state.manifestUrl,
         (text) => claims(state, text),
         (text, url) => {
-          const result = parse(text, url, lowLatency);
+          const result = parse(text, url, lowLatency, capabilities);
           if (result.presentation !== null) warnings = result.warnings ?? [];
           return result;
         },
@@ -357,7 +368,7 @@ export default function dashCmaf(options: DashCmafOptions = {}): Stage {
     name: 'dash-cmaf',
     provides: ['dash-cmaf', ...MANIFEST_TYPES],
     install(ctx) {
-      ctx.reduce('dash', createReduceDash(retryMs) as SliceReducer);
+      ctx.reduce('dash', createReduceDash(retryMs, false, ctx.capabilities()) as SliceReducer);
       return installDashPeriods(ctx);
     },
   };

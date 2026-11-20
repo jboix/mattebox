@@ -34,6 +34,7 @@ import type {
   TileGrid,
   Track,
 } from '../../types/ir.js';
+import type { Capability } from '../../types/stage.js';
 import type { ParseResult } from '../adapter-shared.js';
 import { manifestError } from '../adapter-shared.js';
 import { dimensions } from '../dimensions.js';
@@ -684,6 +685,7 @@ function parsePeriod(
   mpdBase: string,
   isLive: boolean,
   availability: Availability | null,
+  capabilities: readonly Capability[],
 ): ParsedPeriod | { readonly error: MatteboxError } {
   const matching = new Map<string, { asId: string | null; follows: string[] }>();
   const periodStart = span.start;
@@ -718,10 +720,14 @@ function parsePeriod(
       if (id === null || bandwidth === null) continue;
       const repBase = applyBaseUrl(representation, asBase);
       const mimeType = attr(representation, 'mimeType') ?? asMime ?? 'video/mp4';
-      // The engine reads ISO BMFF only. A WebM Representation (VP9, Opus),
-      // which a manifest may offer beside the MP4 one, could never play:
-      // left out, so no menu offers it. An AdaptationSet of only WebM goes.
-      if (/\/(webm|x-matroska)$/.test(mimeType)) continue;
+      // The engine reads ISO BMFF on its own. A WebM Representation (VP9,
+      // Opus), which a manifest may offer beside the MP4 one, plays only
+      // when a stage provides its MIME type (the `webm` container); without
+      // one it is left out, so no menu offers it.
+      const webm = /\/(webm|x-matroska)$/.test(mimeType);
+      if (webm && !capabilities.some((c) => typeof c !== 'string' && c.mimeType === mimeType)) {
+        continue;
+      }
       trackMime = trackMime ?? mimeType;
 
       // On-demand profile: a single file whose segments are described by a
@@ -737,12 +743,16 @@ function parsePeriod(
         const initElement = children(segmentBase, 'Initialization')[0];
         const initRange =
           initElement !== undefined ? parseByteRange(attr(initElement, 'range')) : null;
+        // WebM Cues count Cluster positions from the Segment's data, which
+        // only the initialization range locates.
+        if (webm && initRange === null) continue;
         const sidxSegments: SidxSegments = {
           kind: 'sidx',
           url: repBase,
           indexRange,
           timescale: baseTimescale,
           ...(pto !== null && pto !== 0 ? { presentationTimeOffset: pto / baseTimescale } : {}),
+          ...(webm ? { format: 'webm' as const } : {}),
         };
         const sidxInit: SegmentRef | null =
           initRange !== null ? { url: repBase, byteRange: initRange } : null;
@@ -1054,8 +1064,17 @@ function serviceOf(mpd: Element): {
  * dash.js's live delay: the ServiceDescription target, else
  * `@suggestedPresentationDelay`, else four `@maxSegmentDuration`, else four
  * `@minBufferTime`.
+ *
+ * `capabilities` is the composition's. A WebM Representation is kept
+ * only when a stage provides its MIME type as a content handler, as the
+ * `webm` container does.
  */
-export function parse(text: string, baseUrl: string, lowLatency = false): ParseResult {
+export function parse(
+  text: string,
+  baseUrl: string,
+  lowLatency = false,
+  capabilities: readonly Capability[] = [],
+): ParseResult {
   let doc: Document;
   try {
     doc = new DOMParser().parseFromString(text, 'text/xml');
@@ -1163,6 +1182,7 @@ export function parse(text: string, baseUrl: string, lowLatency = false): ParseR
       mpdBase,
       isLive,
       availability,
+      capabilities,
     );
     if ('error' in result) return { presentation: null, error: result.error };
     parsed.push(result);

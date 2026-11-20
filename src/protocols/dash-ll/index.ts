@@ -39,8 +39,9 @@ export default function dashLl(options: DashLlOptions = {}): Stage {
     name: 'dash-ll',
     provides: ['dash-ll', 'dash-cmaf', 'dash-live', ...MANIFEST_TYPES],
     install(ctx) {
-      ctx.reduce('dash', createReduceDash(retryMs, true) as SliceReducer);
-      ctx.reduce('dash-live', createReduceDashLive(true) as SliceReducer);
+      const capabilities = ctx.capabilities();
+      ctx.reduce('dash', createReduceDash(retryMs, true, capabilities) as SliceReducer);
+      ctx.reduce('dash-live', createReduceDashLive(true, capabilities) as SliceReducer);
       ctx.registerChunkSplitter(completeChunks);
       registerLiveNamespace(ctx);
       return installDashPeriods(ctx);

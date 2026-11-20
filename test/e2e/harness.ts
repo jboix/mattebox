@@ -9,6 +9,7 @@
 import { userEvent } from 'vitest/browser';
 import packedAudio from '../../src/containers/packed-audio/index.js';
 import tsTransmux from '../../src/containers/ts-transmux/index.js';
+import webm from '../../src/containers/webm/index.js';
 import type { Stage } from '../../src/index.js';
 import { mattebox } from '../../src/index.js';
 import dashCmaf from '../../src/protocols/dash-cmaf/index.js';
@@ -75,7 +76,9 @@ export type Source =
   | 'dash-ll'
   | 'dash-ll-head'
   | 'livesim-ll'
-  | 'livesim-ll-head';
+  | 'livesim-ll-head'
+  | 'webm'
+  | 'webm-template';
 export type Profile = 'step-down' | 'sawtooth' | 'collapse';
 
 export interface BootOptions {
@@ -179,6 +182,8 @@ const sources: Record<Source, () => string> = {
     'https://livesim2.dashif.org/livesim2/chunkdur_1/ato_7/testpic4_8s/Manifest300.mpd',
   'livesim-ll-head': () =>
     'https://livesim2.dashif.org/livesim2/utc_head/chunkdur_1/ato_7/testpic4_8s/Manifest300.mpd',
+  webm: () => '/streams/webm/manifest.mpd',
+  'webm-template': () => '/streams/webm/template/manifest.mpd',
 };
 
 /** The LL sources: they load the low-latency lines. */
@@ -280,6 +285,7 @@ export async function boot(options: BootOptions = {}): Promise<Player> {
   if (src === 'cmsd') stages.push(cmsd());
   if (src === 'names') stages.push(renditionNames());
   if (src === 'forced') stages.push(forcedSubtitles());
+  if (src.startsWith('webm')) stages.push(webm());
   if (options.abr === true) stages.push(abr());
   if (options.capsize === true) stages.push(abrCapSize());
   if (options.drm === true) {

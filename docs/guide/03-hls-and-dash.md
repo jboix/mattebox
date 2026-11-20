@@ -126,8 +126,8 @@ FairPlay over AirPlay needs a key session the engine does not open.
 The adapters expect CMAF (fragmented MP4), which is what MSE accepts
 directly.
 
-`dash-cmaf` leaves out WebM Representations (`video/webm`, `audio/webm`),
-which the engine cannot read. A manifest that offers WebM beside MP4 plays
+Without the `webm` container, `dash-cmaf` leaves out WebM Representations
+(`video/webm`, `audio/webm`). A manifest that offers WebM beside MP4 plays
 its MP4, and no menu lists the WebM tracks.
 
 Legacy HLS with MPEG-TS segments or raw AAC segments needs the container
@@ -135,6 +135,53 @@ stages from [chapter 08](08-legacy-transport-streams.md). CMAF whose
 `tfdt` does not start at zero, a live broadcast clock or a VOD encoder
 offset, needs `cmaf-timing`, which [chapter 04](04-live-streaming.md)
 explains.
+
+## WebM in DASH
+
+Add the `webm` container to play DASH Representations with WebM segments.
+MSE takes WebM as it is, so the engine rewraps nothing. The container is in
+no preset.
+
+```ts
+import webm from 'mattebox/containers/webm';
+import dash from 'mattebox/presets/dash';
+
+const engine = dash({ stages: [webm()] });
+```
+
+| Addressing                       | How the segments are found                                                             |
+| -------------------------------- | -------------------------------------------------------------------------------------- |
+| `SegmentBase` with `indexRange`  | The container fetches the `Initialization` range and the Cues, one segment per Cluster |
+| `SegmentTemplate`, `SegmentList` | From the MPD, as for MP4                                                               |
+
+- The codecs come from the MPD as they are: `vp9`, `vp09.*`, `av01.*`,
+  `opus`, `vorbis`. The browser's `MediaSource.isTypeSupported` decides
+  which renditions play.
+- A WebM `SegmentBase` needs an `Initialization` range. The Cues count
+  Cluster positions from the start of the Segment's data, which only that
+  range locates ([RFC 9559 §16](https://www.rfc-editor.org/rfc/rfc9559#section-16)).
+- The file needs a `Duration` in its Info. It ends the last segment, as in
+  [Shaka Player](https://github.com/shaka-project/shaka-player/blob/main/lib/dash/webm_segment_index_parser.js).
+- A live (`dynamic`) MPD with WebM `SegmentTemplate` is not tested. Its
+  segments land at their MPD time, and nothing reads the Cluster
+  timestamps to check it.
+- An index that fails or holds no segment excludes its rendition for 15
+  seconds and reports a non-fatal `MEDIA_CONTAINER_INVALID`. Change the
+  wait with `webm({ unavailableRetrySeconds })`.
+
+These do not work with WebM:
+
+| Feature                                 | Why                                                                  |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| `cmaf-timing`                           | It reads ISO BMFF decode times. WebM segments land at their MPD time |
+| CEA-608 and CEA-708 captions            | `nal-scan` reads H.264 and HEVC in fMP4                              |
+| `emsg` events                           | The box exists only in ISO BMFF                                      |
+| Encrypted WebM                          | Not tested. The DRM stages expect CENC in ISO BMFF                   |
+| A rendition switch between WebM and MP4 | One track holds one container; the two are separate tracks           |
+
+Chromium and Firefox play VP9 and Opus in WebM. Safari's support depends
+on the version and the device. The playground's capabilities table shows
+what your browser accepts.
 
 ## Tracks and renditions
 

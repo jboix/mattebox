@@ -5,6 +5,7 @@
  */
 import packedAudio from '../../src/containers/packed-audio/index.js';
 import tsTransmux from '../../src/containers/ts-transmux/index.js';
+import webm from '../../src/containers/webm/index.js';
 import type { Stage } from '../../src/index.js';
 import dashPreset from '../../src/presets/dash/index.js';
 import dashDrmPreset from '../../src/presets/dash-drm/index.js';
@@ -101,6 +102,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('containers', aes128),
   built('containers', cmafTiming),
   built('containers', packedAudio),
+  built('containers', webm),
   built('stages', metaId3),
   built('stages', altAudio),
   built('stages', abr),
@@ -275,6 +277,20 @@ const LOCAL_STREAMS: readonly StreamEntry[] =
           tags: ['generated', 'TTML', 'needs text-ttml'],
         },
         { label: 'vp9, three rungs', url: local('vp9-dash/manifest.mpd'), topic: 'local' },
+        {
+          label: 'WebM: VP9 in two rungs and Opus, on demand (SegmentBase with Cues)',
+          url: local('webm/manifest.mpd'),
+          topic: 'local',
+          tags: ['generated', 'WebM', 'needs webm'],
+          stages: ['webm'],
+        },
+        {
+          label: 'WebM: VP9 and Opus chunks, SegmentTemplate',
+          url: local('webm/template/manifest.mpd'),
+          topic: 'local',
+          tags: ['generated', 'WebM', 'needs webm'],
+          stages: ['webm'],
+        },
         {
           label: 'Muxed MPEG-TS',
           url: local('ts/master.m3u8'),

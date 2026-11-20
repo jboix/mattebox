@@ -130,6 +130,8 @@ Ten stages are only in `full`. Add them with `stages` when you need them.
 with `stages`. See [chapter 11](11-network-and-cdn.md#the-cmcd-stage).
 `interstitials` is in no preset either, because it loads other sources in
 the presentation's place. See [chapter 21](21-interstitials.md).
+The `webm` container is in no preset, because most DASH streams carry
+fragmented MP4. See [chapter 03](03-hls-and-dash.md#webm-in-dash).
 
 The caption stages read the NAL unit headers of every H.264 and HEVC video
 segment, a fraction of a millisecond per segment. If your content has no

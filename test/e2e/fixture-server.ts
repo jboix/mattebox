@@ -19,6 +19,7 @@ const MIME: Record<string, string> = {
   '.mp4': 'video/mp4',
   '.ts': 'video/mp2t',
   '.aac': 'audio/aac',
+  '.webm': 'video/webm',
 };
 
 // ---- live simulator -------------------------------------------------------
@@ -469,6 +470,7 @@ function text(res: ServerResponse, contentType: string, body: string): void {
 }
 
 function serveStream(
+  req: IncomingMessage,
   res: ServerResponse,
   pathname: string,
   headers: Record<string, string> = {},
@@ -479,11 +481,29 @@ function serveStream(
     res.end('not found');
     return;
   }
-  res.writeHead(200, {
-    'content-type': MIME[extname(path)] ?? 'application/octet-stream',
-    'cache-control': 'no-store',
-    ...headers,
-  });
+  const type = MIME[extname(path)] ?? 'application/octet-stream';
+  // One byte range, RFC 9110 §14.2, for DASH SegmentBase: `bytes=a-b` or `bytes=a-`.
+  const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '');
+  if (range !== null) {
+    const size = statSync(path).size;
+    const start = Number(range[1]);
+    const end = Math.min(range[2] === '' ? size - 1 : Number(range[2]), size - 1);
+    if (start > end) {
+      res.writeHead(416, { 'content-range': `bytes */${size}` });
+      res.end();
+      return;
+    }
+    res.writeHead(206, {
+      'content-type': type,
+      'content-range': `bytes ${start}-${end}/${size}`,
+      'content-length': String(end - start + 1),
+      'cache-control': 'no-store',
+      ...headers,
+    });
+    createReadStream(path, { start, end }).pipe(res);
+    return;
+  }
+  res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store', ...headers });
   createReadStream(path).pipe(res);
 }
 
@@ -513,14 +533,14 @@ function handle(req: IncomingMessage, res: ServerResponse): boolean {
       res.end('pathway a is dead');
       return true;
     }
-    serveStream(res, rest);
+    serveStream(req, res, rest);
     return true;
   }
   // The corpus with CMSD (CTA-5006): the edge estimates 5 Mbps and caps the
   // bitrate at 300 kbps, exposed as a cross-origin CDN would.
   const cmsdMatch = /^\/cmsd(\/streams\/.*)$/.exec(url.pathname);
   if (cmsdMatch !== null) {
-    serveStream(res, cmsdMatch[1] as string, {
+    serveStream(req, res, cmsdMatch[1] as string, {
       'CMSD-Dynamic': '"edge";etp=5000;mb=300',
       'Access-Control-Expose-Headers': 'CMSD-Dynamic',
     });
@@ -540,7 +560,7 @@ function handle(req: IncomingMessage, res: ServerResponse): boolean {
     return true;
   }
   if (url.pathname.startsWith('/streams/')) {
-    serveStream(res, url.pathname);
+    serveStream(req, res, url.pathname);
     return true;
   }
   return false;

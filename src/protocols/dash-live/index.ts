@@ -17,7 +17,7 @@ import { scheduled, tickAfter } from '../../kernel/effects.js';
 import type { Presentation } from '../../types/ir.js';
 import type { SliceReducer } from '../../types/kernel.js';
 import type { Effect, Message } from '../../types/messages.js';
-import type { Stage } from '../../types/stage.js';
+import type { Capability, Stage } from '../../types/stage.js';
 import { parse } from '../dash-cmaf/parse.js';
 import { registerLiveNamespace } from '../live-shared.js';
 
@@ -196,9 +196,12 @@ function reloadFailed(
   return [{ ...state, failures, tickPending: true }, [tick(presentation.live.updatePeriod ?? 4)]];
 }
 
-/** The slice reducer. `lowLatency` reloads the MPD as dash-ll reads it. */
+/**
+ * The slice reducer. `lowLatency` reloads the MPD as dash-ll reads it.
+ * `capabilities` is the composition's, which the MPD parse reads.
+ */
 export const createReduceDashLive =
-  (lowLatency = false): SliceReducer<DashLiveSlice> =>
+  (lowLatency = false, capabilities: readonly Capability[] = []): SliceReducer<DashLiveSlice> =>
   (slice, msg, kernel) => {
     let state = slice ?? INITIAL;
     // Any stamped fact refreshes the clock cache first, so every later
@@ -325,7 +328,7 @@ export const createReduceDashLive =
       if (state.manifestUrl === null) return [state, []];
       // The refresh asks the URL the page gave; its redirect decides the base, as on the first load.
       const base = msg.url ?? state.manifestUrl;
-      const result = parse(new TextDecoder().decode(msg.bytes), base, lowLatency);
+      const result = parse(new TextDecoder().decode(msg.bytes), base, lowLatency, capabilities);
       if (result.presentation === null) {
         return reloadFailed(state, kernel.presentation, result.error.code);
       }
@@ -368,7 +371,7 @@ export default function dashLive(): Stage {
     provides: ['dash-live'],
     requires: ['dash-cmaf'],
     install(ctx) {
-      ctx.reduce('dash-live', createReduceDashLive() as SliceReducer);
+      ctx.reduce('dash-live', createReduceDashLive(false, ctx.capabilities()) as SliceReducer);
       registerLiveNamespace(ctx);
     },
   };

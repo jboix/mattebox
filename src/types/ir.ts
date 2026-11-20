@@ -144,7 +144,7 @@ export interface IndexedSegments {
 
 /**
  * On-demand addressing (DASH SegmentBase): one file per Representation whose
- * segments are described by a `sidx` box at `indexRange`. The concrete
+ * segments are described by a `sidx` box (or WebM Cues) at `indexRange`. The concrete
  * segments are unknown until that box is fetched and parsed, at which point
  * the adapter replaces this with an explicit `Segment[]` carrying byte ranges.
  */
@@ -158,6 +158,12 @@ export interface SidxSegments {
   readonly timescale: number;
   /** Offset subtracted from media time to map into period time, in seconds. */
   readonly presentationTimeOffset?: number;
+  /**
+   * `'webm'` when the file is WebM: the index range holds a Matroska Cues
+   * element, not a `sidx` box, and the `webm` container stage resolves it.
+   * Absent for ISO BMFF.
+   */
+  readonly format?: 'webm';
 }
 
 /** Explicit list, indexed template, or a to-be-fetched sidx index. */

@@ -109,13 +109,14 @@ The live adapters and the low-latency adapters register `engine.live`.
 
 ## Layer 2: containers
 
-| Module         | Directory                     | Responsibility                                                            |
-| -------------- | ----------------------------- | ------------------------------------------------------------------------- |
-| `mp4-box`      | `src/containers/mp4-box`      | A minimal ISOBMFF walker. Finds boxes, reads `tfdt` and `sidx`            |
-| `codec-probe`  | `src/containers/codec-probe`  | Derives the exact codec string from an init segment                       |
-| `fmp4`         | `src/containers/fmp4`         | Writes init and media segments. Shared by the transmuxer and packed audio |
-| `ts-transmux`  | `src/containers/ts-transmux`  | MPEG-TS demux to fMP4 in a Worker. Extracts CEA-608 bytes on request      |
-| `packed-audio` | `src/containers/packed-audio` | Raw AAC segments, with or without an ID3 header, wrapped as fMP4          |
+| Module         | Directory                     | Responsibility                                                                  |
+| -------------- | ----------------------------- | ------------------------------------------------------------------------------- |
+| `mp4-box`      | `src/containers/mp4-box`      | A minimal ISOBMFF walker. Finds boxes, reads `tfdt` and `sidx`                  |
+| `codec-probe`  | `src/containers/codec-probe`  | Derives the exact codec string from an init segment                             |
+| `fmp4`         | `src/containers/fmp4`         | Writes init and media segments. Shared by the transmuxer and packed audio       |
+| `ts-transmux`  | `src/containers/ts-transmux`  | MPEG-TS demux to fMP4 in a Worker. Extracts CEA-608 bytes on request            |
+| `packed-audio` | `src/containers/packed-audio` | Raw AAC segments, with or without an ID3 header, wrapped as fMP4                |
+| `webm`         | `src/containers/webm`         | Keeps DASH WebM Representations and resolves a WebM `SegmentBase` from its Cues |
 
 `ts-transmux`, `packed-audio`, and the `aes-128` stage register a transform
 step and provide `media-transform`, which routes every append through the

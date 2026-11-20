@@ -573,7 +573,7 @@ describe('video range', () => {
 });
 
 describe('containers', () => {
-  it('leaves out WebM, which the engine cannot read, and keeps the MP4 beside it', () => {
+  it('leaves out WebM without a stage that reads it, and keeps the MP4 beside it', () => {
     const mpd = `<?xml version="1.0"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1M">
   <Period>

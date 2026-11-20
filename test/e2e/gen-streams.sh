@@ -233,6 +233,35 @@ media.m3u8
 EOF
 }
 
+# DASH with WebM segments: VP9 video in two rungs and Opus audio, for the
+# webm container stage. One on-demand MPD (SegmentBase, each file indexed by
+# its Cues), written by ffmpeg's webm_dash_manifest muxer, and one
+# SegmentTemplate MPD of WebM chunks, written by ffmpeg's dash muxer.
+webm_flavor() {
+  local dir="$OUT/webm"
+  mkdir -p "$dir/template"
+  local vp9=(-c:v libvpx-vp9 -pix_fmt yuv420p -g 120 -keyint_min 120 -deadline realtime -cpu-used 8)
+  ffmpeg -y -loglevel error -f lavfi -i "testsrc2=size=320x180:rate=30" -t $DURATION \
+    "${vp9[@]}" -b:v 150k -an -f webm -dash 1 "$dir/video-180.webm"
+  ffmpeg -y -loglevel error -f lavfi -i "testsrc2=size=640x360:rate=30" -t $DURATION \
+    "${vp9[@]}" -b:v 400k -an -f webm -dash 1 "$dir/video-360.webm"
+  ffmpeg -y -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=48000" -t $DURATION \
+    -c:a libopus -b:a 64k -vn -f webm -dash 1 -cluster_time_limit 4000 "$dir/audio.webm"
+  ffmpeg -y -loglevel error \
+    -f webm_dash_manifest -i "$dir/video-180.webm" \
+    -f webm_dash_manifest -i "$dir/video-360.webm" \
+    -f webm_dash_manifest -i "$dir/audio.webm" \
+    -c copy -map 0 -map 1 -map 2 \
+    -f webm_dash_manifest -adaptation_sets "id=0,streams=0,1 id=1,streams=2" \
+    "$dir/manifest.mpd"
+  ffmpeg -y -loglevel error -f lavfi -i "testsrc2=size=320x180:rate=30" \
+    -f lavfi -i "sine=frequency=440:sample_rate=48000" -t $DURATION \
+    -map 0:v -map 1:a "${vp9[@]}" -b:v 150k -c:a libopus -b:a 64k \
+    -f dash -dash_segment_type webm -seg_duration 4 -use_template 1 -use_timeline 1 \
+    -adaptation_sets "id=0,streams=v id=1,streams=a" \
+    "$dir/template/manifest.mpd"
+}
+
 if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
    [ -f "$OUT/h264-dash/manifest.mpd" ] && [ -f "$OUT/vp9-dash/manifest.mpd" ] &&
    [ -f "$OUT/ts/master.m3u8" ] && [ -f "$OUT/aac/master.m3u8" ]; then
@@ -258,6 +287,7 @@ if [ -f "$OUT/h264/master.m3u8" ] && [ -f "$OUT/vp9/master.m3u8" ] &&
   for flavor in h264 vp9; do
     [ -f "$OUT/$flavor-interstitials/master-scte35.m3u8" ] || node "$ROOT/test/e2e/gen-interstitials.mjs" "$OUT" "$flavor"
   done
+  [ -f "$OUT/webm/template/manifest.mpd" ] || webm_flavor
   echo "streams present, skipping generation"
   exit 0
 fi
@@ -455,5 +485,6 @@ aac_flavor
 images_flavor
 ll_flavor h264 libx264 -profile:v baseline
 ll_flavor vp9 libvpx-vp9 -deadline realtime -cpu-used 8
+webm_flavor
 
 echo "generated: h264 [$H_LOW] vp9 [$V_LOW] plus dash flavors, three rungs"
