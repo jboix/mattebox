@@ -15,6 +15,7 @@ import type {
   DateRange,
   Presentation,
   ProtectionInfo,
+  Rendition,
   Segment,
   SegmentRef,
   TileGrid,
@@ -126,7 +127,19 @@ export type Command =
    * across playlist merges until the source changes. Rejected without a
    * presentation, or when a track with the same id exists.
    */
-  | { readonly type: 'ADD_TRACK'; readonly track: Track };
+  | { readonly type: 'ADD_TRACK'; readonly track: Track }
+  /**
+   * Gives a rendition the projection its media states and its manifest did
+   * not, such as the boxes of an MP4 init segment. It stays across playlist
+   * merges until the source changes. Rejected without a presentation, for
+   * an unknown rendition, and for one that has a projection: the manifest
+   * wins.
+   */
+  | {
+      readonly type: 'SET_PROJECTION';
+      readonly renditionId: string;
+      readonly projection: NonNullable<Rendition['projection']>;
+    };
 
 /** The world reporting what already happened, entering through `absorb`. Never rejectable. */
 export type Fact =

@@ -857,7 +857,53 @@ function reduceCommand(
         [{ kind: 'emit', event: 'tracks:changed', payload: { available } }],
       ];
     }
+
+    case 'SET_PROJECTION': {
+      if (state.presentation === null) {
+        return reject(state, msg.type, 'no source');
+      }
+      const site = findRendition(state.presentation, msg.renditionId);
+      if (site === null) {
+        return reject(state, msg.type, `unknown rendition: ${msg.renditionId}`);
+      }
+      if (site.rendition.projection !== undefined) {
+        return reject(state, msg.type, `projection exists: ${msg.renditionId}`);
+      }
+      const projections = new Map(state.tracks.projections).set(msg.renditionId, msg.projection);
+      const presentation = withProjections(state.presentation, projections);
+      return [
+        { ...state, presentation, tracks: { ...state.tracks, projections } },
+        [{ kind: 'emit', event: 'presentation:changed', payload: { id: presentation.id } }],
+      ];
+    }
   }
+}
+
+/**
+ * Gives every rendition SET_PROJECTION named its projection, where the
+ * presentation states none. A playlist merge hands the reducer the
+ * adapter's presentation, which knows nothing of them.
+ */
+function withProjections(
+  presentation: Presentation,
+  projections: KernelState['tracks']['projections'],
+): Presentation {
+  if (projections === undefined || projections.size === 0) return presentation;
+  return {
+    ...presentation,
+    periods: presentation.periods.map((period) => ({
+      ...period,
+      tracks: period.tracks.map((track) => ({
+        ...track,
+        renditions: track.renditions.map((rendition) => {
+          const projection = projections.get(rendition.id);
+          return projection === undefined || rendition.projection !== undefined
+            ? rendition
+            : { ...rendition, projection };
+        }),
+      })),
+    })),
+  };
 }
 
 /**
@@ -934,7 +980,10 @@ function loadPresentation(
   merged: Presentation,
   undecodableIds: ReadonlySet<string> = new Set(),
 ): Reduction {
-  const presentation = withAdded(merged, state.tracks.added);
+  const presentation = withProjections(
+    withAdded(merged, state.tracks.added),
+    state.tracks.projections,
+  );
   const available: string[] = [];
   for (const period of presentation.periods) {
     for (const track of period.tracks) available.push(track.id);
@@ -2132,6 +2181,7 @@ const COMMAND_TYPES: Record<Command['type'], true> = {
   RESOLVE_RENDITION: true,
   ABORT_INFLIGHT: true,
   ADD_TRACK: true,
+  SET_PROJECTION: true,
 };
 
 export function isCommand(msg: Message): msg is Command {

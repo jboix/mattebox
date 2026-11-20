@@ -7,6 +7,7 @@ import type { MatteboxError } from './error.js';
 import type {
   ContentType,
   Presentation,
+  Rendition,
   RenditionId,
   TimeRange,
   TimeRangesSnapshot,
@@ -243,6 +244,8 @@ export interface KernelState {
     readonly resolve?: ReadonlySet<RenditionId>;
     /** Tracks added with ADD_TRACK, re-joined to every merged presentation. */
     readonly added?: readonly Track[];
+    /** Projections set with SET_PROJECTION by rendition, applied to every merged presentation. */
+    readonly projections?: ReadonlyMap<RenditionId, NonNullable<Rendition['projection']>>;
     /**
      * The video track an I-frame track stands in for while the I-frame track
      * is active, for a scan or a scrub. The quality API keeps describing it.

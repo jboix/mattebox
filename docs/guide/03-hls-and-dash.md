@@ -235,19 +235,45 @@ engine.on('tracks:changed', () => {
 
 ## 360° video
 
-A video rendition carries `projection` when the manifest says its picture
+A video rendition carries `projection` when the stream says its picture
 maps onto a sphere. The engine only reports it. Drawing the sphere is the
 player's job, such as `@mattebox/player-360`.
 
-| `projection`             | HLS `REQ-VIDEO-LAYOUT` |
-| ------------------------ | ---------------------- |
-| `'equirectangular'`      | `PROJ-EQUI`            |
-| `'half-equirectangular'` | `PROJ-HEQU`            |
+| `projection`             | HLS `REQ-VIDEO-LAYOUT` | DASH OMAF descriptor | Apple `prji` | Google `equi` bounds  |
+| ------------------------ | ---------------------- | -------------------- | ------------ | --------------------- |
+| `'equirectangular'`      | `PROJ-EQUI`            | `projection_type` 0  | `equi`       | None cropped          |
+| `'half-equirectangular'` | `PROJ-HEQU`            | None                 | `hequ`       | A quarter left, right |
 
-- The engine reads the first entry of the attribute, the preferred one.
-- DASH has no attribute the engine reads yet, and neither do the boxes of
-  the init segment. A stream that states its projection only there has no
-  `projection`. Your page or connector tells the player instead.
+- HLS: the engine reads the first entry of the attribute, the preferred one.
+- DASH: the engine reads the OMAF projection format descriptor,
+  `urn:mpeg:mpegI:omaf:2017:pf` (ISO/IEC 23090-2), on the Representation
+  or its AdaptationSet, as `EssentialProperty` or `SupplementalProperty`.
+  [3GPP TS 26.118](https://www.etsi.org/deliver/etsi_ts/126100_126199/126118/17.00.00_60/ts_126118v170000p.pdf)
+  uses both. OMAF has no half-equirectangular type, and a cube map
+  (`projection_type` 1) has no `projection`.
+- MP4: the `projection` stage reads the init segment of a rendition whose
+  manifest states no projection. It is in the `full` preset. Add it with
+  `stages` elsewhere. A projection the manifest states wins.
+- The stage reads Apple's `vexu/proj/prji` box
+  ([Stereo Video ISOBMFF Extensions](https://developer.apple.com/av-foundation/Stereo-Video-ISOBMFF-Extensions.pdf)),
+  as Shaka Player does.
+- It also reads Google's `sv3d/proj/equi` box
+  ([Spherical Video V2](https://github.com/google/spatial-media/blob/2308497c39bb604a7c3ba56ac17e302f2b1b6a96/docs/spherical-video-v2-rfc.md)),
+  as ExoPlayer does. Bounds that crop the picture any other way have no
+  `projection`, and neither do a cube map or a mesh.
+- The rendition carries `projection` once its init segment loads, before
+  the video's `loadedmetadata`. `presentation:changed` fires then.
+- A stream that states its projection nowhere has no `projection`. Your
+  page or connector tells the player instead.
+
+```ts
+import { mattebox } from 'mattebox';
+import dashCmaf from 'mattebox/protocols/dash-cmaf';
+import mp4Box from 'mattebox/stages/mp4-box';
+import projection from 'mattebox/stages/projection';
+
+const engine = mattebox({ stages: [dashCmaf(), mp4Box(), projection()] });
+```
 
 ## Example
 

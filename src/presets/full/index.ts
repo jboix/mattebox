@@ -6,8 +6,9 @@
  * streams carry 608 beside them, which the base reads), TTML subtitles
  * (opt-in by the owner's decision), HDR by capability (it excludes HDR
  * where nothing is known, which a page may not want by default), local
- * QoE metrics, CMSD (it acts on response headers a CDN must expose), and
- * localized rendition names (a menu reads them).
+ * QoE metrics, CMSD (it acts on response headers a CDN must expose),
+ * localized rendition names (a menu reads them), and the projection of a
+ * 360° init segment (most programmes are flat).
  * CMCD is in no preset: it changes every request, which costs a page that
  * never asked for it. A page adds the stage.
  * Feature parity with
@@ -17,6 +18,7 @@
 import chapters from '../../stages/chapters/index.js';
 import cmsd from '../../stages/cmsd/index.js';
 import hdr from '../../stages/hdr/index.js';
+import projection from '../../stages/projection/index.js';
 import qoe from '../../stages/qoe/index.js';
 import renditionNames from '../../stages/rendition-names/index.js';
 import textCea708 from '../../stages/text-cea708/index.js';
@@ -49,6 +51,7 @@ const preset = definePreset('full', () => [
   qoe(),
   cmsd(),
   renditionNames(),
+  projection(),
 ]);
 export default preset;
 export type { Preset, PresetOptions, PresetStageOptions } from '../define.js';

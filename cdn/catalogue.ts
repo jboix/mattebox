@@ -35,6 +35,7 @@ import metaId3 from '../src/stages/meta-id3/index.js';
 import mp4Box from '../src/stages/mp4-box/index.js';
 import nalScan from '../src/stages/nal-scan/index.js';
 import pdt from '../src/stages/pdt/index.js';
+import projection from '../src/stages/projection/index.js';
 import qoe from '../src/stages/qoe/index.js';
 import recovery from '../src/stages/recovery/index.js';
 import renditionNames from '../src/stages/rendition-names/index.js';
@@ -88,4 +89,5 @@ export const accessoryFactories = {
   qoe,
   cmsd,
   renditionNames,
+  projection,
 };

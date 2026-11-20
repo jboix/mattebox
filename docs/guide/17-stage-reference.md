@@ -76,18 +76,19 @@ these.
 
 ## Stages only in `full`
 
-| Stage             | Does                                         | Guide                                       |
-| ----------------- | -------------------------------------------- | ------------------------------------------- |
-| `thumbnails`      | Answers scrub preview images                 | [10](10-thumbnails.md)                      |
-| `chapters`        | Answers the chapters of a presentation       | [15](15-chapters.md)                        |
-| `trick-play`      | Fast forward and rewind on the I-frame track | [16](16-trick-play.md)                      |
-| `timed-metadata`  | Lists date ranges, events, ID3, and emsg     | [06](06-audio-and-text.md#timed-metadata)   |
-| `text-cea708`     | Decodes CEA-708 captions                     | [06](06-audio-and-text.md#cea-708-captions) |
-| `text-ttml`       | Parses TTML subtitles                        | [06](06-audio-and-text.md#ttml-subtitles)   |
-| `hdr`             | Keeps HDR off a screen that cannot show it   | [05](05-quality-and-abr.md#the-hdr-stage)   |
-| `qoe`             | Measures startup, rebuffering, and switches  | [12](12-diagnostics.md#qoe-metrics)         |
-| `cmsd`            | Reads the CDN's throughput and bitrate hints | [11](11-network-and-cdn.md#the-cmsd-stage)  |
-| `rendition-names` | Answers localized track names                | [06](06-audio-and-text.md#track-names)      |
+| Stage             | Does                                          | Guide                                       |
+| ----------------- | --------------------------------------------- | ------------------------------------------- |
+| `thumbnails`      | Answers scrub preview images                  | [10](10-thumbnails.md)                      |
+| `chapters`        | Answers the chapters of a presentation        | [15](15-chapters.md)                        |
+| `trick-play`      | Fast forward and rewind on the I-frame track  | [16](16-trick-play.md)                      |
+| `timed-metadata`  | Lists date ranges, events, ID3, and emsg      | [06](06-audio-and-text.md#timed-metadata)   |
+| `text-cea708`     | Decodes CEA-708 captions                      | [06](06-audio-and-text.md#cea-708-captions) |
+| `text-ttml`       | Parses TTML subtitles                         | [06](06-audio-and-text.md#ttml-subtitles)   |
+| `hdr`             | Keeps HDR off a screen that cannot show it    | [05](05-quality-and-abr.md#the-hdr-stage)   |
+| `qoe`             | Measures startup, rebuffering, and switches   | [12](12-diagnostics.md#qoe-metrics)         |
+| `cmsd`            | Reads the CDN's throughput and bitrate hints  | [11](11-network-and-cdn.md#the-cmsd-stage)  |
+| `rendition-names` | Answers localized track names                 | [06](06-audio-and-text.md#track-names)      |
+| `projection`      | Reads a 360° projection from the init segment | [03](03-hls-and-dash.md#360-video)          |
 
 ## Stages in no preset
 

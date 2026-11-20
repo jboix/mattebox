@@ -57,6 +57,7 @@ const ACCESSORIES = [
   'qoe',
   'cmsd',
   'rendition-names',
+  'projection',
 ];
 
 const MATRIX: ReadonlyArray<[typeof kernel, readonly string[]]> = [
@@ -90,7 +91,7 @@ describe('the preset matrix', () => {
   it('full carries each of its stages once', () => {
     const names = full.stages().map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(36);
+    expect(names.length).toBe(37);
     // hls-ll and dash-ll stand in for the plain lines.
     expect(names).not.toContain('hls-live');
     expect(names).not.toContain('dash-live');

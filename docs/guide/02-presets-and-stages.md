@@ -108,10 +108,10 @@ and the codec probe. The HLS lines add AES-128 segment decryption.
 three EME stages. `-ll` replaces `hls-cmaf` and `hls-live` with `hls-ll`,
 replaces `dash-cmaf` and `dash-live` with `dash-ll`, and adds
 `live-catchup` (see [chapter 04](04-live-streaming.md#low-latency-hls)).
-`full` is `dual-ts-drm` with the `-ll` lines, plus the ten stages below,
+`full` is `dual-ts-drm` with the `-ll` lines, plus the eleven stages below,
 and `kernel` is nothing, for a stack you build by hand.
 
-Ten stages are only in `full`. Add them with `stages` when you need them.
+Eleven stages are only in `full`. Add them with `stages` when you need them.
 
 | Stage             | Why                                                            |
 | ----------------- | -------------------------------------------------------------- |
@@ -125,6 +125,7 @@ Ten stages are only in `full`. Add them with `stages` when you need them.
 | `qoe`             | Only your analytics read it                                    |
 | `cmsd`            | Acts only on headers your CDN sends and exposes                |
 | `rendition-names` | Only your menu reads it                                        |
+| `projection`      | Most programmes are flat                                       |
 
 `cmcd` is in no preset, because it changes every request to the CDN. Add it
 with `stages`. See [chapter 11](11-network-and-cdn.md#the-cmcd-stage).

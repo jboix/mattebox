@@ -331,6 +331,41 @@ function supplementalOf(
   return {};
 }
 
+const OMAF_PROJECTION = 'urn:mpeg:mpegI:omaf:2017:pf';
+
+/**
+ * The OMAF projection format descriptor (ISO/IEC 23090-2 §8.3.2), on the
+ * Representation or its AdaptationSet, as EssentialProperty or
+ * SupplementalProperty: 3GPP TS 26.118 §5.2.2.3 uses the second, its
+ * advanced profile and the OMAF reference software the first.
+ * `omaf:projection_type` 0 is equirectangular, 1 a cube map, which the IR
+ * does not name. Read by local name, since the prefix is the manifest's
+ * choice. OMAF has no half-equirectangular type. Sources:
+ * https://www.etsi.org/deliver/etsi_ts/126100_126199/126118/17.00.00_60/ts_126118v170000p.pdf
+ * https://github.com/nokiatech/omaf/blob/d08ad5b82e021696483bc6fece804f915b5b389c/Player/Sources/Player/DashProvider/NVRMPDExtension.cpp#L25-L34
+ */
+function projectionOf(
+  representation: Element,
+  adaptationSet: Element,
+): { projection?: 'equirectangular' } {
+  for (const element of [representation, adaptationSet]) {
+    for (const property of [
+      ...children(element, 'EssentialProperty'),
+      ...children(element, 'SupplementalProperty'),
+    ]) {
+      if (attr(property, 'schemeIdUri') !== OMAF_PROJECTION) continue;
+      for (const attribute of Array.from(property.attributes)) {
+        if (attribute.localName !== 'projection_type') continue;
+        // A list of types; the descriptor names the one the content uses.
+        return attribute.value.trim().split(/\s+/)[0] === '0'
+          ? { projection: 'equirectangular' }
+          : {};
+      }
+    }
+  }
+  return {};
+}
+
 function videoRangeOf(
   representation: Element,
   adaptationSet: Element,
@@ -778,6 +813,7 @@ function parsePeriod(
           ),
           ...channelsOf(representation, adaptationSet),
           ...supplementalOf(representation, adaptationSet),
+          ...projectionOf(representation, adaptationSet),
         });
         continue;
       }
@@ -819,6 +855,7 @@ function parsePeriod(
           ),
           ...channelsOf(representation, adaptationSet),
           ...supplementalOf(representation, adaptationSet),
+          ...projectionOf(representation, adaptationSet),
         });
         continue;
       }
@@ -912,6 +949,7 @@ function parsePeriod(
         ...(playoutRate !== null ? { maxPlayoutRate: playoutRate } : {}),
         ...channelsOf(representation, adaptationSet),
         ...supplementalOf(representation, adaptationSet),
+        ...projectionOf(representation, adaptationSet),
       });
     }
 

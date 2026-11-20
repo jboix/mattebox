@@ -572,6 +572,41 @@ describe('video range', () => {
   });
 });
 
+describe('projection', () => {
+  it('reads the OMAF projection descriptor on the Representation or its AdaptationSet', () => {
+    const pf = (type: string, kind = 'EssentialProperty') =>
+      `<${kind} xmlns:omaf="urn:mpeg:mpegI:omaf:2017" schemeIdUri="urn:mpeg:mpegI:omaf:2017:pf" omaf:projection_type="${type}"/>`;
+    const mpd = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1M">
+  <Period>
+    <AdaptationSet id="v" mimeType="video/mp4" codecs="avc1.640028">
+      ${pf('0', 'SupplementalProperty')}
+      <SegmentTemplate media="v-$RepresentationID$-$Number$.m4s" initialization="v-$RepresentationID$.mp4" duration="6" timescale="1"/>
+      <Representation id="set" bandwidth="1000"/>
+      <Representation id="own" bandwidth="2000">${pf('0')}</Representation>
+      <Representation id="cube" bandwidth="3000">${pf('1')}</Representation>
+    </AdaptationSet>
+    <AdaptationSet id="w" mimeType="video/mp4" codecs="avc1.640028">
+      <SegmentTemplate media="w-$Number$.m4s" initialization="w.mp4" duration="6" timescale="1"/>
+      <Representation id="flat" bandwidth="500"/>
+      <Representation id="other" bandwidth="600">
+        <EssentialProperty schemeIdUri="urn:example:pf" value="0"/>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+    const tracks = parse(mpd, BASE).presentation?.periods[0]?.tracks ?? [];
+    expect(tracks.flatMap((t) => t.renditions.map((r) => [r.id, r.projection]))).toEqual([
+      ['set', 'equirectangular'],
+      ['own', 'equirectangular'],
+      // The Representation's own descriptor wins, and a cube map is not named.
+      ['cube', undefined],
+      ['flat', undefined],
+      ['other', undefined],
+    ]);
+  });
+});
+
 describe('containers', () => {
   it('leaves out WebM without a stage that reads it, and keeps the MP4 beside it', () => {
     const mpd = `<?xml version="1.0"?>

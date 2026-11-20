@@ -135,6 +135,7 @@ Stages group by feature. Each row is one directory under `src/stages/`.
 | `hdr`          | Keeps PQ and HLG renditions off a screen or decoder that cannot show them                       | `rendition-select`            | `hdr`        |
 | `codec-switch` | Answers whether a rendition switch is seamless, needs `changeType`, or a reload                 | `mse`                         |              |
 | `codec-probe`  | Publishes the codec string derived from init segments                                           | `mp4-box`                     | `codecProbe` |
+| `projection`   | Gives a rendition the 360° projection its init segment states, where the manifest states none   | `mp4-box`                     |              |
 | `mp4-box`      | Exposes the box walker as `engine.mp4box`                                                       |                               | `mp4box`     |
 
 ### Audio, text, and metadata
