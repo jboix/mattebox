@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MPD
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns="urn:mpeg:DASH:schema:MPD:2011"
+  xsi:schemaLocation="urn:mpeg:DASH:schema:MPD:2011"
+  type="static"
+  mediaPresentationDuration="PT72.008S"
+  minBufferTime="PT1S"
+  profiles="urn:mpeg:dash:profile:webm-on-demand:2012">
+<Period id="0" start="PT0S" duration="PT72.008S" >
+<AdaptationSet id="0" mimeType="video/webm" codecs="vp9" bitstreamSwitching="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">
+<Representation id="0" bandwidth="159166" width="320" height="180">
+<BaseURL>video-180.webm</BaseURL>
+<SegmentBase
+  indexRange="1453910-1454256">
+<Initialization
+  range="0-472" />
+</SegmentBase>
+</Representation>
+<Representation id="1" bandwidth="411708" width="640" height="360">
+<BaseURL>video-360.webm</BaseURL>
+<SegmentBase
+  indexRange="3756886-3757232">
+<Initialization
+  range="0-473" />
+</SegmentBase>
+</Representation>
+</AdaptationSet>
+<AdaptationSet id="1" mimeType="audio/webm" codecs="opus" audioSamplingRate="48000" bitstreamSwitching="true" subsegmentAlignment="true" subsegmentStartsWithSAP="1">
+<Representation id="2" bandwidth="88944">
+<BaseURL>audio.webm</BaseURL>
+<SegmentBase
+  indexRange="808407-808772">
+<Initialization
+  range="0-496" />
+</SegmentBase>
+</Representation>
+</AdaptationSet>
+</Period>
+</MPD>
