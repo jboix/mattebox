@@ -21,11 +21,11 @@ Import from `mattebox/protocols/<name>`.
 
 Import from `mattebox/containers/<name>`.
 
-| Stage          | Does                                   | In presets     | Guide                                                 |
-| -------------- | -------------------------------------- | -------------- | ----------------------------------------------------- |
-| `ts-transmux`  | Rewraps MPEG-TS as fragmented MP4      | `*-ts`, `full` | [08](08-legacy-transport-streams.md#container-stages) |
-| `packed-audio` | Wraps raw AAC frames as fragmented MP4 | `*-ts`, `full` | [08](08-legacy-transport-streams.md#container-stages) |
-| `webm`         | Plays WebM segments in DASH            | none           | [03](03-hls-and-dash.md#webm-in-dash)                 |
+| Stage          | Does                                   | In presets               | Guide                                                 |
+| -------------- | -------------------------------------- | ------------------------ | ----------------------------------------------------- |
+| `ts-transmux`  | Rewraps MPEG-TS as fragmented MP4      | `*-ts`, `full`           | [08](08-legacy-transport-streams.md#container-stages) |
+| `packed-audio` | Wraps raw AAC frames as fragmented MP4 | `*-ts`, `full`           | [08](08-legacy-transport-streams.md#container-stages) |
+| `webm`         | Plays WebM segments in DASH            | `dash*`, `dual*`, `full` | [03](03-hls-and-dash.md#webm-in-dash)                 |
 
 ## Stages in every preset
 

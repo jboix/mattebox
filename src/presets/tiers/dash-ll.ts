@@ -4,6 +4,7 @@
  * lazy chunks then gives each preset its stages and no others. Each group is
  * a function so a preset gets fresh stage instances.
  */
+import webm from '../../containers/webm/index.js';
 import dashLl from '../../protocols/dash-ll/index.js';
 import type { Stage } from '../../types/stage.js';
 
@@ -13,5 +14,5 @@ import type { Stage } from '../../types/stage.js';
  * plays it.
  */
 export function dashLlLine(): Stage[] {
-  return [dashLl()];
+  return [dashLl(), webm()];
 }

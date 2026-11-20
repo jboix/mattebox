@@ -283,15 +283,13 @@ const LOCAL_STREAMS: readonly StreamEntry[] =
           label: 'WebM: VP9 in two rungs and Opus, on demand (SegmentBase with Cues)',
           url: local('webm/manifest.mpd'),
           topic: 'local',
-          tags: ['generated', 'WebM', 'needs webm'],
-          stages: ['webm'],
+          tags: ['generated', 'WebM'],
         },
         {
           label: 'WebM: VP9 and Opus chunks, SegmentTemplate',
           url: local('webm/template/manifest.mpd'),
           topic: 'local',
-          tags: ['generated', 'WebM', 'needs webm'],
-          stages: ['webm'],
+          tags: ['generated', 'WebM'],
         },
         {
           label: 'Muxed MPEG-TS',

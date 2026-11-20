@@ -6,6 +6,7 @@
 
 import packedAudio from '../src/containers/packed-audio/index.js';
 import tsTransmux from '../src/containers/ts-transmux/index.js';
+import webm from '../src/containers/webm/index.js';
 import { attachEme } from '../src/eme/index.js';
 import dashCmaf from '../src/protocols/dash-cmaf/index.js';
 import dashLive from '../src/protocols/dash-live/index.js';
@@ -51,9 +52,9 @@ import trickPlay from '../src/stages/trick-play/index.js';
 export const hlsFactories = { hlsCmaf, hlsLive, aes128 };
 /** Low-latency HLS. hls-cmaf and hls-live stay, so a page can build a line without parts. */
 export const hlsLlFactories = { hlsLl, hlsCmaf, hlsLive, aes128 };
-export const dashFactories = { dashCmaf, dashLive };
+export const dashFactories = { dashCmaf, dashLive, webm };
 /** Low-latency DASH. dash-cmaf and dash-live stay, so a page can build a line without chunks. */
-export const dashLlFactories = { dashLl, dashCmaf, dashLive };
+export const dashLlFactories = { dashLl, dashCmaf, dashLive, webm };
 export const lowLatencyFactories = { liveCatchup };
 export const baseFactories = {
   abr,

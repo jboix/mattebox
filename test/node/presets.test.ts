@@ -24,8 +24,8 @@ function stub(name: string, requires: string[] = []): Stage {
 
 const HLS = ['hls-cmaf', 'hls-live', 'aes-128'];
 const HLS_LL = ['hls-ll', 'aes-128'];
-const DASH = ['dash-cmaf', 'dash-live'];
-const DASH_LL = ['dash-ll'];
+const DASH = ['dash-cmaf', 'dash-live', 'webm'];
+const DASH_LL = ['dash-ll', 'webm'];
 const LL = ['live-catchup'];
 const BASE = [
   'abr',
@@ -91,7 +91,7 @@ describe('the preset matrix', () => {
   it('full carries each of its stages once', () => {
     const names = full.stages().map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(37);
+    expect(names.length).toBe(38);
     // hls-ll and dash-ll stand in for the plain lines.
     expect(names).not.toContain('hls-live');
     expect(names).not.toContain('dash-live');

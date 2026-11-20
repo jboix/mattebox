@@ -138,15 +138,21 @@ explains.
 
 ## WebM in DASH
 
-Add the `webm` container to play DASH Representations with WebM segments.
-MSE takes WebM as it is, so the engine rewraps nothing. The container is in
-no preset.
+Every preset that plays DASH carries the `webm` container, so DASH
+Representations with WebM segments play. MSE takes WebM as it is, so the
+engine rewraps nothing. [dash.js](https://github.com/Dash-Industry-Forum/dash.js/blob/development/src/dash/WebmSegmentBaseLoader.js)
+and [Shaka Player](https://github.com/shaka-project/shaka-player/blob/main/lib/dash/webm_segment_index_parser.js)
+read WebM by default too. A stack of your own adds it, and a preset can
+leave it out:
 
 ```ts
 import webm from 'mattebox/containers/webm';
 import dash from 'mattebox/presets/dash';
+import { mattebox } from 'mattebox';
+import dashCmaf from 'mattebox/protocols/dash-cmaf';
 
-const engine = dash({ stages: [webm()] });
+const own = mattebox({ stages: [dashCmaf(), webm()] });
+const mp4Only = dash({ without: ['webm'] });
 ```
 
 | Addressing                       | How the segments are found                                                             |
