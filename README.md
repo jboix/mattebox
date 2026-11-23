@@ -18,6 +18,23 @@ MSE, EME, and standard web platform APIs.
   <img alt="Bundle size of adaptive streaming engines, min+gzip, each engine's compatibility build. Mattebox with every stage, transmux worker inside, is 93.7 KB, hls.js 184.1 KB, Shaka Player 267.0 KB, dash.js 297.3 KB." src="docs/size-chart-light.svg">
 </picture>
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/hls-chart-dark.svg">
+  <img alt="Bundle size of engines that play HLS with fMP4 and MPEG-TS segments and DRM, min+gzip. The figures are in the chart." src="docs/hls-chart-light.svg">
+</picture>
+
+The second chart compares HLS alone: fMP4 and MPEG-TS segments, and DRM,
+without a player interface. Each row is the smallest build its project
+publishes with that reach.
+
+- The Mattebox row is the `hls-ts-drm` preset, in its default ES2015 build.
+- The hls.js row is its full ES module build. Its light build has no DRM.
+- The Shaka Player row is its ES2021 HLS build.
+- The Bitmovin Player row is the modules of its package that HLS, MPEG-TS
+  and DRM need, in their `.prod.js` files.
+
+`pnpm run size-chart` regenerates the charts.
+
 ## Quick start
 
 Install the package:

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="566" viewBox="0 0 1100 566" role="img" aria-label="Bundle size of engines that play HLS with fMP4 and MPEG-TS segments and DRM, min+gzip, lower is better">
+  <rect width="1100" height="566" rx="18" fill="#0b0b0d"/>
+  <text x="44" y="60" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#f4f4f5">HLS engine size</text>
+  <text x="44" y="98" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="22" fill="#8a8a93">min+gzip · KB · the smallest build of each with HLS, MPEG-TS and DRM (lower is better)</text>
+  <text x="44" y="176" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#f4f4f5">mattebox</text>
+  <text x="44" y="200" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">main · hls-ts-drm preset</text>
+  <rect x="290" y="150" width="610" height="54" fill="#18181c"/>
+  <rect x="290" y="150" width="110.4" height="54" fill="#f5a524"/>
+  <text x="1056" y="186" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="30" font-weight="700" fill="#f4f4f5">63.4 KB</text>
+  <text x="44" y="260" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#f4f4f5">hls.js</text>
+  <text x="44" y="284" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">v1.7.2 · esm build</text>
+  <rect x="290" y="234" width="610" height="54" fill="#18181c"/>
+  <rect x="290" y="234" width="308.5" height="54" fill="#9a9aa2"/>
+  <text x="1056" y="270" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#8a8a93">177.0 KB</text>
+  <text x="44" y="344" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#f4f4f5">shaka player</text>
+  <text x="44" y="368" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">v5.2.9 · hls build, es2021</text>
+  <rect x="290" y="318" width="610" height="54" fill="#18181c"/>
+  <rect x="290" y="318" width="310.1" height="54" fill="#9a9aa2"/>
+  <text x="1056" y="354" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#8a8a93">177.9 KB</text>
+  <text x="44" y="428" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#f4f4f5">bitmovin player</text>
+  <text x="44" y="452" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">v8.279.0 · hls modules</text>
+  <rect x="290" y="402" width="610" height="54" fill="#18181c"/>
+  <rect x="290" y="402" width="559.5" height="54" fill="#9a9aa2"/>
+  <text x="1056" y="438" text-anchor="end" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="26" font-weight="400" fill="#8a8a93">321.0 KB</text>
+  <line x1="290" y1="504" x2="900" y2="504" stroke="#3a3a42" stroke-width="2"/>
+  <line x1="290.0" y1="504" x2="290.0" y2="512" stroke="#3a3a42" stroke-width="2"/>
+  <text x="290.0" y="536" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">0</text>
+  <line x1="377.1" y1="504" x2="377.1" y2="512" stroke="#3a3a42" stroke-width="2"/>
+  <text x="377.1" y="536" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">50</text>
+  <line x1="464.3" y1="504" x2="464.3" y2="512" stroke="#3a3a42" stroke-width="2"/>
+  <text x="464.3" y="536" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">100</text>
+  <line x1="551.4" y1="504" x2="551.4" y2="512" stroke="#3a3a42" stroke-width="2"/>
+  <text x="551.4" y="536" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">150</text>
+  <line x1="638.6" y1="504" x2="638.6" y2="512" stroke="#3a3a42" stroke-width="2"/>
+  <text x="638.6" y="536" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">200</text>
+  <line x1="725.7" y1="504" x2="725.7" y2="512" stroke="#3a3a42" stroke-width="2"/>
+  <text x="725.7" y="536" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">250</text>
+  <line x1="812.9" y1="504" x2="812.9" y2="512" stroke="#3a3a42" stroke-width="2"/>
+  <text x="812.9" y="536" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">300</text>
+  <line x1="900.0" y1="504" x2="900.0" y2="512" stroke="#3a3a42" stroke-width="2"/>
+  <text x="900.0" y="536" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="15" fill="#8a8a93">350</text>
+</svg>

@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 // Renders docs/size-chart-{dark,light}.svg (the full preset against the other
-// players) and docs/preset-chart-{dark,light}.svg (every preset). Mattebox rows
-// are the built dist/cdn bundles; the other players are pinned npm versions,
-// fetched at run time. Bump a version here to move its bar. Everything is min+gzip, compatibility builds.
+// players), docs/hls-chart-{dark,light}.svg (HLS alone against the other
+// players' HLS builds) and docs/preset-chart-{dark,light}.svg (every preset).
+// Mattebox rows are the built dist/cdn bundles, ES2015; the other players are
+// pinned npm versions, fetched at run time. Bump a version here to move its
+// bar. Everything is min+gzip. The size chart takes each engine's
+// compatibility build. The HLS chart takes the smallest build each project
+// publishes that plays HLS with fMP4 and MPEG-TS segments and DRM.
 //
 //   pnpm run build && pnpm run size-chart
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -48,12 +52,27 @@ const PRESETS = [
   },
 ];
 
-/** The other players: npm package, pinned version, and the browser bundle inside its tarball. */
+/** The Mattebox row of the HLS chart: the preset with HLS, MPEG-TS and DRM. */
+const MATTEBOX_HLS = [
+  { bundle: 'mattebox.hls-ts-drm.min.js', label: 'mattebox', detail: 'hls-ts-drm preset' },
+];
+
+/** The pinned version of each other player, one for every chart. */
+const VERSIONS = {
+  'hls.js': '1.7.2',
+  'shaka-player': '5.2.9',
+  dashjs: '5.2.1',
+  'bitmovin-player': '8.279.0',
+};
+
+/**
+ * The other players: npm package, label, and the browser bundle inside its
+ * tarball. `files` instead of `file` lists several, which a page loads together.
+ */
 const OTHERS = [
-  { pkg: 'hls.js', version: '1.7.2', label: 'hls.js', file: 'package/dist/hls.min.js', detail: '' },
+  { pkg: 'hls.js', label: 'hls.js', file: 'package/dist/hls.min.js', detail: '' },
   {
     pkg: 'shaka-player',
-    version: '5.2.9',
     label: 'shaka player',
     // Shaka's default and most compatible build, ES5; the es2021 file is the opt-in.
     file: 'package/dist/shaka-player.compiled.js',
@@ -61,11 +80,53 @@ const OTHERS = [
   },
   {
     pkg: 'dashjs',
-    version: '5.2.1',
     label: 'dash.js',
     // dash.js's compatibility build; its default export is the modern one.
     file: 'package/dist/legacy/umd/dash.all.min.js',
     detail: '',
+  },
+];
+
+/**
+ * The Bitmovin modules that play HLS with fMP4 and MPEG-TS segments and DRM,
+ * without an interface: the player, the engine under HLS, its Media Source
+ * renderer, bitrate adaptation, HLS, both containers and DRM. The dependencies
+ * are the ones `ModuleName` documents in the package's own types.
+ */
+const BITMOVIN_HLS = [
+  'core',
+  'engine-bitmovin',
+  'mserenderer',
+  'abr',
+  'hls',
+  'container-mp4',
+  'container-ts',
+  'drm',
+];
+
+/**
+ * The HLS chart's other players: the smallest build each one publishes that
+ * plays HLS with fMP4 and MPEG-TS segments and DRM, without an interface.
+ */
+const OTHERS_HLS = [
+  // The full build as an ES module, smaller than `hls.min.js`. The light
+  // build is smaller still and has no EME.
+  { pkg: 'hls.js', label: 'hls.js', file: 'package/dist/hls.min.mjs', detail: 'esm build' },
+  {
+    pkg: 'shaka-player',
+    label: 'shaka player',
+    // The HLS build has no DASH, interface, Cast or offline storage. The
+    // package ships it for ES5 and for ES2021; this is the smaller one.
+    file: 'package/dist/shaka-player.hls-es2021.js',
+    detail: 'hls build, es2021',
+  },
+  {
+    pkg: 'bitmovin-player',
+    label: 'bitmovin player',
+    // A commercial player. Its package holds each module as a file, and
+    // `.prod.js` is the one without the debug log messages.
+    files: BITMOVIN_HLS.map((name) => `package/modules/bitmovinplayer-${name}.prod.js`),
+    detail: 'hls modules',
   },
 ];
 
@@ -119,15 +180,30 @@ function tarEntry(tar, wanted) {
   throw new Error(`'${wanted}' is not in the tarball`);
 }
 
-async function otherSizes() {
-  const rows = [];
-  for (const { pkg, version, label, file, detail } of OTHERS) {
-    const meta = await (await fetch(`https://registry.npmjs.org/${pkg}/${version}`)).json();
+/** The unpacked tarball of each package fetched so far, by name and version. */
+const tarballs = new Map();
+
+/** Fetches a package's tarball at its pinned version, once per run. */
+async function tarballOf(pkg) {
+  const key = `${pkg}@${VERSIONS[pkg]}`;
+  if (!tarballs.has(key)) {
+    const meta = await (await fetch(`https://registry.npmjs.org/${pkg}/${VERSIONS[pkg]}`)).json();
     const tgz = Buffer.from(await (await fetch(meta.dist.tarball)).arrayBuffer());
-    const bytes = gzipSync(tarEntry(gunzipSync(tgz), file), { level: 9 }).length;
-    rows.push({ label, version: `v${meta.version}`, detail, bytes, highlight: false });
+    tarballs.set(key, { version: meta.version, tar: gunzipSync(tgz) });
   }
-  return rows;
+  return tarballs.get(key);
+}
+
+/** min+gzip bytes of each other player's bundle. Several files are joined, then compressed. */
+async function otherSizes(specs) {
+  const rows = [];
+  for (const { pkg, label, file, files = [file], detail } of specs) {
+    const { version, tar } = await tarballOf(pkg);
+    const bundle = Buffer.concat(files.map((each) => tarEntry(tar, each)));
+    const bytes = gzipSync(bundle, { level: 9 }).length;
+    rows.push({ label, version: `v${version}`, detail, bytes, highlight: false });
+  }
+  return rows.sort((a, b) => a.bytes - b.bytes);
 }
 
 const THEMES = {
@@ -204,14 +280,23 @@ function render(rows, theme, { title, subtitle, ariaLabel, tick }) {
 `;
 }
 
-const others = (await otherSizes()).sort((a, b) => a.bytes - b.bytes);
 const charts = [
   {
     file: 'size-chart',
-    rows: [...matteboxRows(MATTEBOX, true), ...others],
+    rows: [...matteboxRows(MATTEBOX, true), ...(await otherSizes(OTHERS))],
     title: 'Adaptive streaming engine size',
     subtitle: "min+gzip · KB · each engine's compatibility build (lower is better)",
     ariaLabel: 'Bundle size of adaptive streaming players, min+gzip, lower is better',
+    tick: 50,
+  },
+  {
+    file: 'hls-chart',
+    rows: [...matteboxRows(MATTEBOX_HLS, true), ...(await otherSizes(OTHERS_HLS))],
+    title: 'HLS engine size',
+    subtitle:
+      'min+gzip · KB · the smallest build of each with HLS, MPEG-TS and DRM (lower is better)',
+    ariaLabel:
+      'Bundle size of engines that play HLS with fMP4 and MPEG-TS segments and DRM, min+gzip, lower is better',
     tick: 50,
   },
   {
