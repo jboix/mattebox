@@ -12,8 +12,10 @@ concurrency: preview-${{ github.ref }}
 
 jobs:
   deploy-preview:
-    # Forks cannot push to gh-pages, and dependabot has no write token.
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    # Forks cannot push to gh-pages, and dependabot has no write token. The
+    # pull request's author is checked, not the actor: the regen bot pushes
+    # to dependabot's branch, and that push must not deploy a preview.
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

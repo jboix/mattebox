@@ -1,0 +1,104 @@
+name: Commit charts
+
+# The second half of the chart redraw on a Dependabot pull request. The Draw
+# charts workflow ran the updated dependencies and left the charts as an
+# artifact. This workflow commits them to Dependabot's branch as the chart
+# bot, a GitHub App that can write repository contents and nothing else.
+#
+# A push by the workflow's own GITHUB_TOKEN starts no workflow, so the Quality
+# check would never run on the new commit. A push by an app does start it.
+#
+# A `workflow_run` workflow always runs the file on the default branch, and
+# the `regen` environment hands its secrets to `main` alone. A pull
+# request can therefore neither change these steps nor reach the app's key.
+# This job runs no code from the branch: it copies chart files and commits.
+on:
+  workflow_run:
+    workflows: ['Draw charts']
+    types:
+      - completed
+
+concurrency:
+  group: chart-commit-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  commit:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/npm_and_yarn/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: regen
+    permissions:
+      contents: read
+      # To read the artifact of the Draw charts run.
+      actions: read
+    steps:
+      # The commit the charts were drawn from, not the branch's head: if
+      # Dependabot pushed again since, the push below is refused, and the
+      # newer push has its own Draw charts run.
+      - name: Checkout the commit the charts were drawn from
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Fetch the charts
+        uses: actions/download-artifact@v8
+        with:
+          name: charts
+          path: ${{ runner.temp }}/charts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      # The artifact comes from a run of updated dependencies, so it is
+      # copied as data: each chart the repository already tracks is replaced
+      # by a regular file of the same name. No file is added or removed.
+      - name: Take the charts and nothing else
+        id: charts
+        env:
+          DRAWN: ${{ runner.temp }}/charts
+        run: |
+          git ls-files -- 'docs/*-chart-*.svg' | while read -r chart; do
+            drawn="$DRAWN/$(basename "$chart")"
+            if [ ! -f "$drawn" ] || [ -L "$drawn" ]; then
+              echo "::error::the artifact has no regular file for $chart"
+              exit 1
+            fi
+            cp -- "$drawn" "$chart"
+          done
+          if git diff --quiet -- docs; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat -- docs
+          fi
+      - name: Mint the regen bot token
+        if: steps.charts.outputs.changed == 'true'
+        id: bot-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.REGEN_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REGEN_APP_PRIVATE_KEY }}
+          permission-contents: write
+      # `[dependabot skip]` lets Dependabot rebase over this commit. A rebase
+      # drops it, and the two workflows draw and commit the charts again.
+      - name: Commit and push as the regen bot
+        if: steps.charts.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
+          SLUG: ${{ steps.bot-token.outputs.app-slug }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          id="$(gh api "/users/${SLUG}[bot]" --jq .id)"
+          git config user.name "${SLUG}[bot]"
+          git config user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
+          git add --update -- docs
+          git commit --quiet \
+            -m "chore: redraw the size charts" \
+            -m "The dependency update moves the built files by a few bytes." \
+            -m "The charts are drawn again from this branch's build." \
+            -m "[dependabot skip]"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
