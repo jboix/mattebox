@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readProjection } from '../../../src/containers/projection.js';
+import { readFramePacking, readProjection } from '../../../src/containers/projection.js';
 
 /** A box: a 32-bit size, the fourcc, then the payload. */
 function box(type: string, ...payload: Uint8Array[]): Uint8Array {
@@ -60,6 +60,17 @@ function google(top: number, bottom: number, left: number, right: number): Uint8
 
 const QUARTER = 0x40000000;
 
+/** Apple's vexu with pack/pkin of `kind`, and eyes/stri with these flags when given. */
+function applePacking(kind: string, flags?: number): Uint8Array {
+  const eyes = flags === undefined ? [] : [box('eyes', full('stri', new Uint8Array([flags])))];
+  return box('vexu', ...eyes, box('pack', full('pkin', ascii(kind))));
+}
+
+/** Google's st3d with `mode`. */
+function st3d(mode: number): Uint8Array {
+  return full('st3d', new Uint8Array([mode]));
+}
+
 describe('readProjection', () => {
   it("reads Apple's projection kind", () => {
     expect(readProjection(init([apple('equi')]))).toBe('equirectangular');
@@ -94,5 +105,46 @@ describe('readProjection', () => {
     expect(readProjection(init([apple('equi')], 'soun'))).toBeNull();
     expect(readProjection(new Uint8Array([0, 0, 0, 99, 1, 2]))).toBeNull();
     expect(readProjection(init([full('prji', ascii('equi'))]))).toBeNull();
+  });
+});
+
+describe('readFramePacking', () => {
+  it("reads Apple's view packing kind, with the left eye first", () => {
+    expect(readFramePacking(init([applePacking('side')]))).toBe('side-by-side');
+    expect(readFramePacking(init([applePacking('over')]))).toBe('top-bottom');
+    // Both eyes present, in the default order.
+    expect(readFramePacking(init([applePacking('side', 0x03)]))).toBe('side-by-side');
+    // `eye_views_reversed`: the right eye first, which the IR does not name.
+    expect(readFramePacking(init([applePacking('side', 0x0b)]))).toBeNull();
+    expect(readFramePacking(init([applePacking('\0\0\0\0')]))).toBeNull();
+  });
+
+  it("reads Google's stereo mode: top and bottom, or left and right", () => {
+    expect(readFramePacking(init([st3d(1)]))).toBe('top-bottom');
+    expect(readFramePacking(init([st3d(2)]))).toBe('side-by-side');
+    // Monoscopic, a custom layout, and right-left.
+    expect(readFramePacking(init([st3d(0)]))).toBeNull();
+    expect(readFramePacking(init([st3d(3)]))).toBeNull();
+    expect(readFramePacking(init([st3d(4)]))).toBeNull();
+  });
+
+  it('reads the packing beside the projection, each from its own box', () => {
+    const boxes = [st3d(1), google(0, 0, 0, 0)];
+    expect(readFramePacking(init(boxes))).toBe('top-bottom');
+    expect(readProjection(init(boxes))).toBe('equirectangular');
+    const vexu = box(
+      'vexu',
+      box('proj', full('prji', ascii('hequ'))),
+      box('pack', full('pkin', ascii('side'))),
+    );
+    expect(readFramePacking(init([vexu]))).toBe('side-by-side');
+    expect(readProjection(init([vexu]))).toBe('half-equirectangular');
+  });
+
+  it('is null for one picture a frame, an audio track, and bytes that are not an init segment', () => {
+    expect(readFramePacking(init([apple('equi')]))).toBeNull();
+    expect(readFramePacking(init([st3d(1)], 'soun'))).toBeNull();
+    expect(readFramePacking(new Uint8Array([0, 0, 0, 99, 1, 2]))).toBeNull();
+    expect(readFramePacking(init([full('pkin', ascii('side'))]))).toBeNull();
   });
 });

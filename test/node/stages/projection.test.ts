@@ -6,8 +6,11 @@ import type { Command } from '../../../src/types/messages.js';
 import type { SegmentMeta } from '../../../src/types/sink.js';
 import type { StageContext, TransformStep } from '../../../src/types/stage.js';
 
-/** An init segment whose avc1 entry carries Apple's vexu/proj/prji of kind `equi`. */
-function equirectangular(): Uint8Array {
+/**
+ * An init segment whose avc1 entry carries Apple's vexu/proj/prji of kind
+ * `equi`, and Google's st3d for top and bottom when `packed`.
+ */
+function equirectangular(packed = false): Uint8Array {
   const box = (type: string, ...parts: Uint8Array[]): Uint8Array => {
     const size = 8 + parts.reduce((sum, part) => sum + part.byteLength, 0);
     const out = new Uint8Array(size);
@@ -25,13 +28,14 @@ function equirectangular(): Uint8Array {
   };
   const text = (value: string) => Uint8Array.from(value, (c) => c.charCodeAt(0));
   const prji = box('prji', new Uint8Array(4), text('equi'));
-  const entry = box('avc1', new Uint8Array(78), box('vexu', box('proj', prji)));
+  const st3d = packed ? [box('st3d', new Uint8Array([0, 0, 0, 0, 1]))] : [];
+  const entry = box('avc1', new Uint8Array(78), box('vexu', box('proj', prji)), ...st3d);
   const stsd = box('stsd', new Uint8Array([0, 0, 0, 0, 0, 0, 0, 1]), entry);
   const hdlr = box('hdlr', new Uint8Array(8), text('vide'), new Uint8Array(13));
   return box('moov', box('trak', box('mdia', hdlr, box('minf', box('stbl', stsd)))));
 }
 
-function install(stated?: Rendition['projection']) {
+function install(stated?: Rendition['projection'], packing?: Rendition['framePacking']) {
   const dispatched: Command[] = [];
   let step: TransformStep | null = null;
   const rendition = {
@@ -41,6 +45,7 @@ function install(stated?: Rendition['projection']) {
     mimeType: 'video/mp4',
     segments: [],
     ...(stated !== undefined ? { projection: stated } : {}),
+    ...(packing !== undefined ? { framePacking: packing } : {}),
   };
   const state = {
     presentation: {
@@ -93,6 +98,25 @@ describe('projection stage', () => {
     expect(dispatched).toEqual([
       { type: 'SET_PROJECTION', renditionId: 'v1', projection: 'equirectangular' },
     ]);
+  });
+
+  it("hands the init segment's frame packing to the kernel too", () => {
+    const { dispatched, run } = install();
+    run(equirectangular(true));
+    expect(dispatched).toEqual([
+      { type: 'SET_PROJECTION', renditionId: 'v1', projection: 'equirectangular' },
+      { type: 'SET_FRAME_PACKING', renditionId: 'v1', framePacking: 'top-bottom' },
+    ]);
+    // The manifest states the projection alone: the packing still comes from the boxes.
+    const half = install('half-equirectangular');
+    half.run(equirectangular(true));
+    expect(half.dispatched).toEqual([
+      { type: 'SET_FRAME_PACKING', renditionId: 'v1', framePacking: 'top-bottom' },
+    ]);
+    // The manifest states both: nothing is read.
+    const both = install('equirectangular', 'side-by-side');
+    both.run(equirectangular(true));
+    expect(both.dispatched).toEqual([]);
   });
 
   it('reads nothing where the manifest states a projection, for media segments, or for audio', () => {

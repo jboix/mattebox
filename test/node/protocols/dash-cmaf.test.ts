@@ -607,6 +607,41 @@ describe('projection', () => {
   });
 });
 
+describe('frame packing', () => {
+  it('reads the FramePacking descriptor on the Representation or its AdaptationSet', () => {
+    const packing = (value: string, scheme = 'urn:mpeg:mpegB:cicp:VideoFramePackingType') =>
+      `<FramePacking schemeIdUri="${scheme}" value="${value}"/>`;
+    const mpd = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1M">
+  <Period>
+    <AdaptationSet id="v" mimeType="video/mp4" codecs="avc1.640028">
+      ${packing('4')}
+      <SegmentTemplate media="v-$RepresentationID$-$Number$.m4s" initialization="v-$RepresentationID$.mp4" duration="6" timescale="1"/>
+      <Representation id="set" bandwidth="1000"/>
+      <Representation id="own" bandwidth="2000">${packing('3')}</Representation>
+      <Representation id="rows" bandwidth="3000">${packing('2')}</Representation>
+    </AdaptationSet>
+    <AdaptationSet id="w" mimeType="video/mp4" codecs="avc1.640028">
+      <SegmentTemplate media="w-$RepresentationID$-$Number$.m4s" initialization="w-$RepresentationID$.mp4" duration="6" timescale="1"/>
+      <Representation id="one" bandwidth="500"/>
+      <Representation id="avc" bandwidth="600">${packing('3', 'urn:mpeg:dash:14496:10:frame_packing_arrangement_type:2011')}</Representation>
+      <Representation id="other" bandwidth="700">${packing('3', 'urn:example:packing')}</Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+    const tracks = parse(mpd, BASE).presentation?.periods[0]?.tracks ?? [];
+    expect(tracks.flatMap((t) => t.renditions.map((r) => [r.id, r.framePacking]))).toEqual([
+      ['set', 'top-bottom'],
+      ['own', 'side-by-side'],
+      // The Representation's own descriptor wins, and a row interleaving is not named.
+      ['rows', undefined],
+      ['one', undefined],
+      ['avc', 'side-by-side'],
+      ['other', undefined],
+    ]);
+  });
+});
+
 describe('containers', () => {
   it('leaves out WebM without a stage that reads it, and keeps the MP4 beside it', () => {
     const mpd = `<?xml version="1.0"?>

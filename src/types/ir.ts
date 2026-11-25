@@ -246,6 +246,15 @@ export interface Rendition {
    * manifest does not state.
    */
   readonly projection?: 'equirectangular' | 'half-equirectangular';
+  /**
+   * How one frame holds a picture for each eye, for stereoscopic video: the
+   * left eye's picture over the right eye's, or on its left. From the DASH
+   * `FramePacking` descriptor, or the boxes of an MP4 init segment. An HLS
+   * playlist cannot state it: REQ-VIDEO-LAYOUT `CH-STEREO` says both eyes
+   * are present, not where (RFC 8216bis §4.4.6.2). Absent means one
+   * picture, another packing, or one the stream does not state.
+   */
+  readonly framePacking?: 'top-bottom' | 'side-by-side';
   /** RFC 6381 codec string. Null when the manifest does not declare one, common for text. */
   readonly codecs: string | null;
   /**

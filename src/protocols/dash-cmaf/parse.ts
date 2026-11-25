@@ -366,6 +366,39 @@ function projectionOf(
   return {};
 }
 
+/**
+ * The schemes of a `FramePacking` descriptor whose values are the frame
+ * packing arrangement types of H.264 Table D-8, which ITU-T H.273
+ * (`VideoFramePackingType`) repeats. DASH-IF lists both:
+ * https://dashif.org/identifiers/video_source_metadata/
+ */
+const FRAME_PACKING = [
+  'urn:mpeg:mpegB:cicp:VideoFramePackingType',
+  'urn:mpeg:dash:14496:10:frame_packing_arrangement_type:2011',
+];
+
+/**
+ * The `FramePacking` descriptor (ISO/IEC 23009-1 §5.8.4.6), on the
+ * Representation or its AdaptationSet: 3 is side by side, 4 top and bottom.
+ * The descriptor does not say which eye comes first, and the left one is
+ * the default of H.264's frame packing message. Another type, such as an
+ * interleaving, is not a packing the IR names.
+ */
+function framePackingOf(
+  representation: Element,
+  adaptationSet: Element,
+): { framePacking?: 'top-bottom' | 'side-by-side' } {
+  for (const element of [representation, adaptationSet]) {
+    for (const descriptor of children(element, 'FramePacking')) {
+      if (!FRAME_PACKING.includes(attr(descriptor, 'schemeIdUri') ?? '')) continue;
+      const value = attr(descriptor, 'value');
+      if (value === '3') return { framePacking: 'side-by-side' };
+      return value === '4' ? { framePacking: 'top-bottom' } : {};
+    }
+  }
+  return {};
+}
+
 function videoRangeOf(
   representation: Element,
   adaptationSet: Element,
@@ -814,6 +847,7 @@ function parsePeriod(
           ...channelsOf(representation, adaptationSet),
           ...supplementalOf(representation, adaptationSet),
           ...projectionOf(representation, adaptationSet),
+          ...framePackingOf(representation, adaptationSet),
         });
         continue;
       }
@@ -856,6 +890,7 @@ function parsePeriod(
           ...channelsOf(representation, adaptationSet),
           ...supplementalOf(representation, adaptationSet),
           ...projectionOf(representation, adaptationSet),
+          ...framePackingOf(representation, adaptationSet),
         });
         continue;
       }
@@ -950,6 +985,7 @@ function parsePeriod(
         ...channelsOf(representation, adaptationSet),
         ...supplementalOf(representation, adaptationSet),
         ...projectionOf(representation, adaptationSet),
+        ...framePackingOf(representation, adaptationSet),
       });
     }
 

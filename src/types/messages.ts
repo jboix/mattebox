@@ -139,6 +139,16 @@ export type Command =
       readonly type: 'SET_PROJECTION';
       readonly renditionId: string;
       readonly projection: NonNullable<Rendition['projection']>;
+    }
+  /**
+   * Gives a rendition the frame packing its media states and its manifest
+   * did not, as SET_PROJECTION does for the projection, with the same
+   * rejections: the manifest wins.
+   */
+  | {
+      readonly type: 'SET_FRAME_PACKING';
+      readonly renditionId: string;
+      readonly framePacking: NonNullable<Rendition['framePacking']>;
     };
 
 /** The world reporting what already happened, entering through `absorb`. Never rejectable. */

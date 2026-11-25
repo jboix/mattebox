@@ -272,6 +272,32 @@ player's job, such as `@mattebox/player-360`.
 - A stream that states its projection nowhere has no `projection`. Your
   page or connector tells the player instead.
 
+### Frame packing
+
+A stereoscopic video can hold a picture for each eye in one frame. A video
+rendition carries `framePacking` when the stream says so. In both values
+the left eye's picture comes first.
+
+| `framePacking`   | DASH `FramePacking` | Apple `pkin` | Google `st3d` |
+| ---------------- | ------------------- | ------------ | ------------- |
+| `'top-bottom'`   | 4                   | `over`       | 1             |
+| `'side-by-side'` | 3                   | `side`       | 2             |
+
+- DASH: the engine reads the `FramePacking` descriptor on the
+  Representation or its AdaptationSet, under the two schemes
+  [DASH-IF lists](https://dashif.org/identifiers/video_source_metadata/):
+  `urn:mpeg:mpegB:cicp:VideoFramePackingType` and
+  `urn:mpeg:dash:14496:10:frame_packing_arrangement_type:2011`. Another
+  type, such as an interleaving, has no `framePacking`.
+- HLS: a playlist cannot state it. `REQ-VIDEO-LAYOUT` `CH-STEREO` says
+  both eyes are present, not where in the frame. The init segment's boxes
+  say it instead.
+- MP4: the `projection` stage reads it from the same init segment, under
+  the same rules: Apple's `vexu/pack/pkin` box and Google's `st3d` box.
+  A packing with the right eye first has no `framePacking`.
+- The engine only reports it. Showing each eye its picture is the player's
+  job.
+
 ```ts
 import { mattebox } from 'mattebox';
 import dashCmaf from 'mattebox/protocols/dash-cmaf';

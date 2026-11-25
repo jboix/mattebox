@@ -246,6 +246,8 @@ export interface KernelState {
     readonly added?: readonly Track[];
     /** Projections set with SET_PROJECTION by rendition, applied to every merged presentation. */
     readonly projections?: ReadonlyMap<RenditionId, NonNullable<Rendition['projection']>>;
+    /** Frame packings set with SET_FRAME_PACKING by rendition, applied to every merged presentation. */
+    readonly framePackings?: ReadonlyMap<RenditionId, NonNullable<Rendition['framePacking']>>;
     /**
      * The video track an I-frame track stands in for while the I-frame track
      * is active, for a scan or a scrub. The quality API keeps describing it.

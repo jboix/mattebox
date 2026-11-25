@@ -22,6 +22,18 @@
  * A cube map, a mesh, a fisheye, or bounds that crop anything else read as
  * no projection: the engine names only what a player can draw from these
  * two kinds.
+ *
+ * The same two families say how one frame holds a picture for each eye:
+ *
+ * - Apple's `vexu/pack/pkin` holds `view_packing_kind`, a fourcc: `side`
+ *   for side by side, `over` for over and under. The left eye comes first
+ *   unless `vexu/eyes/stri` sets `eye_views_reversed`.
+ * - Google's `st3d`, beside `sv3d`, holds `stereo_mode`: 1 is top and
+ *   bottom, 2 left and right, both with the left eye first. 4 is right and
+ *   left.
+ *
+ * A packing with the right eye first reads as none: the IR names the two
+ * with the left eye first.
  */
 import type { Rendition } from '../types/ir.js';
 import {
@@ -36,6 +48,9 @@ import {
 
 /** A projection the IR names. */
 type Projection = NonNullable<Rendition['projection']>;
+
+/** A frame packing the IR names. */
+type FramePacking = NonNullable<Rendition['framePacking']>;
 
 /** A quarter of the sphere's width in 0.32 fixed point: 0.25 × 2³². */
 const QUARTER = 0x40000000;
@@ -75,12 +90,34 @@ function google(children: Uint8Array): Projection | null {
   return left === QUARTER && right === QUARTER ? 'half-equirectangular' : null;
 }
 
+/** Apple's `pkin` kind, with the left eye first: `side` is side by side, `over` top and bottom. */
+function applePacking(children: Uint8Array): FramePacking | null {
+  const pkin = under(children, 'vexu', 'pack', 'pkin');
+  const body = pkin === null ? undefined : fullBox(pkin)?.body;
+  if (body === undefined || body.byteLength < 4) return null;
+  const stri = under(children, 'vexu', 'eyes', 'stri');
+  const flags = stri === null ? undefined : fullBox(stri)?.body;
+  // `eye_views_reversed` is the fifth bit of the one byte: the right eye comes first.
+  if (flags !== undefined && flags.byteLength > 0 && ((flags[0] as number) & 0x08) !== 0) {
+    return null;
+  }
+  const kind = fourcc(body, 0);
+  return kind === 'side' ? 'side-by-side' : kind === 'over' ? 'top-bottom' : null;
+}
+
+/** Google's `stereo_mode`: 1 is top and bottom, 2 left and right. */
+function googlePacking(children: Uint8Array): FramePacking | null {
+  const st3d = findBox(children, 'st3d')?.payload;
+  const body = st3d === undefined ? undefined : fullBox(st3d)?.body;
+  if (body === undefined || body.byteLength < 1) return null;
+  return body[0] === 1 ? 'top-bottom' : body[0] === 2 ? 'side-by-side' : null;
+}
+
 /**
- * The projection the first video track's sample entry states, or null for
- * a flat picture, another projection, or bytes that are not an init
- * segment. Never throws.
+ * What `read` finds in the first video track's sample entries, given the
+ * boxes after each entry's fixed header, or null. Never throws.
  */
-export function readProjection(init: Uint8Array): Projection | null {
+function inVideoEntry<T>(init: Uint8Array, read: (children: Uint8Array) => T | null): T | null {
   for (const trak of findBoxes(init, 'moov/trak')) {
     // ISO/IEC 14496-12 §8.4.3: hdlr is a FullBox, then pre_defined(32), then handler_type.
     const hdlr = findBox(trak.payload, 'mdia/hdlr');
@@ -91,10 +128,27 @@ export function readProjection(init: Uint8Array): Projection | null {
     for (const entry of sampleEntries(stsd.payload)) {
       if (entry.body.byteLength < VISUAL_ENTRY_HEADER) continue;
       // An encrypted entry (encv) keeps these boxes too, beside its sinf.
-      const children = entry.body.subarray(VISUAL_ENTRY_HEADER);
-      const found = apple(children) ?? google(children);
+      const found = read(entry.body.subarray(VISUAL_ENTRY_HEADER));
       if (found !== null) return found;
     }
   }
   return null;
+}
+
+/**
+ * The projection the first video track's sample entry states, or null for
+ * a flat picture, another projection, or bytes that are not an init
+ * segment. Never throws.
+ */
+export function readProjection(init: Uint8Array): Projection | null {
+  return inVideoEntry(init, (children) => apple(children) ?? google(children));
+}
+
+/**
+ * The frame packing the first video track's sample entry states, or null
+ * for one picture a frame, a packing with the right eye first, or bytes
+ * that are not an init segment. Never throws.
+ */
+export function readFramePacking(init: Uint8Array): FramePacking | null {
+  return inVideoEntry(init, (children) => applePacking(children) ?? googlePacking(children));
 }

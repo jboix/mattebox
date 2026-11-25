@@ -870,9 +870,31 @@ function reduceCommand(
         return reject(state, msg.type, `projection exists: ${msg.renditionId}`);
       }
       const projections = new Map(state.tracks.projections).set(msg.renditionId, msg.projection);
-      const presentation = withProjections(state.presentation, projections);
+      const presentation = withStated(state.presentation, projections, undefined);
       return [
         { ...state, presentation, tracks: { ...state.tracks, projections } },
+        [{ kind: 'emit', event: 'presentation:changed', payload: { id: presentation.id } }],
+      ];
+    }
+
+    case 'SET_FRAME_PACKING': {
+      if (state.presentation === null) {
+        return reject(state, msg.type, 'no source');
+      }
+      const site = findRendition(state.presentation, msg.renditionId);
+      if (site === null) {
+        return reject(state, msg.type, `unknown rendition: ${msg.renditionId}`);
+      }
+      if (site.rendition.framePacking !== undefined) {
+        return reject(state, msg.type, `frame packing exists: ${msg.renditionId}`);
+      }
+      const framePackings = new Map(state.tracks.framePackings).set(
+        msg.renditionId,
+        msg.framePacking,
+      );
+      const presentation = withStated(state.presentation, undefined, framePackings);
+      return [
+        { ...state, presentation, tracks: { ...state.tracks, framePackings } },
         [{ kind: 'emit', event: 'presentation:changed', payload: { id: presentation.id } }],
       ];
     }
@@ -880,15 +902,16 @@ function reduceCommand(
 }
 
 /**
- * Gives every rendition SET_PROJECTION named its projection, where the
- * presentation states none. A playlist merge hands the reducer the
- * adapter's presentation, which knows nothing of them.
+ * Gives every rendition SET_PROJECTION or SET_FRAME_PACKING named what the
+ * command stated, where the presentation states none. A playlist merge
+ * hands the reducer the adapter's presentation, which knows nothing of them.
  */
-function withProjections(
+function withStated(
   presentation: Presentation,
   projections: KernelState['tracks']['projections'],
+  framePackings: KernelState['tracks']['framePackings'],
 ): Presentation {
-  if (projections === undefined || projections.size === 0) return presentation;
+  if (!projections?.size && !framePackings?.size) return presentation;
   return {
     ...presentation,
     periods: presentation.periods.map((period) => ({
@@ -896,10 +919,16 @@ function withProjections(
       tracks: period.tracks.map((track) => ({
         ...track,
         renditions: track.renditions.map((rendition) => {
-          const projection = projections.get(rendition.id);
-          return projection === undefined || rendition.projection !== undefined
-            ? rendition
-            : { ...rendition, projection };
+          const projection = rendition.projection ?? projections?.get(rendition.id);
+          const framePacking = rendition.framePacking ?? framePackings?.get(rendition.id);
+          if (projection === rendition.projection && framePacking === rendition.framePacking) {
+            return rendition;
+          }
+          return {
+            ...rendition,
+            ...(projection === undefined ? {} : { projection }),
+            ...(framePacking === undefined ? {} : { framePacking }),
+          };
         }),
       })),
     })),
@@ -980,9 +1009,10 @@ function loadPresentation(
   merged: Presentation,
   undecodableIds: ReadonlySet<string> = new Set(),
 ): Reduction {
-  const presentation = withProjections(
+  const presentation = withStated(
     withAdded(merged, state.tracks.added),
     state.tracks.projections,
+    state.tracks.framePackings,
   );
   const available: string[] = [];
   for (const period of presentation.periods) {
@@ -2182,6 +2212,7 @@ const COMMAND_TYPES: Record<Command['type'], true> = {
   ABORT_INFLIGHT: true,
   ADD_TRACK: true,
   SET_PROJECTION: true,
+  SET_FRAME_PACKING: true,
 };
 
 export function isCommand(msg: Message): msg is Command {
