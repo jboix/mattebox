@@ -96,3 +96,4 @@ these.
 | --------------- | ---------------------------------------------------------------- | ------------------------------------------ |
 | `cmcd`          | Sends playback data to the CDN on each request                   | [11](11-network-and-cdn.md#the-cmcd-stage) |
 | `interstitials` | Plays ad breaks and other clips the stream or the page schedules | [21](21-interstitials.md)                  |
+| `transcript`    | Reads the cues of a text track apart from playback               | [06](06-audio-and-text.md#transcript)      |

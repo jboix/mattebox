@@ -93,6 +93,16 @@ export function createStageContext(deps: ContextDeps): { ctx: StageContext; tear
       deps.bus.registerTransform(step);
       transformSteps.push(step);
     },
+    async parseCues(data, meta) {
+      let bytes = data;
+      for (const step of deps.bus.transforms()) {
+        bytes = new Uint8Array(await step.transform(bytes, meta));
+      }
+      const format = meta.format ?? 'text/vtt';
+      const parse = deps.bus.parserFor(format);
+      if (parse === undefined) throw new RangeError(`no parser for '${format}'`);
+      return parse(bytes, meta);
+    },
     getState() {
       return deps.bus.getState();
     },

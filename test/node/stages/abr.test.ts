@@ -76,6 +76,7 @@ function composeWithAbr(options?: Parameters<typeof abr>[0]) {
     registerTypeProbe: () => undefined,
     registerTimeProbe: () => undefined,
     registerChunkSplitter: () => undefined,
+    parseCues: async () => [],
     reduce: (name, reducer) => slices.push([name, reducer as SliceReducer]),
     dispatch: () => undefined,
     load: () => undefined,

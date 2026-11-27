@@ -1,7 +1,7 @@
 # 06 Audio and text
 
 This chapter covers track selection, alternate audio, subtitles, captions,
-and timed metadata.
+the transcript, and timed metadata.
 
 ## engine.tracks
 
@@ -332,6 +332,58 @@ justification sets `align`. Italics and underline show. Colors, edges, and
 fonts do not: a `VTTCue` carries no color without page CSS. Each cue keeps
 the window layout in a `cea708` property, for a player that draws captions
 itself.
+
+## Transcript
+
+The engine loads a subtitle track's segments near the playhead and drops
+them behind it, so the native `TextTrack` never holds a whole programme.
+The `transcript` stage reads the cues of a text track apart from playback,
+for a page that lists every line or searches them. It is in no preset; add
+it with `stages`. The CDN bundles do not carry it.
+
+```ts
+import hls from 'mattebox/presets/hls';
+import transcript from 'mattebox/stages/transcript';
+
+const engine = hls({ stages: [transcript()] });
+
+const [trackId] = engine.transcript.tracks;
+const cues = await engine.transcript.cues(trackId, { start: 0, end: 120 });
+for (const { start, end, text } of cues) addLine(start, end, text);
+```
+
+`engine.transcript.tracks` lists the ids of the text tracks the stage can
+read: those with segments of their own, in a format a stage of your engine
+parses. In-band captions (CEA-608 and CEA-708) are inside the video
+segments, so the stage does not list them.
+
+`engine.transcript.cues(trackId, range)` resolves with the cues of every
+segment that overlaps the range, sorted by start, each once.
+
+| Option   | Meaning                                                  |
+| -------- | -------------------------------------------------------- |
+| `start`  | Seconds of presentation time. Without it, from the start |
+| `end`    | Seconds of presentation time. Without it, to the end     |
+| `signal` | An `AbortSignal` that stops the requests still to send   |
+
+- The track does not have to be selected, and reading it changes neither
+  the selection nor the native `TextTrack`.
+- Nothing loads until you call `cues()`. The stage keeps a segment it read
+  until another source loads, so a second call for the same range sends no
+  request.
+- The requests go through the transport, four at a time, so your request
+  hooks apply to them.
+- `text` keeps the format's own markup, such as `<i>` and `<v Anna>` in
+  WebVTT. A cue without text, such as an image subtitle, is left out.
+- A live stream needs an `end`: its segment list has none.
+
+The promise rejects with one of three errors.
+
+| Error        | When                                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------------ |
+| `RangeError` | No text track has this id, no stage of your engine parses its format, or a live stream is read without `end` |
+| `TypeError`  | A segment answers with an HTTP error, or the track's segment list does not arrive                            |
+| `AbortError` | Your signal aborts, or another source loads before the cues arrive                                           |
 
 ## Timed metadata
 

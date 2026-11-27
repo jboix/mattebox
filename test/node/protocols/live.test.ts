@@ -24,6 +24,7 @@ function compose(...factories: Array<() => Stage>) {
       registerTypeProbe: () => undefined,
       registerTimeProbe: () => undefined,
       registerChunkSplitter: () => undefined,
+      parseCues: async () => [],
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
       addResponseHook: () => () => undefined,

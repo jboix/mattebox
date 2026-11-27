@@ -62,6 +62,7 @@ import textWebvtt from '../../src/stages/text-webvtt/index.js';
 import textWebvttSegmented from '../../src/stages/text-webvtt-segmented/index.js';
 import thumbnails from '../../src/stages/thumbnails/index.js';
 import timedMetadata from '../../src/stages/timed-metadata/index.js';
+import transcript from '../../src/stages/transcript/index.js';
 import trickPlay from '../../src/stages/trick-play/index.js';
 import type { Requirement } from '../../src/types/stage.js';
 
@@ -132,6 +133,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   built('stages', cmsd),
   built('stages', renditionNames),
   built('stages', projection),
+  built('stages', transcript),
 ];
 
 /**

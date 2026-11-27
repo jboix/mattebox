@@ -128,6 +128,13 @@ export interface StageContext {
   registerParser(mimeType: string, parse: ParserFn): void;
   registerTransform(step: TransformStep): void;
   /**
+   * Turns a text segment's bytes into cues as the cue pipeline does: the
+   * transforms in their order, then the parser of `meta.format`. For a
+   * stage that reads cues apart from playback; nothing reaches a sink.
+   * Rejects when no stage parses the format.
+   */
+  parseCues(data: Uint8Array, meta: SegmentMeta): Promise<readonly CueDescriptor[]>;
+  /**
    * Exposes a public API surface as `engine.<name>`. Typing on the facade
    * comes from merging the `MatteboxNamespaces` interface declared in the
    * package entry; this call itself is untyped because the stage layer sits

@@ -421,6 +421,7 @@ function compose(...stages: Stage[]): Reduce {
       registerTypeProbe: () => undefined,
       registerTimeProbe: () => undefined,
       registerChunkSplitter: () => undefined,
+      parseCues: async () => [],
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
       addResponseHook: () => () => undefined,

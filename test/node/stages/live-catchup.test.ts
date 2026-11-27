@@ -74,6 +74,7 @@ function harness(options: LiveCatchupOptions = {}, info: LiveInfo = {}) {
     registerTypeProbe: () => undefined,
     registerTimeProbe: () => undefined,
     registerChunkSplitter: () => undefined,
+    parseCues: async () => [],
     getState: () => state,
     addRequestHook: () => () => undefined,
     addResponseHook: () => () => undefined,

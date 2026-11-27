@@ -153,6 +153,7 @@ Stages group by feature. Each row is one directory under `src/stages/`.
 | `nal-scan`              | Finds SEI units in H.264 and HEVC fMP4 samples for CEA-608                 |                             |
 | `meta-id3`              | ID3 timed metadata to a metadata track                                     | `media-transform`           |
 | `timed-metadata`        | Date ranges, DASH events, ID3 and `emsg` in one list as `engine.metadata`  |                             |
+| `transcript`            | The cues of a text track, read apart from playback, as `engine.transcript` | `transport`                 |
 
 ### Live
 
@@ -249,6 +250,7 @@ export default function myStage(): Stage {
 | `reduce`                 | A named state slice with its own pure reducer; sees facts and accepted commands | protocol adapters, `recovery`   |
 | `addRequestHook`         | Sees and rewrites outgoing requests                                             | `cmcd`, `content-steering`      |
 | `request`                | A one-off fetch through the transport                                           | `eme-core`, `thumbnails`        |
+| `parseCues`              | A text segment's bytes to cues, through the transforms and the format's parser  | `transcript`                    |
 | `dispatch`, `on`, `emit` | Commands in, events out                                                         | every stage                     |
 
 The lifecycle:

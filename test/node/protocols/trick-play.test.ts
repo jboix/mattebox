@@ -103,6 +103,7 @@ function compose(stages: readonly Stage[], hooks: Parameters<typeof createReduce
       registerTypeProbe: () => undefined,
       registerTimeProbe: () => undefined,
       registerChunkSplitter: () => undefined,
+      parseCues: async () => [],
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
       addResponseHook: () => () => undefined,

@@ -112,4 +112,32 @@ describe('stage context', () => {
     teardown();
     expect(d.hooks.abr).toBeNull();
   });
+
+  it('parseCues runs the transforms in their order, then the parser of the format', async () => {
+    const d = deps();
+    const { ctx } = createStageContext(d);
+    const meta = {
+      trackId: 'subs-en',
+      renditionId: 'r-en',
+      contentType: 'text' as const,
+      seq: 3,
+      start: 30,
+      duration: 10,
+      isInit: false,
+      format: 'text/vtt',
+    };
+    const append = (byte: number) => (data: Uint8Array) => new Uint8Array([...data, byte]);
+    ctx.registerTransform({ name: 'second', order: 2, transform: append(2) });
+    ctx.registerTransform({ name: 'first', order: 1, transform: async (data) => append(1)(data) });
+    ctx.registerParser('text/vtt', (data, seen) => [
+      { start: seen.start, end: seen.start + seen.duration, text: [...data].join(',') },
+    ]);
+
+    expect(await ctx.parseCues(new Uint8Array([0]), meta)).toEqual([
+      { start: 30, end: 40, text: '0,1,2' },
+    ]);
+    await expect(
+      ctx.parseCues(new Uint8Array([0]), { ...meta, format: 'application/ttml+xml' }),
+    ).rejects.toThrow(RangeError);
+  });
 });

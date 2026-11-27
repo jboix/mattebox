@@ -25,6 +25,7 @@ function install() {
     registerChunkSplitter: (split) => {
       splitter = split;
     },
+    parseCues: async () => [],
     getState: () => initialState(),
     addRequestHook: () => () => undefined,
     addResponseHook: () => () => undefined,

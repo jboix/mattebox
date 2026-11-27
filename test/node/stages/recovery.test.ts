@@ -22,6 +22,7 @@ function compose(...stages: Stage[]) {
       registerTypeProbe: () => undefined,
       registerTimeProbe: () => undefined,
       registerChunkSplitter: () => undefined,
+      parseCues: async () => [],
       getState: () => initialState(),
       addRequestHook: () => () => undefined,
       addResponseHook: () => () => undefined,

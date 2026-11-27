@@ -91,6 +91,7 @@ export function attachEme(
     registerTypeProbe: noop,
     registerTimeProbe: noop,
     registerChunkSplitter: noop,
+    parseCues: async () => [],
     reduce: noop,
     dispatch: noop,
     load: noop,
